@@ -1,0 +1,35 @@
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+appsettings.*.Local.json
+
+# IDE and operating-system files
+.idea/
+.vscode/
+.vs/
+*.suo
+*.user
+.DS_Store
+Thumbs.db
+
+# .NET
+**/bin/
+**/obj/
+*.nupkg
+TestResults/
+coverage/
+
+# Flutter and Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+build/
+coverage/
+*.iml
+
+# Logs and temporary files
+*.log
+*.tmp
+*.swp

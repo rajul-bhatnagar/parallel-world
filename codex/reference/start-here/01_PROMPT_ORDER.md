@@ -1,6 +1,6 @@
 # Exact Prompt Order
 
-Use the following sequence. Do not move forward until the output of the current stage is reviewed and accepted.
+Use the following sequence. Do not move forward until the output of the current stage is reviewed and accepted. A later prompt does not authorize silently changing an accepted output from an earlier stage.
 
 ## Planning sequence
 
@@ -43,7 +43,7 @@ After each implementation prompt:
 
 1. Run the relevant milestone checklist in `docs/milestones`.
 2. Use `codex/review-prompts/00_GENERAL_DIFF_REVIEW.md` in a fresh Codex thread.
-3. Fix Critical and High findings only.
+3. Fix Critical and High findings before merge. Record Medium and Low findings and address them when required by acceptance criteria or risk.
 4. Re-run tests.
 5. Commit.
 6. Update `docs/development/DECISIONS.md` when architecture or behaviour changed.
@@ -52,4 +52,4 @@ After each implementation prompt:
 
 When giving any implementation prompt to Codex, include this sentence at the end:
 
-> Implement only this task. Inspect the repository first. Do not implement future features. Add tests, run verification, and report honestly what did and did not pass.
+> Implement only this task. Read AGENTS.md and relevant source-of-truth documents, inspect the existing code and Git changes first, and do not implement future features. Add tests, run applicable formatting, builds, and relevant tests, and report each command as passed, failed, or not run with a reason.

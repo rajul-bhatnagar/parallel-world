@@ -5,7 +5,7 @@
 - Solution/project prefix: `Parallel`
 - C# namespaces: `Parallel.<Project>.<Area>`
 - Flutter package: `parallel_app`
-- PostgreSQL tables: use consistent EF-generated snake_case or PascalCase policy; choose once and document.
+- PostgreSQL tables: use one consistent EF-generated snake_case or PascalCase policy. Until the policy is accepted in `docs/development/DECISIONS.md`, do not guess or mix conventions; follow the existing schema and mappings.
 
 ## Branches
 
@@ -15,6 +15,8 @@
 - `chore/update-dependencies`
 
 ## Commits
+
+Use a conventional `<type>(<scope>): <description>` form. Keep commits self-contained and limited to one milestone or task.
 
 - `feat(worlds): add guest world creation`
 - `feat(messages): add cursor pagination`

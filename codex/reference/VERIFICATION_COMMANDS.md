@@ -1,6 +1,6 @@
 # Verification Commands
 
-Adapt paths to the repository.
+Run commands from the repository root and adapt paths only when the project layout requires it. Run every check relevant to the changed area. Record the exact command and whether it passed, failed, or could not run; never treat a skipped check as a pass.
 
 ## Backend
 

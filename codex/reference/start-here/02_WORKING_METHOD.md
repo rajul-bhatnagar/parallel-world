@@ -12,6 +12,8 @@ Use separate Codex threads for:
 
 Do not let two agents modify the same contracts, migrations, or shared models at the same time.
 
+Before assigning or starting work, inspect `git status`, relevant diffs, and existing code. Preserve unrelated changes and stop if another task is modifying overlapping files or contracts.
+
 ## One branch per milestone
 
 Recommended branch style:
@@ -23,6 +25,8 @@ feature/character-catalogue
 feature/private-messaging
 fix/message-pagination
 ```
+
+Create milestone branches from an up-to-date `main`. Keep one milestone per branch, do not mix unrelated work, and do not force-push, rewrite shared history, or commit directly to `main` unless explicitly authorized.
 
 ## One vertical slice at a time
 
@@ -55,3 +59,8 @@ A task is small enough when:
 - Database schema changes have no migration.
 - Random simulation behaviour cannot be reproduced with a seed.
 - A free-hosting restart can duplicate simulation runs.
+- Verification failures or skipped checks are hidden behind a claim that work is complete.
+
+## Review handling
+
+Critical and High findings must be resolved before merge. Medium and Low findings must be recorded and assessed against acceptance criteria, security, data integrity, and user-visible risk; they are not silently discarded.

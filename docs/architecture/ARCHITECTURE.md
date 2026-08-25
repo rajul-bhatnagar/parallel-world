@@ -78,7 +78,7 @@ No real-user discovery, messaging, feed, relationship, or shared-world path exis
 - One hosted ASP.NET Core service and managed PostgreSQL initially
 - Object storage only after media is introduced
 
-Exact versions, providers, and hosting vendors are Open Architecture Decisions. No additional distributed technology is implied.
+The accepted baseline, checked on 2026-08-25, is .NET 10 LTS/`net10.0`, stable Flutter 3.47 with bundled Dart 3.13, Android API 24 minimum, and Android as the initial launch platform. M01 pins the accepted toolchain and latest stable compatible patches within those lines. Future Flutter/Dart minor or major upgrades require explicit review. Providers and hosting vendors remain open. No additional distributed technology is implied.
 
 ## 5. Repository structure
 
@@ -161,7 +161,7 @@ Modules are logical boundaries inside the projects above, not separate deployabl
 | Simulation | SimulationRun, SimulationAction, interval/idempotency records, deterministic orchestration | RunInterval, RunCatchUp, ExecutePlannedAction | Approved module application contracts | Source feature entities it does not own |
 | WorldEvents | Fictional WorldEvent and CharacterLifeEvent definitions/history | Evaluate/Activate/CompleteEvent | Worlds, Characters | Real-world news ingestion in MVP |
 | Trends | Trend candidate/snapshot/status | EvaluateTrends, GetActiveTrends | Social, WorldEvents, Worlds | Posts or world events themselves |
-| Notifications | Persisted notification, read state, delivery attempts | Create/Get/MarkReadNotification | Worlds, feature event contracts | Gameplay outcomes |
+| Notifications | Persisted in-app notification intent, read state, deduplication; deferred push-delivery attempts only when push is released | Create/Get/MarkReadNotification | Worlds, feature event contracts | Gameplay outcomes |
 | AI | GenerationRequest/Result metadata and wording services | GenerateForDecidedAction | Stable read-only contracts | Any domain mutation |
 | SharedKernel | Strong IDs, UTC/rule-version primitives, result/error primitives | Minimal shared types | None | Generic helpers, feature entities, or a “Common” dumping ground |
 
@@ -210,7 +210,7 @@ Architecture tests enforce project references and selected namespace/module rule
 
 Transactional consistency is required for: world ownership plus initial player actor; a feature action plus its authoritative event/idempotency record; relationship deltas plus relationship history; romantic transition plus pair status history; promise/secret resolution plus resulting events; a simulation checkpoint plus all mechanics it claims committed; and notification creation when it is part of the same use case. AI text and external delivery do not remain inside long database transactions.
 
-The conceptual Actor boundary is required. Whether MVP uses a dedicated Actor table immediately or introduces it incrementally is open, but public IDs and contracts must not preclude it.
+The Actor boundary and dedicated Actor table begin in M03. World creation transactionally creates the player Actor and PlayerProfile; M05 reuses that abstraction for character Actors and Character records.
 
 ## 10. Flutter architecture
 
@@ -611,11 +611,11 @@ Growth alone does not justify microservices.
 
 ## 34. Open Architecture Decisions
 
-1. Exact supported .NET/ASP.NET Core and Flutter/Dart versions.
+1. Exact patch pins within the accepted .NET 10 LTS and Flutter 3.47/Dart 3.13 baseline (M01 responsibility).
 2. Freezed usage scope versus handwritten immutable models.
 3. Initial external AI provider/model and provider-selection policy.
 4. Initial hosting provider and managed PostgreSQL vendor.
-5. PostgreSQL naming convention and how it is enforced in EF mappings.
+5. Choice of EF naming-convention package versus explicit mappings; PostgreSQL `snake_case` itself is accepted.
 6. Exact feed ordering for MVP: chronological or simple deterministic ranking.
 7. First milestone that introduces SignalR versus API refresh/polling.
 8. Whether feed impressions are persisted and, if so, at what release stage.

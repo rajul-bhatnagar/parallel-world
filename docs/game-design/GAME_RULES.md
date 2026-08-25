@@ -79,8 +79,8 @@ The rest of this document references these names. Changing a value requires a re
 | `DATE_ACCEPTANCE_MIN` | 60 | MVP, tunable |
 | `DATE_INVITATION_COOLDOWN_DAYS` | 14 | MVP |
 | `SEVERE_CONFLICT_LOOKBACK_DAYS` | 7 | MVP |
-| `BREAKUP_PRESSURE_MIN` | 65 | MVP, tunable |
-| `RECONCILIATION_COOLDOWN_DAYS` | 14 | MVP |
+| `BREAKUP_PRESSURE_MIN` | 65 | Deferred breakup lifecycle; inactive in MVP |
+| `RECONCILIATION_COOLDOWN_DAYS` | 14 | Deferred reconciliation lifecycle; inactive in MVP |
 | `POST_MAX_CHARACTERS` | 500 | MVP, tunable |
 | `TREND_START_SCORE` | 60 | Deferred |
 | `TREND_END_SCORE` | 35 | Deferred |
@@ -420,15 +420,17 @@ Ordinary passive decay is disabled in MVP to keep changes understandable. Deferr
 
 ### Dating progression
 
-MVP states are `None`, `RomanticInterest`, `InvitationPending`, `Dating`, and `FormerPartner`. Dating begins with Commitment raised to at least 20. Successful dates and relationship events develop it. `Committed`, `Engaged`, `Married`, `Separated`, and `Divorced` are deferred.
+MVP states are `None`, `RomanticInterest`, `InvitationPending`, and `Dating`. Dating begins with Commitment raised to at least 20. Successful dates and relationship events may develop approved dimensions without activating a deeper lifecycle.
 
-Arguments require a qualifying disagreement, insult, broken promise, jealousy event, or accumulated conflict. Escalation score uses Aggression, Angry mood, Rivalry, event severity, and repetition; de-escalation uses Empathy, Patience, Trust, apology, and time. One pair cannot start another argument during `ARGUMENT_COOLDOWN_HOURS`. Public conflict uses public modifiers. Apology requires an attributable harmful event; acceptance is rule-based. Reconciliation means a recorded repair event and state transition, not AI wording.
+Deferred states are `FormerPartner`, `Committed`, `Engaged`, `Married`, `Separated`, and `Divorced`.
 
-### Rule ROM-03: breakup and reconciliation
+Arguments require a qualifying disagreement, insult, broken promise, jealousy event, or accumulated conflict. Escalation score uses Aggression, Angry mood, Rivalry, event severity, and repetition; de-escalation uses Empathy, Patience, Trust, apology, and time. One pair cannot start another argument during `ARGUMENT_COOLDOWN_HOURS`. Public conflict uses public modifiers. Apology requires an attributable harmful event; acceptance is rule-based. Any future romantic reconciliation is deferred and, if approved, must be a recorded rule event rather than AI wording.
+
+### Deferred rule ROM-03: breakup and reconciliation
 
 - **Purpose:** End unhealthy Dating states safely and permit later repair.
 - **Inputs:** Directional Trust, Affection, Comfort, Commitment, recent conflict severity/frequency, neglect, incompatible goals, severe events.
-- **Preconditions:** Breakup requires Dating in MVP. Reconciliation requires FormerPartner, cooldown expired, no unresolved severe event, Trust >=40, Comfort >=35, Attraction >=50, and a qualifying repair event.
+- **Preconditions:** Inactive in MVP. When separately approved after MVP, breakup requires Dating. Reconciliation requires FormerPartner, cooldown expired, no unresolved severe event, Trust >=40, Comfort >=35, Attraction >=50, and a qualifying repair event.
 - **Decision:** `BreakupPressure=0.40*(100-Trust)+0.25*(100-Commitment)+0.15*(100-Affection)+0.20*ConflictScore`. Break up at `BREAKUP_PRESSURE_MIN` on three daily evaluations within seven days, or immediately at pressure 80 after an importance-90 severe betrayal. Higher dissatisfied-direction pressure selects initiator. Reconciliation score uses 35% Trust, 25% Comfort, 20% Attraction, 20% repair quality and must reach 60.
 - **Randomness:** Seeded tie-break only; no healthy relationship ends from one roll.
 - **Limits:** One evaluation per pair/day; relationship impacts use caps.
@@ -437,7 +439,7 @@ Arguments require a qualifying disagreement, insult, broken promise, jealousy ev
 - **Persistence:** Pressure evaluations, Breakup/Reconciliation event, initiator/reasons, memories, status history.
 - **Idempotency:** Pair/evaluation-day or repair-event key.
 - **Example:** Pressure 69 for three evaluations triggers breakup; retry cannot create a second history entry.
-- **Status:** Breakup safety and re-entry MVP.
+- **Status:** Deferred. MVP stops at Dating and records only the invitation/outcome history required by PRODUCT.md. No FormerPartner re-entry, reconciliation cooldown, or repeated relationship cycling is active.
 
 ### Deferred engagement, marriage, separation, and divorce
 
@@ -449,8 +451,8 @@ These rules are inactive until PRODUCT.md release placement is decided. Initial 
 
 - **Purpose:** Preserve meaningful knowledge without recording every trivial interaction.
 - **Inputs:** Source event, type, importance, emotional impact, subject, topic, participants, visibility, character knowledge.
-- **Preconditions:** Character witnessed/received/was told the event; type is PersonalFact, Promise, Secret, Compliment, Insult, Conflict, SharedExperience, Achievement, RomanticEvent, Rejection, Breakup, LifeEvent, or WorldEventReaction.
-- **Decision:** Create when importance >= `MEMORY_CREATION_IMPORTANCE`, absolute emotional impact >=40, or type is Promise/Secret/RomanticEvent/Breakup. Merge only when same source fact and subject; do not merge distinct events.
+- **Preconditions:** Character witnessed/received/was told the event; released MVP types are PersonalFact, Promise, Secret, Compliment, Insult, Conflict, SharedExperience, Achievement, RomanticEvent, and Rejection. Breakup, LifeEvent, and WorldEventReaction activate only with their deferred systems.
+- **Decision:** Create when importance >= `MEMORY_CREATION_IMPORTANCE`, absolute emotional impact >=40, or a released mandatory type is Promise, Secret, or RomanticEvent. Breakup becomes mandatory only if that deferred lifecycle is activated. Merge only when same source fact and subject; do not merge distinct events.
 - **Randomness:** None.
 - **Limits:** Importance/confidence 0-100; emotional impact -100..100.
 - **Cooldown:** Trivial same-topic events within one day reinforce at most once.
@@ -532,13 +534,13 @@ Paused time is excluded. Archived worlds do not catch up. On ordinary app inacti
 
 - **Purpose:** Notify the player of meaningful world activity without duplicates.
 - **Inputs:** Source event, category, importance, player involvement, read state, quiet hours, delivery settings.
-- **Preconditions:** Event belongs to player's world and category is released. MVP categories are Reply, PrivateMessage, DatingInvitation, and CatchUpSummary; Follow may create an in-app indicator. Mention, relationship milestone, world event, trend, reputation milestone, and push are deferred.
+- **Preconditions:** Event belongs to player's world and category is released. MVP categories are Reply, PrivateMessage, and CatchUpSummary. Follow, DatingInvitation, mention, relationship milestone, world event, trend, reputation milestone, and push are deferred unless PRODUCT.md later approves them.
 - **Decision:** Priority is Critical for direct time-sensitive invitation, High for direct message/reply, Normal for follow/summary, Low otherwise. Aggregate same category/source family in a catch-up window. Push eligibility requires post-MVP opt-in, priority High/Critical, and daily cap.
 - **Randomness:** None.
 - **Limits:** One notification per source event/category; deferred push cap.
 - **Cooldown:** Quiet hours delay non-Critical push, not in-app persistence.
 - **State changes:** Unread -> Read; expiry hides but does not delete source history.
-- **Persistence:** Notification with source event, priority, created/read/expiry times, delivery attempts.
+- **Persistence:** MVP persists the in-app Notification intent with source event, priority, created/read/expiry times and deduplication key. Provider delivery attempts apply only to deferred push delivery and are not an MVP requirement.
 - **Idempotency:** Player/source-event/category key.
 - **Example:** One persisted reply creates one unread in-app notification; catch-up retry creates no duplicate.
 - **Status:** Basic in-app MVP; rich history/push deferred.
@@ -568,8 +570,8 @@ Friendship labels are not stored as authoritative state in MVP. They are derived
 | RomanticInterest | InvitationPending | Yes | Valid persisted invitation |
 | InvitationPending | Dating | Yes | ROM-02 accepted |
 | InvitationPending | None | Yes | Rejected, expired, or withdrawn before resolution |
-| Dating | FormerPartner | Yes | ROM-03 breakup |
-| FormerPartner | RomanticInterest | Yes | Cooldown and reconciliation/repair eligibility |
+| Dating | FormerPartner | Deferred | Post-MVP breakup rule |
+| FormerPartner | RomanticInterest | Deferred | Post-MVP cooldown and reconciliation/repair eligibility |
 | Dating | Committed | Deferred | Post-MVP rule |
 | Committed | Engaged | Deferred | Proposal rule |
 | Engaged | Married | Deferred | Marriage rule |

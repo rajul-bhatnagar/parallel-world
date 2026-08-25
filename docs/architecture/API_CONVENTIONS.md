@@ -390,12 +390,11 @@ GET   /api/v1/worlds/current
 GET   /api/v1/worlds/{worldId}
 PATCH /api/v1/worlds/{worldId}
 POST  /api/v1/worlds/{worldId}/resume
-GET   /api/v1/worlds/{worldId}/summary
 GET   /api/v1/worlds/{worldId}/simulation-status
 GET   /api/v1/worlds/{worldId}/summaries/latest
 ```
 
-MVP exposes one current world while preserving collection-compatible contracts. Creation accepts only approved player choices such as name; server creates owner, seed, time/state, player actor, and initial characters transactionally. A second logical creation during MVP returns the existing idempotent result or `409 world_already_exists`; it does not create another playable world. Profile/settings fields use the chosen concurrency strategy. Resume never accepts seed/actions/results/prompts.
+MVP exposes one current world while preserving collection-compatible contracts. M03 creation accepts only approved player choices such as name; the server transactionally creates the guest/account foundation, world seed/time/state, player Actor/Profile, and settings, but no character Actors or Character records. M05 subsequently initializes the deterministic cast for the existing owned world; character availability after M05 is a gameplay capability, not part of the M03 world-creation transaction. A second logical world creation during MVP returns the existing idempotent result or `409 world_already_exists`; it does not create another playable world. Profile/settings fields use the chosen concurrency strategy. Resume never accepts seed/actions/results/prompts.
 
 **Example 2 — world creation**
 
@@ -669,6 +668,8 @@ POST /api/v1/dev/worlds/{worldId}/simulate   Development-only
 
 Public requests never supply seed, actor action, target, rule outcome, relationship effect, prompt, or result. The development endpoint is authenticated, authorization-checked, environment-gated, absent from production routing/OpenAPI, and cannot bypass deterministic rules.
 
+`GET /worlds/{worldId}/summaries/latest` is the single authoritative MVP return-summary route. It returns the latest persisted catch-up summary and its committed facts, or `404` when none exists. The former `/worlds/{worldId}/summary` concept is not a second resource and is not implemented.
+
 ## 35. Trends and world-event endpoints
 
 Version 1:
@@ -691,7 +692,7 @@ POST /api/v1/worlds/{worldId}/notifications/{notificationId}/read
 POST /api/v1/worlds/{worldId}/notifications/read-all
 ```
 
-MVP supports a minimal page/indicators for released categories only. Read operations are idempotent POST actions; rich history/filtering and push are Version 1. Message bodies and sensitive hidden context are excluded.
+MVP supports an unread badge/deep-link indicators plus a bounded cursor-paginated minimal list for Reply, PrivateMessage, and CatchUpSummary only. The list exists to resolve those indicators and is not rich notification history: no category filtering, search, long-term history promise, or deferred categories. Read operations are idempotent POST actions; rich history/filtering and push are Version 1. Message bodies and sensitive hidden context are excluded.
 
 **Example 14 — notification page**
 
@@ -708,10 +709,10 @@ MVP supports a minimal page/indicators for released categories only. Read operat
 Version 1:
 
 ```text
-POST /api/v1/auth/register
-POST /api/v1/auth/login
-POST /api/v1/auth/upgrade
-POST /api/v1/auth/password-reset
+POST /api/v1/auth/register       Shape selected by the accepted M17 auth decision
+POST /api/v1/auth/login          Shape selected by the accepted M17 auth decision
+POST /api/v1/auth/upgrade        Preserves the existing UserId
+POST /api/v1/auth/recovery       Shape selected by the accepted M17 recovery decision
 POST /api/v1/devices
 PATCH /api/v1/devices/{deviceId}
 DELETE /api/v1/devices/{deviceId}
@@ -825,7 +826,6 @@ Response also includes `Retry-After: 30`.
 | GET | `/worlds/{worldId}` | Read world | Yes | No | No | MVP | 200 |
 | PATCH | `/worlds/{worldId}` | Update editable world fields | Yes | No; concurrency | No | MVP | 200 |
 | POST | `/worlds/{worldId}/resume` | Run bounded catch-up | Yes | Yes | No | MVP | 200/202 |
-| GET | `/worlds/{worldId}/summary` | Current world summary | Yes | No | No | MVP | 200 |
 | GET | `/worlds/{worldId}/simulation-status` | Resume/run state | Yes | No | No | MVP | 200 |
 | GET | `/worlds/{worldId}/summaries/latest` | Latest catch-up summary | Yes | No | No | MVP | 200 |
 | GET | `/worlds/{worldId}/player-profile` | Read player profile | Yes | No | No | MVP | 200 |
@@ -870,7 +870,7 @@ Response also includes `Retry-After: 30`.
 | POST | `/auth/register` | Create registered account | No | Yes | No | Version 1 | 201 |
 | POST | `/auth/login` | Create registered session | No | Yes | No | Version 1 | 200 |
 | POST | `/auth/upgrade` | Upgrade current guest | Yes | Yes | No | Version 1 | 200 |
-| POST | `/auth/password-reset` | Request/complete reset flow | Mixed | Yes | No | Version 1 | 200/204 |
+| POST | `/auth/recovery` | Selected registered-account recovery flow | Mixed | Yes | No | Version 1/gated | 200/204 |
 | POST | `/devices` | Register push installation | Yes | Yes | No | Version 1 | 201 |
 | PATCH | `/devices/{deviceId}` | Update owned installation | Yes | No; concurrency | No | Version 1 | 200 |
 | DELETE | `/devices/{deviceId}` | Revoke owned installation | Yes | Natural | No | Version 1 | 204 |

@@ -91,7 +91,7 @@ Fast network-free/database-free tests cover value objects, clamping, UTC/time ca
 | Reactions/follows | REACT-01/FOLLOW-01 | Unique edges/count rebuild | Repetition/cooldown | Like/follow MVP |
 | Messaging | MSG-02 eligibility/no-response | Conversation/send/page | Player message/fallback | MVP; initiation/delay deferred |
 | Relationships | REL-01 deltas/caps/labels | Transaction/history/ledger | Friends/rivals/defence | MVP |
-| Dating/breakup | ROM-01/02/03/state table | Pair/history/idempotency | Eligible/rejected/breakup | MVP states only |
+| Dating | ROM-01/02/state table | Pair/history/idempotency | Eligible/rejected/accepted | MVP through Dating only |
 | Memories/secrets/promises | MEM-01/02, access/ranking | Provenance/selection constraints | Promise/secret/conflict | MVP |
 | Reputation/followers | Caps/follow derivation | Count rebuild | Released public event | Broader system deferred |
 | Trends/world/life events | Formula/template eligibility | Same-world status | Seeded catalogue | Deferred except MVP topics |
@@ -125,7 +125,7 @@ Prove an interval cannot apply twice, provider failure does not reroll mechanics
 | 1004 | Public defence between friends | Directional deltas, label, memory |
 | 1005 | Eligible invitation | Candidate/reason/pending history |
 | 1006 | Rejected invitation | Reason/cooldown/no Dating |
-| 1007 | Repeated-conflict breakup | Pressure/history/FormerPartner |
+| 1007 | Dating acceptance | Outcome/history/Dating |
 | 1008 | Long catch-up | Buckets/caps/partial cursor/summary |
 | 1009 | AI unavailable | Same mechanics, fallback, safe logs |
 | 1010 | Duplicate resume | One interval/effect set |
@@ -232,11 +232,11 @@ Character-initiated and simulated delayed replies are deferred. MVP may test tha
 
 For every relationship dimension verify initial value, 0-100 clamp, impact-matrix delta, multiplier range, ordinary/severe event cap, daily ledger, sign preservation, asymmetry, source idempotency, friendship priority, severe bypass, repetition, no passive MVP decay, and recovery.
 
-Dating covers ROM-01 thresholds/compatibility/cooldown/candidate ordering, invitation uniqueness, ROM-02 acceptance/rejection/reason, Dating transition, ROM-03 repeated/severe breakup, FormerPartner re-entry, canonical pair, shared history, memories/notifications where released, and forbidden transitions. Engagement, marriage, separation, and divorce become test gates only when approved.
+MVP dating covers ROM-01 thresholds/compatibility/cooldown/candidate ordering, invitation uniqueness, ROM-02 acceptance/rejection/reason, Dating transition, canonical pair, required invitation/outcome history, and forbidden transitions. Breakup lifecycle, FormerPartner re-entry, reconciliation, engagement, marriage, separation, and divorce become test gates only when explicitly approved after MVP.
 
 ## 21. Memory testing
 
-Cover meaningful-event threshold; mandatory Promise, Secret, RomanticEvent, and Breakup creation; trivial rejection; bounds; expiry/permanence; source uniqueness; relevance/ranking/ID tie-break; recall cap/penalty/reinforcement; contested contradictions; provenance; promise terminal states; secret knower/disclosure access; and no full-history retrieval. AI text alone cannot create, resolve, reinforce, or alter memory.
+Cover meaningful-event threshold; mandatory Promise, Secret, and released RomanticEvent creation; trivial rejection; bounds; expiry/permanence; source uniqueness; relevance/ranking/ID tie-break; recall cap/penalty/reinforcement; contested contradictions; provenance; promise terminal states; secret knower/disclosure access; and no full-history retrieval. Breakup memory tests activate only with the deferred breakup feature. AI text alone cannot create, resolve, reinforce, or alter memory.
 
 ## 22. Feed and pagination testing
 
@@ -244,7 +244,7 @@ Test empty/first/next/refresh feed, stable ordering, equal-time ID tie-break, no
 
 ## 23. Catch-up simulation testing
 
-Cover no elapsed time; short/long intervals; paused/archived exclusion; per-run cap; newest detailed and older daily buckets; action/summary caps; meaningful priority; committed relationship/memory effects; duplicate/concurrent resume; failure midway; checkpoint retry; Partial continuation; fallback independence; and cursor/`LastSimulatedAt` advancement only to committed state.
+Cover no elapsed time; short/long intervals; paused/archived exclusion; per-run cap; newest detailed and older daily buckets; CatchUp SimulationRun identification; requested, processed, and remaining intervals; relational checkpoint ownership/uniqueness; Pending/Running/Partial/Completed/FailedRetryable transitions; action/summary caps; meaningful priority; committed relationship/memory effects; duplicate/concurrent resume; failure midway; checkpoint retry/resume without reroll; summary/item fact provenance and idempotency; latest-summary route semantics; fallback independence; retention safety; and cursor/`LastSimulatedAt` advancement only to committed state.
 
 ```mermaid
 flowchart LR
@@ -260,7 +260,7 @@ flowchart LR
 
 ## 24. Notification and realtime testing
 
-MVP notification tests cover Reply, PrivateMessage, DatingInvitation, CatchUpSummary, optional Follow indicator, deduplication, read one/all, unread count, cursor, expiry visibility, safe preview, ownership, and retry. Relationship/world-event/trend/mention notifications, rich history, and push are deferred.
+MVP notification tests cover Reply, PrivateMessage, CatchUpSummary, deduplication, read one/all, unread count, bounded minimal-list cursor behavior, expiry visibility, safe preview/deep link, ownership, and retry. Follow, DatingInvitation, relationship/world-event/trend/mention notifications, rich history/filtering/search, and push are deferred.
 
 When SignalR is introduced, test authorized connection/group, unauthorized and wrong-world subscription, minimal payload, duplicate event, reconnect, missed-event HTTP refetch, logout disconnect, message/simulation events, and no hidden data. Realtime remains a hint to PostgreSQL-backed HTTP truth.
 
@@ -453,7 +453,7 @@ Use behavior names such as `DatingInvitation_WhenTrustBelowThreshold_IsRejected`
 | Guest/session/world | Guest, rotating refresh, logout, one exposed world, isolation | Registration, recovery, devices, same-user upgrade |
 | Feed/social | Profiles, posts, replies, likes, follows, cursor | Reposts, quotes, rich reactions, hashtags, mentions, ranking |
 | Simulation/AI | Determinism, persisted actions, wording-only AI, fallback | Provider/tuning expansion |
-| Relationships/dating | Basic directional state, invitation/outcome, Dating/FormerPartner | Commitment, engagement, marriage, separation, divorce |
+| Relationships/dating | Basic directional state, invitation/outcome, Dating, necessary romantic history | Breakup, FormerPartner/reconciliation, commitment, engagement, marriage, separation, divorce |
 | Messaging/memory | Player-character history, immediate eligibility/no-response, structured memory | Initiation, delay, group chat |
 | Events/careers | Seeded MVP topics and basic display | Trends, full world/life events, careers |
 | Catch-up/notifications | Bounded summary and released indicators | Rich categories/history and push |
@@ -480,7 +480,7 @@ A feature is complete only when acceptance criteria are met; sources/existing co
 | M10 Relationships | Dimensions/caps/asymmetry/history/labels |
 | M11 Messages | Conversation uniqueness, send/idempotency/cursor, eligibility/privacy |
 | M12 Memory | Creation/ranking/provenance/secrets/promises/no full history |
-| M13 Dating | Eligibility/outcome/cooldown/history/breakup/invalid transitions |
+| M13 Dating | Eligibility/outcome/cooldown/required history/invalid transitions through Dating |
 | M14 Events/trends | Deferred-feature tests only when intentionally activated |
 | M15 Catch-up | Compression/caps/summary/partial retry/concurrent resume |
 | M16 Notifications | Released category/dedupe/read/cursor/ownership; realtime if introduced |

@@ -16,7 +16,7 @@ Use the following sequence. Do not move forward until the output of the current 
 10. `codex/planning-prompts/09_FINALIZE_TEST_STRATEGY.md`
 11. `codex/planning-prompts/10_CREATE_DEVELOPMENT_PLAN.md`
 
-## Implementation sequence
+## Core MVP implementation path
 
 12. `codex/implementation-prompts/01_BOOTSTRAP_REPOSITORY.md`
 13. `codex/implementation-prompts/02_BACKEND_FOUNDATION.md`
@@ -31,11 +31,17 @@ Use the following sequence. Do not move forward until the output of the current 
 22. `codex/implementation-prompts/11_PRIVATE_MESSAGING.md`
 23. `codex/implementation-prompts/12_LONG_TERM_MEMORY.md`
 24. `codex/implementation-prompts/13_DATING_AND_RELATIONSHIP_HISTORY.md`
-25. `codex/implementation-prompts/14_WORLD_EVENTS_AND_TRENDS.md`
-26. `codex/implementation-prompts/15_CATCH_UP_SIMULATION.md`
-27. `codex/implementation-prompts/16_NOTIFICATIONS_AND_REALTIME.md`
-28. `codex/implementation-prompts/17_REGISTRATION_AND_LOGIN.md`
-29. `codex/implementation-prompts/18_PRODUCTION_HARDENING.md`
+25. `codex/implementation-prompts/15_CATCH_UP_SIMULATION.md`
+
+This is the core gameplay path: M01 -> M02 -> M03 -> M04 -> M05 -> M06 -> M07 -> M08 -> M09 -> M10 -> M11 -> M12 -> M13 -> M15.
+
+## Release and extension milestones
+
+26. `codex/implementation-prompts/16_NOTIFICATIONS_AND_REALTIME.md` — basic persisted in-app notifications; realtime only if separately activated.
+27. `codex/implementation-prompts/17_REGISTRATION_AND_LOGIN.md` — only after the registered-authentication and recovery method is accepted in DECISIONS.md.
+28. `codex/implementation-prompts/18_PRODUCTION_HARDENING.md` — harden only the milestones selected for the release.
+
+`codex/implementation-prompts/14_WORLD_EVENTS_AND_TRENDS.md` remains historically numbered M14 but is Version 1/deferred and skipped during the core MVP path unless explicitly activated. Numbered filenames are stable historical identifiers; execution order intentionally skips gated/deferred milestones when their prerequisite decision is absent.
 
 ## Review rhythm
 

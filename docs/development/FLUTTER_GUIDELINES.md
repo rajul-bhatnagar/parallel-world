@@ -19,7 +19,7 @@ This guide does not authorize implementation outside the current milestone. **MV
 
 | Concern | Choice | Boundary |
 |---|---|---|
-| UI | Flutter and Dart | Exact supported versions remain open |
+| UI | Stable Flutter 3.47 and bundled Dart 3.13 | Baseline checked 2026-08-25; exact stable patches pinned in M01 |
 | State/DI | Riverpod | The only primary state-management system |
 | Navigation | GoRouter | One declarative route graph and guard model |
 | HTTP | Dio | Access only through core API/repositories, never widgets |
@@ -544,7 +544,7 @@ Use respectful, non-coercive copy/design. Engagement, marriage, separation, divo
 
 ## 30. Notifications UI
 
-MVP supports released in-app notification categories, cursor list, unread badge, mark-one/read-all actions, safe preview, empty/offline/error state, and authorized deep links. Read actions are idempotent; optimistic read state reconciles with server truth.
+MVP supports Reply, PrivateMessage, and CatchUpSummary indicators through an unread badge, authorized deep links, and a bounded cursor-paginated minimal list used to resolve those indicators. It includes mark-one/read-all, safe preview, and empty/offline/error state. Follow, DatingInvitation, rich filtering/search/history, and push remain deferred. Read actions are idempotent; optimistic read state reconciles with server truth.
 
 Do not show sensitive private-message body or hidden reasoning. Rich categories, push, quiet-hour controls, trends/world-event notifications, and other Version 1 content stay gated.
 
@@ -674,7 +674,7 @@ A Flutter task is complete only when:
 
 ## 40. Open Flutter decisions
 
-1. Exact Flutter/Dart versions and minimum Android/iOS versions.
+1. Exact stable patch pins within Flutter 3.47/Dart 3.13; Android API 24 and Android-first launch are accepted, while iOS remains deferred. Future minor/major upgrades require explicit review.
 2. Riverpod generator adoption and generated-file commit policy.
 3. Freezed/JSON generation scope.
 4. Drift encryption strategy and sensitive message cache minimization.

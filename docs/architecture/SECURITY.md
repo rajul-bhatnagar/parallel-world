@@ -129,7 +129,7 @@ sequenceDiagram
 
 ## 7. Registered-account authentication
 
-Version 1 supports an approved email/password or recovery-first method, email verification as decided, login, password reset/magic link, session revocation, multiple devices, and later external providers. Responses do not reveal whether an email exists. Credentials are transmitted only over TLS and never stored reversibly or logged.
+Version 1 supports only the registered-authentication and recovery method accepted before M17, plus appropriate verification, session revocation, and multiple devices. Email/password, magic link, or an external provider are alternatives, not preselected requirements. Responses do not reveal whether an account exists. Credentials/proofs are transmitted only over TLS and never stored reversibly or logged.
 
 ## 8. Guest-account upgrade
 
@@ -149,7 +149,7 @@ An email/provider already attached elsewhere returns a safe conflict; records ar
 
 ```mermaid
 flowchart TD
-    G["Authenticated guest"] --> PROOF["Validate email/password or provider proof"]
+    G["Authenticated guest"] --> PROOF["Validate the accepted registration proof"]
     PROOF --> UNIQUE{"Credential identity available?"}
     UNIQUE -->|"No"| CONFLICT["Safe conflict; guest unchanged"]
     UNIQUE -->|"Yes"| TX["Transactionally update same UserId"]

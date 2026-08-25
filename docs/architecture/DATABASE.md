@@ -14,7 +14,7 @@ PostgreSQL is authoritative. This document fixes the database integrity requirem
 - All foreign-key delete behaviours are explicit. Historical gameplay rows do not disappear through accidental cascades.
 - Cursor indexes exactly match filters and ordering.
 - All values defined as bounded in `GAME_RULES.md` have database check constraints as a final integrity boundary.
-- Naming convention remains an open decision; examples use conceptual PascalCase names.
+- PostgreSQL tables, columns, constraints, and indexes use unquoted `snake_case`. C# entities/properties use PascalCase; EF Core naming conventions or explicit mappings translate between them. Quoted PascalCase PostgreSQL identifiers are prohibited. Conceptual names in this document map accordingly (for example, `SimulationRuns` -> `simulation_runs` and `WorldId` -> `world_id`).
 
 ### Required bounded checks
 
@@ -119,10 +119,11 @@ MVP one-world exposure is enforced by the application/idempotent creation use ca
 - FK `WorldId -> GameWorlds.Id ON DELETE RESTRICT`.
 - Checks require positive time scale and non-negative limits/budgets.
 
-### SimulationStates
+### WorldSimulationState (`world_simulation_states`)
 
 - `Id`, `WorldId`, `NextDueAt`, `LastCompletedIntervalEnd`, `DeterministicSequence`, `CreatedAt`, `UpdatedAt`, `Version`
 - Unique `WorldId`.
+- PostgreSQL table `world_simulation_states`; conceptual C# entity `WorldSimulationState`.
 - FK `WorldId -> GameWorlds.Id ON DELETE RESTRICT`.
 - The row is locked briefly when claiming an interval; a run must start exactly at the persisted cursor.
 
@@ -346,13 +347,28 @@ Indexes:
 
 ### SimulationRuns
 
-- `Id`, `WorldId`, `IntervalStart`, `IntervalEnd`, `Seed`, `RuleVersion`, `Status`, `StartedAt`, `CompletedAt` nullable, `NextCursor` nullable, `IdempotencyKey`, safe `ErrorCode` nullable, `Version`
+- `Id`, `WorldId`, `RunType` (`ActiveTick` or `CatchUp`), `IntervalStart`, `IntervalEnd`, `ProcessedThrough`, `Seed`, `RuleVersion`, `Status` (`Pending`, `Running`, `Partial`, `Completed`, `FailedRetryable`, `FailedTerminal`), `StartedAt`, `CompletedAt` nullable, `IdempotencyKey`, safe `ErrorCode` nullable, `Version`
 - Unique `(WorldId, Id)` and `(WorldId, IdempotencyKey)`.
 - Unique `(WorldId, RuleVersion, IntervalStart, IntervalEnd)`.
 - Check interval end > start.
 - Index `(WorldId, Status, IntervalStart)` and `(WorldId, CompletedAt DESC)`.
 
-Overlap prevention does not rely on the caller's idempotency key: the run transaction locks the world's SimulationStates row, requires `IntervalStart = LastCompletedIntervalEnd`, rejects an existing Running interval, inserts the exact-interval unique row, and advances the cursor only to a committed boundary. Partial runs store their next cursor. These constraints plus the lock prevent differently keyed overlapping processing without requiring a PostgreSQL extension.
+Catch-up reuses `SimulationRuns`; `RunType = CatchUp` identifies it without redundant run infrastructure. `IntervalStart`/`IntervalEnd` are the requested processed interval, `ProcessedThrough` is the last committed checkpoint boundary, and `IntervalEnd - ProcessedThrough` is the remaining interval. A Partial or FailedRetryable run resumes from `ProcessedThrough` with the same seed, rule version, and run identity. Overlap prevention does not rely on the caller's idempotency key: the run transaction locks the world's WorldSimulationState row, requires `IntervalStart = LastCompletedIntervalEnd`, rejects an existing Running interval, inserts the exact-interval unique row, and advances the world cursor only to a committed boundary. These constraints plus the lock prevent differently keyed overlapping processing without requiring a PostgreSQL extension.
+
+### SimulationRunCheckpoints
+
+- `Id`, `WorldId`, `SimulationRunId`, `BucketStart`, `BucketEnd`, `StableOrdinal`, `Status`, `CommittedAt`, `IdempotencyKey`, `Version`.
+- Composite FK to SimulationRun; unique `(WorldId, SimulationRunId, StableOrdinal)`, `(WorldId, SimulationRunId, BucketStart, BucketEnd)`, and `(WorldId, IdempotencyKey)`.
+- Index `(WorldId, SimulationRunId, BucketStart)` supports ordered retry/resume.
+- A checkpoint is written atomically with every mechanic/event/action it claims committed. A retry loads completed checkpoints and never rerolls them.
+
+### CatchUpSummaries and CatchUpSummaryItems
+
+- `CatchUpSummaries`: `Id`, `WorldId`, `SimulationRunId`, `FromGameTime`, `ToGameTime`, `Status`, `GeneratedAt`, optional fallback-safe `Text`, `IdempotencyKey`, `Version`.
+- `CatchUpSummaryItems`: `Id`, `WorldId`, `CatchUpSummaryId`, `GameplayEventId`, `ItemType`, `StableOrdinal`, structured safe fact data/resource reference, optional generated/fallback wording, `CreatedAt`.
+- Composite FKs enforce the same world for run, summary, item, and source event. Unique `(WorldId, SimulationRunId)`, `(WorldId, IdempotencyKey)`, `(WorldId, CatchUpSummaryId, StableOrdinal)`, and `(WorldId, CatchUpSummaryId, GameplayEventId, ItemType)` prevent duplicate summaries/facts.
+- Indexes `(WorldId, GeneratedAt DESC, Id DESC)` and `(WorldId, CatchUpSummaryId, StableOrdinal)` support latest-summary and item retrieval.
+- Only committed facts become items. Summary generation may retry or use fallback wording without reapplying mechanics. Summaries and items are owned through non-null `WorldId` and retained at least as long as the referenced run/events; exact purge duration remains an open release decision.
 
 ### SimulationActions
 
@@ -389,7 +405,7 @@ Overlap prevention does not rely on the caller's idempotency key: the run transa
 
 All work exists in PostgreSQL before BackgroundService processes it. Leases/retries are idempotent; in-memory queues are not authoritative.
 
-## 12. Deferred events, trends, and notifications
+## 12. Deferred events/trends and MVP notifications
 
 ### WorldEvents and CharacterLifeEvents
 
@@ -422,6 +438,7 @@ Push-delivery attempts are deferred and separate from Notification creation.
 | Relationship/RomanticRelationship | Retain current row and immutable history. Physical deletion is restricted. |
 | GameplayEvent/RelationshipEvent/StatusHistory | Immutable; no update/delete in normal application paths. |
 | SimulationRun/Action/Idempotency | Retain through the operational audit window; cleanup policy must not remove rows needed for retry/history integrity. |
+| Catch-up checkpoint/summary/item | Retain while needed for retry, player-visible history, and referenced-event integrity. Exact purge duration is decided before release. |
 | Background work/AI diagnostics | May be retained/trimmed by an explicit policy after terminal state, never while needed for idempotency. |
 
 No cascade may cross from one world to another. Every migration declares delete behaviour explicitly.
@@ -452,12 +469,31 @@ AI/provider calls and push delivery remain outside database transactions. Cache 
 | Romantic history | `(WorldId, RomanticRelationshipId, OccurredAt DESC, Id DESC)` |
 | Memory recall | `(WorldId, CharacterId, SubjectActorId, Importance DESC, CreatedAt DESC, Id DESC)` |
 | Due actions | `(WorldId, Status, ScheduledAt, Id)` |
+| Catch-up runs | `(WorldId, RunType, Status, IntervalStart)` and `(WorldId, CompletedAt DESC)` |
+| Catch-up checkpoints | `(WorldId, SimulationRunId, BucketStart)` |
+| Latest catch-up summary | `(WorldId, GeneratedAt DESC, Id DESC)` |
 | Due background work | `(Status, DueAt, Id)` filtered Pending/Retry |
 | Notifications | `(WorldId, RecipientUserId, CreatedAt DESC, Id DESC)` |
 
 Index names and physical options follow the eventual naming convention. Query plans must be tested with representative data before adding redundant indexes.
 
-## 16. Database consistency checks
+## 16. Likely high-growth tables
+
+MVP uses ordinary PostgreSQL tables and the indexes above. Do not partition pre-emptively. Measure row count, table/index bytes, write rate, query p95, vacuum pressure, and retention backlog; evaluate partitioning only after representative production/staging measurements show that indexing, bounded queries, and approved retention are insufficient.
+
+| Table family | Growth pattern | Important access/indexes | Retention considerations | Evaluation trigger |
+|---|---|---|---|---|
+| `posts` | Feed posts and replies accumulate per world | Feed, author-history, and reply cursor indexes | Preserve player content/history; soft-deleted content follows approved purge policy | Feed/reply p95 or index/table growth exceeds measured release targets |
+| `messages` | Persistent conversation history is append-heavy | Conversation cursor `(world_id, conversation_id, created_at DESC, id DESC)` | Product/privacy retention decision required before purge | Message pagination or backup/restore cost breaches measured targets |
+| `gameplay_events`, `relationship_events` | Immutable event/audit history grows with actions | World/time, actor-pair/time, and source/idempotency indexes | Retain while needed for history, mechanics, and audit integrity | Event-history queries, vacuum, or storage trend becomes material |
+| `simulation_actions`, `simulation_run_checkpoints` | Bounded bursts per active/catch-up run | Due-action and run/checkpoint ordering/uniqueness indexes | Never purge rows needed for retry, checkpoints, or referenced summaries | Catch-up/runtime p95, retry scans, or audit-window storage exceeds targets |
+| `character_memories` | Qualified memories accumulate per character | Character/subject/relevance cursor index | Preserve active promises/secrets and important history; expiry/purge policy remains explicit | Recall-query p95 or per-character rows exceed measured bounds |
+| `notifications` | Released intents append per source event | Recipient cursor and unread partial indexes | Minimal MVP list may expire/hide; source/history integrity remains | Unread/list query or expired-row cleanup exceeds targets |
+| `ai_generation_requests` | One or more diagnostics rows per wording attempt | Action/input idempotency and terminal-work indexes | Retain sanitized operational metadata only for an approved window | Diagnostic volume, cost, or cleanup backlog exceeds targets |
+
+Partitioning is a later operational decision, not an M01 or default MVP requirement. Any partitioning proposal requires measured evidence, migration/rollback planning, EF Core compatibility review, and preservation of composite world ownership and uniqueness.
+
+## 17. Database consistency checks
 
 Before accepting an implementation or migration, verify:
 

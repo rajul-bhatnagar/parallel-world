@@ -55,7 +55,7 @@ The exact milestone loop is:
 
 1. Update local `main`.
 2. Confirm a clean working tree.
-3. Create the milestone branch.
+3. Create the required milestone branch.
 4. Read `AGENTS.md` and relevant documentation.
 5. Read the milestone checklist.
 6. Read the corresponding implementation prompt.
@@ -71,10 +71,15 @@ The exact milestone loop is:
 16. Re-run verification.
 17. Perform manual acceptance checks.
 18. Commit.
-19. Push.
-20. Merge through pull request or reviewed local merge.
-21. Tag release when appropriate.
-22. Start the next milestone only after the previous one is stable.
+19. Push the feature branch.
+20. Open a pull request into `main`.
+21. Require all applicable CI checks to pass.
+22. Review the pull request, including the required independent Codex diff review.
+23. Merge through the pull request.
+24. Tag release when appropriate.
+25. Start the next milestone only after the previous one is stable.
+
+A local commit or reviewed local merge does not complete a milestone and is not an accepted alternative to the pull-request workflow.
 
 ```mermaid
 flowchart LR
@@ -87,8 +92,13 @@ flowchart LR
     G --> H{"Critical or High findings?"}
     H -->|"Yes"| I["Fix and re-verify"]
     I --> G
-    H -->|"No"| J["Manual acceptance, commit, push, reviewed merge"]
-    J --> K["Tag if appropriate; stabilize before next milestone"]
+    H -->|"No"| J["Manual acceptance and commit"]
+    J --> K["Push feature branch"]
+    K --> L["Open pull request into main"]
+    L --> M["Applicable CI passes"]
+    M --> N["Review pull request"]
+    N --> O["Merge through pull request"]
+    O --> P["Tag if appropriate; stabilize before next milestone"]
 ```
 
 ## 5. Branching and commit workflow
@@ -97,7 +107,7 @@ Do not develop directly on `main` after planning. Keep branches short-lived and 
 
 ### Table 2 - branch names
 
-| Milestone | Suggested branch |
+| Milestone | Required milestone branch |
 |---|---|
 | M01 | `feature/m01-repository-bootstrap` |
 | M02 | `feature/m02-backend-foundation` |
@@ -348,17 +358,17 @@ Every listed schema change includes an EF migration, clean/previous-schema Postg
 - **Backend scope:** Solution plus Api, Application, Domain, Infrastructure, Simulation, AI, UnitTests, IntegrationTests, ArchitectureTests, and narrow TestUtilities projects; references match `ARCHITECTURE.md`.
 - **Database scope:** None; no entities or migration.
 - **Flutter scope:** Application/package shell, lint/format configuration, no feature implementation.
-- **Infrastructure scope:** `.editorconfig`, `.gitignore`, README setup, base CI, Docker directory skeleton only.
+- **Infrastructure scope:** `.editorconfig`, `.gitignore`, README setup, a working initial GitHub Actions workflow containing all applicable M01 checks, and Docker directory skeleton only.
 - **Seed data:** None.
 - **Test scope:** Empty test discovery, build/reference architecture checks, Flutter baseline test.
 - **Documentation updates:** README and setup/verification guidance only.
 - **Explicit exclusions:** Entities, endpoints, auth, characters, feed, simulation, AI integration, production deployment.
-- **Acceptance criteria:** Restore/build/test and Flutter pub/analyze/test succeed; no domain entity or auth code exists.
-- **Required verification:** `dotnet restore/build/test`; `flutter pub get`, format, analyze, test; CI configuration syntax.
+- **Acceptance criteria:** Backend restore/configured format check/build/unit-or-empty tests and Flutter pub get/format/analyze/tests succeed locally and in the working initial GitHub Actions workflow; no domain entity or auth code exists.
+- **Required verification:** `dotnet restore`, configured backend format check, `dotnet build`, `dotnet test`; `flutter pub get`, Dart format check, `flutter analyze`, `flutter test`; workflow configuration syntax. PostgreSQL migrations, PostgreSQL integration tests, and schema verification are **Not applicable — M01 creates no database schema**. Record every result as Passed, Failed, Unavailable, or Not applicable — with reason.
 - **Manual checks:** Clone/setup instructions work on a clean machine or clean workspace.
 - **Review focus:** Project references, dependency footprint, empty feature scope.
-- **Suggested branch/commit:** `feature/m01-repository-bootstrap`; `chore: bootstrap backend and Flutter workspace`.
-- **Exit criteria:** Clean reviewed merge with reproducible commands and no Critical/High finding.
+- **Required milestone branch:** `feature/m01-repository-bootstrap`. Suggested commit: `chore: bootstrap backend and Flutter workspace`.
+- **Exit criteria:** The required branch is used; all applicable M01 verification passes with exact results recorded; the branch is pushed; a pull request into `main` is opened; all applicable CI succeeds; the pull request is reviewed with no unresolved Critical/High finding; and the merge is performed through the pull request. A local commit or reviewed local merge does not complete M01.
 - **Main risks:** Premature abstractions, unnecessary packages, CI complexity.
 - **Rollback:** Revert focused bootstrap commit; no persisted data exists.
 
@@ -390,7 +400,7 @@ Every listed schema change includes an EF migration, clean/previous-schema Postg
 - **User-visible result:** Online guest creates/restores a session, creates one exposed world, and retrieves it.
 - **Dependencies:** M02 and resolved token-format/lifetime decisions required for implementation.
 - **Backend scope:** Guest create/replay, minimal access token, rotating hashed refresh token, logout basics, world create/list/current/get, reusable world ownership policy.
-- **Database scope:** Users, DeviceInstallations, RefreshTokens, GameWorlds, WorldSettings, SimulationStates, player Actor/Profile; composite ownership constraints and migration.
+- **Database scope:** Users, DeviceInstallations, RefreshTokens, GameWorlds, WorldSettings, WorldSimulationState (`world_simulation_states`), player Actor/Profile; composite ownership constraints and migration. No character Actor or Character row is created.
 - **Flutter scope:** None beyond contract fixtures; M04 owns UI/session implementation.
 - **Infrastructure scope:** Local/CI PostgreSQL migration execution; protected signing configuration names.
 - **Seed data:** Idempotent initial player actor/profile/world settings; no characters.
@@ -433,7 +443,7 @@ Every listed schema change includes an EF migration, clean/previous-schema Postg
 - **Goal:** Create and display a deterministic initial cast.
 - **User-visible result:** Approximately 10 distinct same-world characters can be listed and viewed, including cached offline summaries.
 - **Dependencies:** M03 ownership and M04 app shell.
-- **Backend scope:** Actor abstraction if not already present, Characters, traits, interests, opinions, basic moods/schedules/profession, list/detail projections, hidden-field filtering.
+- **Backend scope:** Reuse the Actor abstraction created in M03; add character Actors, Characters, traits, interests, opinions, basic moods/schedules/profession, list/detail projections, hidden-field filtering.
 - **Database scope:** Character/detail tables, bounds, handles, same-world composite FKs/indexes, EF migration.
 - **Flutter scope:** Catalogue/profile, navigation, cache, loading/empty/error/offline states.
 - **Infrastructure scope:** None beyond migration in CI.
@@ -606,20 +616,20 @@ Every listed schema change includes an EF migration, clean/previous-schema Postg
 
 ## 26. M13 Dating and relationship history
 
-- **Goal:** Add approved basic romantic invitation/outcome/history and breakup safety.
-- **User-visible result:** Eligible player can invite a character, see persisted acceptance/rejection, Dating/FormerPartner status, and timeline.
+- **Goal:** Add the PRODUCT.md-approved basic romantic invitation, outcome, Dating state, and necessary history.
+- **User-visible result:** Eligible player can invite a character, see persisted acceptance/rejection, Dating status, and the necessary invitation/outcome timeline.
 - **Dependencies:** M10-M12 and unresolved romance/content policy decisions required before broad release.
-- **Backend scope:** ROM-01/02/03, canonical pair, invitation/cooldown/outcome, shared status/history, breakup/re-entry, rule-created memory/notification intents, wording after outcome.
+- **Backend scope:** ROM-01/02, canonical pair, invitation/cooldown/outcome, shared Dating status and necessary invitation/outcome history, rule-created memories where released, wording after outcome.
 - **Database scope:** RomanticRelationships and RomanticStatusHistory plus invitation fields/records, canonical ordering, composite FKs/uniques/indexes, migration.
 - **Flutter scope:** Invitation action, pending/result, safe eligibility feedback, status/timeline, loading/empty/error/offline states.
 - **Infrastructure scope:** None.
-- **Seed data:** Stable eligible, rejected, breakup, re-entry, invalid-transition scenarios.
-- **Test scope:** Thresholds, compatibility/cooldown, duplicate/concurrent invite, acceptance/rejection, canonical pair, invalid paths, breakup pressure, history/memory/ownership/UI.
+- **Seed data:** Stable eligible, rejected, accepted, and invalid-transition scenarios.
+- **Test scope:** Thresholds, compatibility/cooldown, duplicate/concurrent invite, acceptance/rejection, Dating, canonical pair, required history/memory/ownership/UI, and rejection of deferred transitions.
 - **Documentation updates:** No threshold/state change without `GAME_RULES.md`; content UX decision documented before release.
-- **Explicit exclusions:** Commitment, engagement, marriage, separation, divorce, children, family simulation.
+- **Explicit exclusions:** Breakup lifecycle, FormerPartner re-entry, reconciliation/cooldowns/cycling, commitment beyond Dating, engagement, marriage, separation, divorce, children, and family simulation.
 - **Acceptance criteria:** Server rules decide one outcome and history; AI only phrases it; forbidden paths fail safely.
 - **Required verification:** Rule/scenario/PostgreSQL/API/security/Flutter tests and romance-content review.
-- **Manual checks:** Eligible/ineligible/rejected/accepted path, duplicate retry, breakup history, foreign character.
+- **Manual checks:** Eligible/ineligible/rejected/accepted path, duplicate retry, required romantic history, deferred-transition rejection, foreign character.
 - **Review focus:** Consent/content boundaries, canonical status, client mechanical fields, history consistency.
 - **Suggested branch/commit:** `feature/m13-dating`; `feat(dating): add rule-based invitation and history`.
 - **Exit criteria:** Basic dating vertical slice is auditable, safe, and phase-correct.
@@ -673,16 +683,16 @@ Every listed schema change includes an EF migration, clean/previous-schema Postg
 ## 29. M16 Notifications and realtime
 
 - **Goal:** Complete the MVP in-app notification subset; introduce realtime only after the open architecture/milestone choice is accepted.
-- **User-visible result:** Released reply/message/date/catch-up indicators can be listed/read; missed updates recover through HTTP. If separately approved, foreground realtime reduces delay.
+- **User-visible result:** Released reply, private-message, and catch-up-summary indicators appear through a badge/deep link and bounded minimal list; missed updates recover through HTTP. If separately approved, foreground realtime reduces delay.
 - **Dependencies:** M03, M07, M11, M13, M15.
-- **Backend scope:** Released Notification categories, unread/list/cursor/read-one/read-all/dedupe. SignalR hub/group/events only under an accepted introduction decision.
+- **Backend scope:** Reply, PrivateMessage, and CatchUpSummary Notification categories; unread/bounded-minimal-list/cursor/read-one/read-all/dedupe. SignalR hub/group/events only under an accepted introduction decision.
 - **Database scope:** Notifications with recipient ownership/event provenance/uniques/indexes and migration; realtime remains delivery, not authority.
 - **Flutter scope:** List/badge/deep links/safe previews/offline states. Optional SignalR authenticates, dedupes, reconnects, refetches, and disconnects on logout.
 - **Infrastructure scope:** None for HTTP/polling MVP; websocket hosting/config only if SignalR approved. Push remains deferred.
 - **Seed data:** Released category, duplicate, unread/read, expired, foreign-recipient, reconnect fixtures.
 - **Test scope:** Ownership/dedupe/cursor/read state/safe preview; optional hub auth/wrong-world/duplicate/reconnect/refetch/minimal payload.
 - **Documentation updates:** SignalR decision and contract only if introduced; notification category release labels stay synchronized.
-- **Explicit exclusions:** Push/FCM, rich Version 1 categories/history, SignalR as mandatory MVP authority.
+- **Explicit exclusions:** Follow and DatingInvitation indicators, push/FCM, rich Version 1 categories/filtering/search/history, and SignalR as mandatory MVP authority.
 - **Acceptance criteria:** Basic indicators are persisted/idempotent/private; HTTP recovers state; optional realtime never mutates gameplay.
 - **Required verification:** API/PostgreSQL/security/Flutter tests; websocket tests only when applicable.
 - **Manual checks:** Unread/read/deep link/offline refresh; if applicable reconnect/logout/wrong-world.
@@ -697,17 +707,17 @@ Every listed schema change includes an EF migration, clean/previous-schema Postg
 - **Goal:** Version 1 upgrade of the existing guest user without progress loss.
 - **User-visible result:** Guest registers/logs in/recovers and uses multiple approved devices while retaining the same worlds/history.
 - **Dependencies:** Stable guest MVP and accepted authentication/recovery decisions.
-- **Backend scope:** Approved password/magic-link flow, verification/recovery, same-user transactional upgrade, login/logout-all/session/device management, external linking only if separately approved.
-- **Database scope:** Registered credential/identity state and session evolution; email/provider uniqueness; migration preserving `UserId`.
+- **Backend scope:** The registered-authentication and recovery approach accepted in `DECISIONS.md`, including its required verification/recovery flow; same-user transactional upgrade; login, logout-all, and session/device management; external identity linking only if the accepted approach requires it or it is separately approved.
+- **Database scope:** Registered credential/identity state and session evolution; uniqueness and integrity rules required by the accepted authentication method; migration preserving `UserId`.
 - **Flutter scope:** Register/login/upgrade/recovery/session devices, same-account cache preservation, account-switch clearing.
-- **Infrastructure scope:** Email/provider configuration and protected secrets only for selected method.
+- **Infrastructure scope:** Method-specific provider or recovery configuration and protected secrets only for the selected approach.
 - **Seed data:** Guest with full history, duplicate email, parallel upgrade, recovery, multiple-device fixtures.
 - **Test scope:** Same `UserId`/world/data, atomic rollback, duplicate/parallel request, login/recovery/generic responses, revocation/devices, cache behavior, ownership regression.
 - **Documentation updates:** Resolve/authenticate method, verification, lifetime/session/recovery decisions across security/API/Flutter/ADR before coding.
 - **Explicit exclusions:** MVP requirement, social discovery, account/world merging, real-user interaction, unapproved providers/MFA.
 - **Acceptance criteria:** Upgrade mutates the same user transactionally; failure leaves guest usable; no multiplayer path exists.
 - **Required verification:** Full auth/security/PostgreSQL/API/Flutter regression and log/secret checks.
-- **Manual checks:** Upgrade populated guest, relaunch/login, recovery, second device, duplicate email, account switch.
+- **Manual checks:** Upgrade populated guest, relaunch/login, recovery, second device, duplicate registered identifier, account switch.
 - **Review focus:** Identity proof, session rotation/reuse, enumeration, cache/data preservation.
 - **Suggested branch/commit:** `feature/m17-registration-login`; `feat(auth): upgrade guest accounts without progress loss`.
 - **Exit criteria:** Version 1 auth decisions are accepted and flows pass independent security review.
@@ -769,7 +779,7 @@ The following remain outside current MVP milestones unless separately approved: 
 | Identity/world | Guest, one exposed isolated world | Registration/recovery, multiple visible worlds |
 | Social | Profiles/feed/posts/replies/likes/follows | Reposts/quotes/rich reactions/hashtags/mentions |
 | Simulation/AI | Deterministic mechanics, wording-only AI, fallback | Deeper event/career systems and provider evolution |
-| Relationships | Basic friendship/rivalry/attraction, invitation, Dating/FormerPartner | Commitment/marriage/divorce/families |
+| Relationships | Basic friendship/rivalry/attraction, invitation, Dating, necessary romantic history | Breakup/FormerPartner/reconciliation, commitment/marriage/divorce/families |
 | Messaging/memory | Persistent direct chat, immediate eligibility, structured bounded memory | Initiation/delay, group chat, richer context only after rule change |
 | Events | Seeded MVP topics only | Full events/trends/life-event system |
 | Return/notifications | Bounded catch-up summary and basic in-app indicators | Rich history, SignalR if approved, push |
@@ -803,12 +813,11 @@ Probability and impact are initial qualitative ratings and must be reviewed at t
 
 Do not silently settle these before the affected milestone:
 
-1. Exact .NET/ASP.NET Core and Flutter/Dart versions and minimum mobile OS versions.
-2. Hosting provider, managed PostgreSQL vendor, and production topology details.
+1. Hosting provider, managed PostgreSQL vendor, and production topology details.
 3. Initial AI provider/model, moderation, budget, and provider-selection policy.
 4. Access-token algorithm/lifetime/key rotation and exact refresh/session/device policies.
 5. Registration/recovery method and email verification for Version 1.
-6. CI runners/operating systems and pull-request versus reviewed-local-merge workflow.
+6. Exact CI runner operating systems beyond the accepted GitHub Actions M01 checks.
 7. Release cadence, staging timing, first beta size, and app-store order.
 8. Feed ordering: chronological or deterministic ranking.
 9. SignalR introduction milestone and client package; HTTP polling remains valid.
@@ -816,19 +825,20 @@ Do not silently settle these before the affected milestone:
 11. New offline-write scope/conflict UX and idempotency retention.
 12. Performance targets, load-tooling threshold, and coverage thresholds.
 13. Crash-reporting and analytics providers, disclosure, and retention.
-14. PostgreSQL naming convention, Actor first-schema timing, and container/isolation tooling.
+14. Container/isolation tooling details beyond the accepted PostgreSQL snake_case policy and M03 Actor timing.
 15. Romance/content rating boundaries before broad dating release.
-16. Topic taxonomy and final Version 1 activation of M14.
+16. Topic taxonomy and whether/when to activate the full Version 1 world-events/trends scope in M14.
 17. Retention, field/cache encryption, account deletion, backup purge, and support/admin model.
 18. Release-checklist ownership and authority for accepting known High risk.
+19. Advanced romance scope beyond the MVP Dating state, including breakup/FormerPartner, reconciliation, commitment, engagement, marriage, separation, and divorce.
 
-### Recorded conflicts requiring later correction
+### Resolved planning-review conflicts
 
-1. **Delayed messaging:** `docs/milestones/M11_MESSAGES.md` says the acceptance outcome includes delayed AI replies. `PRODUCT.md` and `GAME_RULES.md` defer simulated delay and character-initiated messaging. This plan preserves immediate MVP reply eligibility/no-response and persisted action fields only. `docs/milestones/M11_MESSAGES.md` requires correction before M11 implementation.
-2. **Full events/trends:** `docs/milestones/M14_EVENTS_TRENDS.md` requires fictional events and “Explore trends,” while `PRODUCT.md`, `GAME_RULES.md`, `API_CONVENTIONS.md`, and `FLUTTER_GUIDELINES.md` place the full system after MVP and leave navigation composition open. M14 is therefore Version 1-gated and not a hard dependency of M15. `docs/milestones/M14_EVENTS_TRENDS.md` requires correction or explicit post-MVP labeling.
-3. **Mandatory realtime:** `docs/milestones/M16_NOTIFICATIONS.md` requires foreground realtime, but `ARCHITECTURE.md`, `API_CONVENTIONS.md`, and `FLUTTER_GUIDELINES.md` leave the first SignalR milestone open and allow HTTP refresh/polling. M16 requires only the MVP notification subset; SignalR is conditional. `docs/milestones/M16_NOTIFICATIONS.md` requires correction.
-4. **Unconditional generic checklist:** every file under `docs/milestones/` says a database migration, unit tests, integration/widget tests, offline states, and a manual happy path must pass “where applicable” only for some items, while migration/test lines are unconditional even for M01 or non-database/UI work. `TEST_STRATEGY.md` requires Passed/Failed/Unavailable/Not applicable honesty. All milestone checklist files require a later applicability/status wording correction; this plan does not rewrite them.
-5. **M15 trend updates in the planning brief:** the attached planning request includes trend updates inside M15, but approved sources defer full trends. M15 uses only released seeded topics unless M14 is separately activated. No source document is changed here.
+1. **Delayed messaging:** M11 now requires immediate deterministic eligibility/no-response only; simulated delay and character initiation remain deferred.
+2. **Full events/trends:** M14 is Version 1-gated, is skipped on the core MVP path, and is not a dependency of M15.
+3. **Mandatory realtime:** M16 requires persisted in-app notifications and HTTP synchronization; SignalR is conditional and push is deferred.
+4. **Checklist applicability:** every milestone now records Passed, Failed, Unavailable, or Not applicable with reason and does not require nonexistent migrations/projects/tools.
+5. **M15 trend updates:** M15 uses only released seeded topics unless M14 is separately activated.
 6. **Offline local queue wording in the planning brief:** the risk mitigation proposes a local queue broadly, while approved Flutter/product/API documents allow drafts and retry of already-submitted indeterminate operations only. This plan preserves the empty allowlist for new offline initiation. `PRODUCT.md`, `ARCHITECTURE.md`, `API_CONVENTIONS.md`, and `FLUTTER_GUIDELINES.md` would require coordinated correction before expansion.
 
 ### Final consistency checklist

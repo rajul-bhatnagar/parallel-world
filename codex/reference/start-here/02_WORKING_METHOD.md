@@ -16,17 +16,19 @@ Before assigning or starting work, inspect `git status`, relevant diffs, and exi
 
 ## One branch per milestone
 
-Recommended branch style:
+Required milestone branch pattern and examples:
 
 ```text
-milestone/01-repository-bootstrap
-milestone/02-backend-foundation
-feature/character-catalogue
-feature/private-messaging
+feature/m01-repository-bootstrap
+feature/m02-backend-foundation
+feature/m05-character-catalogue
+feature/m11-private-messaging
 fix/message-pagination
 ```
 
 Create milestone branches from an up-to-date `main`. Keep one milestone per branch, do not mix unrelated work, and do not force-push, rewrite shared history, or commit directly to `main` unless explicitly authorized.
+
+For M01, the branch is exactly `feature/m01-repository-bootstrap`; it is not optional or merely recommended. After applicable verification and diff review, commit and push the milestone branch, open a pull request into `main`, require successful applicable CI checks, review the pull request, and merge through that pull request. A local commit or reviewed local merge is not an accepted alternative. Codex must not perform push, pull-request, or merge operations unless the user explicitly authorizes them.
 
 ## One vertical slice at a time
 

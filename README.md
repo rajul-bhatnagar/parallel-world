@@ -34,9 +34,12 @@ Application code will be added one milestone at a time after the planning docume
 1. Read `AGENTS.md` and the relevant source-of-truth documents.
 2. Follow `codex/reference/start-here/01_PROMPT_ORDER.md` in sequence.
 3. Review and approve planning outputs before implementation.
-4. Create one branch for the current milestone using the guidance in `codex/reference/start-here/02_WORKING_METHOD.md`.
+4. Start from an updated `main`, confirm a clean working tree, and create the required milestone branch defined by `docs/development/DEVELOPMENT_PLAN.md` and `codex/reference/NAMING_CONVENTIONS.md`.
 5. Implement only the current milestone or explicitly requested task.
-6. Run the relevant checks in `codex/reference/VERIFICATION_COMMANDS.md` and the current milestone checklist.
-7. Review the diff, record unresolved risks, and commit a self-contained change.
+6. Run all applicable checks in `codex/reference/VERIFICATION_COMMANDS.md` and the current milestone checklist.
+7. Inspect the diff, record unresolved risks, and commit a self-contained change.
+8. Push the milestone branch and open a pull request into `main`.
+9. Require all applicable CI checks to succeed and review the pull request, including the required independent Codex diff review.
+10. Merge the reviewed pull request into `main` only after the applicable CI and review gates pass.
 
-Branch and commit naming examples are documented in `codex/reference/NAMING_CONVENTIONS.md`.
+A local commit or reviewed local merge does not complete an implementation milestone. Milestone completion requires the push, pull-request, applicable-CI, review, and merge workflow above. Branch and commit naming rules are documented in `codex/reference/NAMING_CONVENTIONS.md`.

@@ -2,14 +2,16 @@
 
 ## Repository
 
-- Solution/project prefix: `Parallel`
-- C# namespaces: `Parallel.<Project>.<Area>`
-- Flutter package: `parallel_app`
-- PostgreSQL tables: use one consistent EF-generated snake_case or PascalCase policy. Until the policy is accepted in `docs/development/DECISIONS.md`, do not guess or mix conventions; follow the existing schema and mappings.
+- Solution/project prefix: `ParallelWorld`
+- Projects: `ParallelWorld.Api`, `ParallelWorld.Application`, `ParallelWorld.Domain`, `ParallelWorld.Infrastructure`, `ParallelWorld.Simulation`, `ParallelWorld.AI`
+- C# namespaces: `ParallelWorld.<Project>` and `ParallelWorld.<Project>.<Area>`
+- Flutter package: `parallel_world_app`
+- PostgreSQL identifiers: unquoted `snake_case`; C# entities/properties: PascalCase. EF Core conventions or explicit mappings translate between them.
 
 ## Branches
 
-- `milestone/01-repository-bootstrap`
+- Required milestone branch pattern: `feature/mNN-short-description`
+- Required M01 branch: `feature/m01-repository-bootstrap`
 - `feature/private-messaging`
 - `fix/relationship-idempotency`
 - `chore/update-dependencies`
@@ -21,14 +23,14 @@ Use a conventional `<type>(<scope>): <description>` form. Keep commits self-cont
 - `feat(worlds): add guest world creation`
 - `feat(messages): add cursor pagination`
 - `fix(simulation): prevent duplicate interval execution`
-- `test(relationships): cover breakup transitions`
+- `test(relationships): cover dating transitions`
 - `docs(architecture): record actor model decision`
 
 ## API
 
 - Resources are nouns and plural.
 - Commands use subresources/actions only when CRUD semantics are insufficient.
-- Stable machine-readable error codes use uppercase snake case.
+- Stable machine-readable error codes use lowercase `snake_case`, as required by API_CONVENTIONS.md.
 
 ## Tests
 

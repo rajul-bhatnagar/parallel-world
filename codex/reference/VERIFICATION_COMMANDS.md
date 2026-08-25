@@ -1,6 +1,6 @@
 # Verification Commands
 
-Run commands from the repository root and adapt paths only when the project layout requires it. Run every check relevant to the changed area. Record the exact command and whether it passed, failed, or could not run; never treat a skipped check as a pass.
+Run commands from the repository root and adapt paths only when the project layout requires it. Run every check relevant to the changed area. Record each as **Passed**, **Failed**, **Unavailable**, or **Not applicable — with reason**. Do not invent a path or require a tool, project, migration, database, or UI surface that the current milestone has not created.
 
 ## Backend
 
@@ -28,6 +28,8 @@ docker compose up -d postgres
 
 ## Migration sanity
 
+- Applies only after a milestone creates a schema/migration and PostgreSQL-dependent tests.
+- For M01, PostgreSQL migrations, PostgreSQL integration tests, and schema verification are **Not applicable — M01 creates no database schema**.
 - Apply migrations to a clean PostgreSQL database.
 - Start API.
 - Run smoke tests.

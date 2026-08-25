@@ -188,6 +188,8 @@ The MVP is a text-first vertical slice that one developer can build, verify, and
 
 The MVP does not require marriage, divorce, children, families, group chats, voice, video, a detailed economy, multiple cities, hundreds of characters, multiple simultaneously playable worlds, or any real-user interaction.
 
+The initial required launch platform is Android with Android API 24 as the minimum supported level. The accepted implementation baseline is .NET 10 LTS targeting `net10.0`, stable Flutter 3.47 with its bundled Dart 3.13 SDK, and Android-first delivery. iOS support is deferred. M01 must pin the exact stable compatible patch versions within these accepted release lines using repository toolchain and platform configuration files; preview, RC, beta, dev, and nightly toolchains are not permitted.
+
 ## 16. Version 1 after MVP
 
 After the MVP is stable, Version 1 can expand the same private world with:
@@ -253,17 +255,16 @@ The following are explicitly excluded from the MVP: marriage, divorce, children,
 
 The following choices are intentionally unresolved and must be decided before the affected work begins:
 
-1. Initial launch platforms and the minimum supported device/OS versions.
-2. Player age rating, romance boundaries, generated-content policy, and whether any mature themes are allowed.
-3. Guest recovery experience and the point at which account registration is offered or required.
-4. Multiple-world creation limits, world deletion/reset behaviour, and whether worlds can be archived.
-5. Exact MVP character count and how the initial cast is selected or generated around the target of approximately 10.
-6. Simulation time scale, catch-up duration cap, event prioritization, and treatment of very long absences.
-7. The initial feed ordering model: chronological, simple relevance, or a player-selectable option.
-8. The boundary between immediate replies, delayed replies, and character-initiated private messages.
-9. Whether AI-to-AI private conversations are simulated, stored, or visible to the player.
-10. Notification channels, batching, quiet hours, and device-push timing.
-11. Offline write support and synchronization-conflict user experience.
-12. AI failure, moderation, fallback-text, latency, and budget user experience.
-13. The post-MVP order for careers, world events, trends, advanced relationships, engagement, marriage, separation, reconciliation, and divorce.
-14. Monetization, if any, after the core single-player experience is validated.
+1. Player age rating, romance boundaries, generated-content policy, and whether any mature themes are allowed.
+2. Guest recovery experience and the point at which account registration is offered or required.
+3. Multiple-world creation limits, world deletion/reset behaviour, and whether worlds can be archived.
+4. Exact MVP character count and how the initial cast is selected or generated around the target of approximately 10.
+5. Simulation time scale, catch-up duration cap, event prioritization, and treatment of very long absences.
+6. The initial feed ordering model: chronological, simple relevance, or a player-selectable option.
+7. The boundary between immediate replies, delayed replies, and character-initiated private messages.
+8. Whether AI-to-AI private conversations are simulated, stored, or visible to the player.
+9. Notification channels, batching, quiet hours, and device-push timing.
+10. Offline write support and synchronization-conflict user experience.
+11. AI failure, moderation, fallback-text, latency, and budget user experience.
+12. The post-MVP order for careers, world events, trends, advanced relationships, engagement, marriage, separation, reconciliation, and divorce.
+13. Monetization, if any, after the core single-player experience is validated.

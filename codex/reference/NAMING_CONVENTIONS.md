@@ -10,16 +10,17 @@
 
 ## Branches
 
-- Required milestone branch pattern: `feature/mNN-short-description`
-- Required M01 branch: `feature/m01-repository-bootstrap`
-- `feature/private-messaging`
+- `main`: stable/release-ready; promotion from `dev` requires a pull request
+- `dev`: required persistent active development and integration branch for sequential milestones
+- `feature/private-messaging`: optional short-lived branch for isolated or risky work; integrates into `dev`
 - `fix/relationship-idempotency`
 - `chore/update-dependencies`
 
 ## Commits
 
-Use a conventional `<type>(<scope>): <description>` form. Keep commits self-contained and limited to one milestone or task.
+Use a conventional `<type>(<scope>): <description>` form. Keep commits self-contained and limited to one milestone or task. Milestone completion on `dev` requires a milestone-specific commit.
 
+- `feat(m01): bootstrap repository`
 - `feat(worlds): add guest world creation`
 - `feat(messages): add cursor pagination`
 - `fix(simulation): prevent duplicate interval execution`

@@ -24,6 +24,8 @@
 
 ## Risks
 
-## Suggested branch
+## Development branch
+
+`dev` unless an optional short-lived branch is explicitly selected for isolated or risky work; any such branch integrates back into `dev`.
 
 ## Suggested commits

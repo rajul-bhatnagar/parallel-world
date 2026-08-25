@@ -34,12 +34,12 @@ Application code will be added one milestone at a time after the planning docume
 1. Read `AGENTS.md` and the relevant source-of-truth documents.
 2. Follow `codex/reference/start-here/01_PROMPT_ORDER.md` in sequence.
 3. Review and approve planning outputs before implementation.
-4. Start from an updated `main`, confirm a clean working tree, and create the required milestone branch defined by `docs/development/DEVELOPMENT_PLAN.md` and `codex/reference/NAMING_CONVENTIONS.md`.
+4. Update the persistent `dev` branch from the approved repository state, confirm a clean working tree, and perform milestone work on `dev`.
 5. Implement only the current milestone or explicitly requested task.
 6. Run all applicable checks in `codex/reference/VERIFICATION_COMMANDS.md` and the current milestone checklist.
 7. Inspect the diff, record unresolved risks, and commit a self-contained change.
-8. Push the milestone branch and open a pull request into `main`.
-9. Require all applicable CI checks to succeed and review the pull request, including the required independent Codex diff review.
-10. Merge the reviewed pull request into `main` only after the applicable CI and review gates pass.
+8. Push `dev`. A pull request is not required after every milestone.
+9. When `dev` reaches an approved stable checkpoint, open a pull request from `dev` into `main`, require all applicable CI checks to succeed, and review the pull request, including the required independent Codex diff review.
+10. Merge the reviewed `dev`-to-`main` pull request only after the applicable CI and review gates pass.
 
-A local commit or reviewed local merge does not complete an implementation milestone. Milestone completion requires the push, pull-request, applicable-CI, review, and merge workflow above. Branch and commit naming rules are documented in `codex/reference/NAMING_CONVENTIONS.md`.
+A milestone is complete on `dev` when its acceptance criteria and verification pass, its diff is reviewed, and its milestone-specific commit is pushed to `dev`. Promotion to stable/release-ready `main` is a separate checkpoint: it requires a reviewed `dev`-to-`main` pull request with applicable CI. A reviewed local merge is not an accepted substitute for that promotion pull request. Direct feature development on `main` is not allowed. Branch and commit naming rules are documented in `codex/reference/NAMING_CONVENTIONS.md`.

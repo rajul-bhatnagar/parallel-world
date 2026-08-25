@@ -14,21 +14,20 @@ Do not let two agents modify the same contracts, migrations, or shared models at
 
 Before assigning or starting work, inspect `git status`, relevant diffs, and existing code. Preserve unrelated changes and stop if another task is modifying overlapping files or contracts.
 
-## One branch per milestone
+## Persistent dev branch
 
-Required milestone branch pattern and examples:
+Branch roles and optional examples:
 
 ```text
-feature/m01-repository-bootstrap
-feature/m02-backend-foundation
-feature/m05-character-catalogue
-feature/m11-private-messaging
+main
+dev
+feature/private-messaging
 fix/message-pagination
 ```
 
-Create milestone branches from an up-to-date `main`. Keep one milestone per branch, do not mix unrelated work, and do not force-push, rewrite shared history, or commit directly to `main` unless explicitly authorized.
+`main` is stable/release-ready. `dev` is the persistent active development and integration branch, and M01 through later milestones are implemented sequentially on `dev`. Direct feature development on `main` is not allowed. Keep milestone-specific commits self-contained, do not mix unrelated work, and do not force-push or rewrite shared history.
 
-For M01, the branch is exactly `feature/m01-repository-bootstrap`; it is not optional or merely recommended. After applicable verification and diff review, commit and push the milestone branch, open a pull request into `main`, require successful applicable CI checks, review the pull request, and merge through that pull request. A local commit or reviewed local merge is not an accepted alternative. Codex must not perform push, pull-request, or merge operations unless the user explicitly authorizes them.
+After each milestone, run applicable verification, inspect the diff, create a milestone-specific commit, and push `dev`. A pull request is not required after every milestone. When `dev` reaches an approved stable checkpoint, open a pull request from `dev` into `main`, require successful applicable CI checks, review it, and merge through that pull request. A reviewed local merge is not an accepted alternative to stable promotion. Short-lived `feature/...` branches are optional for isolated or risky work and integrate into `dev`; they are not required by the milestone workflow. Codex must not perform push, pull-request, or merge operations unless the user explicitly authorizes them.
 
 ## One vertical slice at a time
 

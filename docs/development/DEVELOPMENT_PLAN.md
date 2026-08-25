@@ -16,7 +16,7 @@ Release labels are **MVP**, **Version 1**, **Future**, and **Development-only**.
 
 ## 2. Scope-control principles
 
-- Execute one milestone at a time on one milestone branch.
+- Execute one milestone at a time on the persistent `dev` development and integration branch.
 - Do not implement later-milestone or deferred features early, including “foundation” that has no current acceptance need.
 - Avoid unrelated refactoring and preserve unrelated user changes.
 - Justify every dependency; do not add a package for convenience alone.
@@ -53,9 +53,9 @@ Release labels are **MVP**, **Version 1**, **Future**, and **Development-only**.
 
 The exact milestone loop is:
 
-1. Update local `main`.
+1. Update local `dev` from the approved repository state.
 2. Confirm a clean working tree.
-3. Create the required milestone branch.
+3. Confirm the active branch is `dev` (or an explicitly chosen optional short-lived branch for isolated or risky work).
 4. Read `AGENTS.md` and relevant documentation.
 5. Read the milestone checklist.
 6. Read the corresponding implementation prompt.
@@ -71,20 +71,19 @@ The exact milestone loop is:
 16. Re-run verification.
 17. Perform manual acceptance checks.
 18. Commit.
-19. Push the feature branch.
-20. Open a pull request into `main`.
-21. Require all applicable CI checks to pass.
-22. Review the pull request, including the required independent Codex diff review.
-23. Merge through the pull request.
-24. Tag release when appropriate.
-25. Start the next milestone only after the previous one is stable.
+19. Push `dev`.
+20. Record the milestone as complete on `dev`; a pull request is not required after every milestone.
+21. Start the next milestone only after the previous milestone is stable on `dev`.
+22. At an approved stable checkpoint, open a pull request from `dev` into `main`.
+23. Require all applicable CI checks to pass.
+24. Review the pull request, including the required independent Codex diff review.
+25. Merge through the pull request and tag a release when appropriate.
 
-A local commit or reviewed local merge does not complete a milestone and is not an accepted alternative to the pull-request workflow.
+A milestone is complete on `dev` after its acceptance criteria and verification pass, its diff is reviewed, and its milestone-specific commit is pushed. Promotion to stable/release-ready `main` is separate and requires the `dev`-to-`main` pull-request workflow. A reviewed local merge is not an accepted alternative to that promotion pull request.
 
 ```mermaid
 flowchart LR
-    A["Update main and verify clean tree"] --> B["Create milestone branch"]
-    B --> C["Read sources, milestone, prompt, code"]
+    A["Update dev and verify clean tree"] --> C["Read sources, milestone, prompt, code"]
     C --> D["Report state and plan"]
     D --> E["Implement milestone plus tests/docs"]
     E --> F["Format, build, analyze, test"]
@@ -93,42 +92,28 @@ flowchart LR
     H -->|"Yes"| I["Fix and re-verify"]
     I --> G
     H -->|"No"| J["Manual acceptance and commit"]
-    J --> K["Push feature branch"]
-    K --> L["Open pull request into main"]
-    L --> M["Applicable CI passes"]
+    J --> K["Push milestone commit to dev"]
+    K --> L{"Approved stable checkpoint?"}
+    L -->|"No"| P["Begin next sequential milestone on dev"]
+    L -->|"Yes"| M["Open dev-to-main pull request; applicable CI passes"]
     M --> N["Review pull request"]
     N --> O["Merge through pull request"]
-    O --> P["Tag if appropriate; stabilize before next milestone"]
+    O --> P["Tag if appropriate; continue on dev"]
 ```
 
 ## 5. Branching and commit workflow
 
-Do not develop directly on `main` after planning. Keep branches short-lived and one milestone wide. Bug-fix branches use `fix/<short-description>` and documentation branches use `docs/<short-description>`.
+`main` is stable/release-ready. `dev` is the persistent active development and integration branch, and milestones are implemented sequentially there. Do not perform feature development directly on `main`. Short-lived branches such as `feature/<short-description>` may be used for isolated or risky work, but are optional and must integrate back into `dev`. Bug-fix branches use `fix/<short-description>` and documentation branches use `docs/<short-description>` when a separate branch is useful.
 
-### Table 2 - branch names
+### Table 2 - branch roles
 
-| Milestone | Required milestone branch |
+| Branch | Role |
 |---|---|
-| M01 | `feature/m01-repository-bootstrap` |
-| M02 | `feature/m02-backend-foundation` |
-| M03 | `feature/m03-guest-session-world` |
-| M04 | `feature/m04-flutter-foundation` |
-| M05 | `feature/m05-character-catalogue` |
-| M06 | `feature/m06-social-feed` |
-| M07 | `feature/m07-social-actions` |
-| M08 | `feature/m08-rule-simulation` |
-| M09 | `feature/m09-ai-generation` |
-| M10 | `feature/m10-relationships` |
-| M11 | `feature/m11-private-messaging` |
-| M12 | `feature/m12-memory` |
-| M13 | `feature/m13-dating` |
-| M14 | `feature/m14-world-events-trends` |
-| M15 | `feature/m15-catch-up` |
-| M16 | `feature/m16-notifications-realtime` |
-| M17 | `feature/m17-registration-login` |
-| M18 | `feature/m18-production-hardening` |
+| `main` | Stable/release-ready; accepts approved promotion from `dev` through pull request |
+| `dev` | Required persistent branch for sequential milestone development and integration |
+| `feature/<short-description>` | Optional short-lived branch for isolated or risky work; integrates into `dev` |
 
-Use focused conventional commits, for example `chore: bootstrap backend and Flutter workspace`, `feat(auth): add guest session flow`, `feat(worlds): create private world`, `feat(feed): add cursor-paginated feed`, `feat(simulation): add deterministic action engine`, `feat(messaging): add private character conversations`, `test(security): cover cross-world access`, `fix(memory): prevent duplicate memory creation`, and `docs: update relationship rules`. Each commit should build where practical; do not mix unrelated formatting or future work.
+Use focused milestone-specific conventional commits, for example `feat(m01): bootstrap repository`, `feat(m03): add guest session flow`, `feat(m06): add cursor-paginated feed`, `feat(m08): add deterministic action engine`, `feat(m11): add private character conversations`, `test(security): cover cross-world access`, `fix(memory): prevent duplicate memory creation`, and `docs(workflow): adopt dev-main promotion`. Each commit should build where practical; do not mix unrelated formatting or future work.
 
 ## 6. Milestone execution process
 
@@ -139,18 +124,18 @@ flowchart TD
     P["Approved planning sources"] --> M["Select one released milestone"]
     M --> G["Gap audit against existing implementation"]
     G --> S["Bounded scope and acceptance plan"]
-    S --> I["Implementation branch"]
+    S --> I["Implement sequentially on dev"]
     I --> V["Automated and manual verification"]
     V --> R["Independent review"]
     R --> D{"Exit criteria met?"}
     D -->|"No"| I
-    D -->|"Yes"| MERGE["Reviewed merge and stable main"]
-    MERGE --> NEXT["Next approved milestone"]
+    D -->|"Yes"| DONE["Milestone commit pushed to dev"]
+    DONE --> NEXT["Next approved milestone or stable promotion checkpoint"]
 ```
 
 ## 7. Review process
 
-After each implementation prompt: verify acceptance criteria; run milestone tests; perform general diff review; run database, security, simulation, Flutter, or release review when relevant; fix all Critical/High findings; record deferred Medium/Low findings; re-run verification; and merge only when exit criteria pass. Use a fresh Codex session for independent review where practical.
+After each implementation prompt: verify acceptance criteria; run milestone tests; perform general diff review; run database, security, simulation, Flutter, or release review when relevant; fix all Critical/High findings; record deferred Medium/Low findings; re-run verification; create the milestone-specific commit, and push `dev` only when exit criteria pass. At an approved stable checkpoint, promote `dev` to `main` only through the required pull request. Use a fresh Codex session for independent review where practical.
 
 ### Table 3 - required reviews
 
@@ -367,8 +352,8 @@ Every listed schema change includes an EF migration, clean/previous-schema Postg
 - **Required verification:** `dotnet restore`, configured backend format check, `dotnet build`, `dotnet test`; `flutter pub get`, Dart format check, `flutter analyze`, `flutter test`; workflow configuration syntax. PostgreSQL migrations, PostgreSQL integration tests, and schema verification are **Not applicable — M01 creates no database schema**. Record every result as Passed, Failed, Unavailable, or Not applicable — with reason.
 - **Manual checks:** Clone/setup instructions work on a clean machine or clean workspace.
 - **Review focus:** Project references, dependency footprint, empty feature scope.
-- **Required milestone branch:** `feature/m01-repository-bootstrap`. Suggested commit: `chore: bootstrap backend and Flutter workspace`.
-- **Exit criteria:** The required branch is used; all applicable M01 verification passes with exact results recorded; the branch is pushed; a pull request into `main` is opened; all applicable CI succeeds; the pull request is reviewed with no unresolved Critical/High finding; and the merge is performed through the pull request. A local commit or reviewed local merge does not complete M01.
+- **Required development branch:** `dev`. Suggested milestone commit: `feat(m01): bootstrap repository`.
+- **Exit criteria:** M01 is complete on `dev` when all applicable verification passes with exact results recorded, the diff has no unresolved Critical/High finding, and the milestone-specific commit is pushed to `dev`. A pull request is not required solely to complete M01 on `dev`. Promotion to stable/release-ready `main` occurs only at an approved checkpoint through a reviewed `dev`-to-`main` pull request with applicable CI; a reviewed local merge is not an accepted substitute.
 - **Main risks:** Premature abstractions, unnecessary packages, CI complexity.
 - **Rollback:** Revert focused bootstrap commit; no persisted data exists.
 
@@ -389,7 +374,7 @@ Every listed schema change includes an EF migration, clean/previous-schema Postg
 - **Required verification:** Backend restore/format/build/test, Compose config, local health and configuration-failure checks.
 - **Manual checks:** Start/stop API/PostgreSQL; inspect health, correlation ID, and redacted failure.
 - **Review focus:** Security defaults, exception boundary, dependency direction, no game entities.
-- **Suggested branch/commit:** `feature/m02-backend-foundation`; `feat(api): add production-shaped backend foundation`.
+- **Suggested milestone commit:** `feat(api): add production-shaped backend foundation`.
 - **Exit criteria:** Production-shaped host verified with no feature scope.
 - **Main risks:** Secret logging, over-general transaction layer, health leaking configuration.
 - **Rollback:** Revert host/config changes; no gameplay migration/data.
@@ -411,7 +396,7 @@ Every listed schema change includes an EF migration, clean/previous-schema Postg
 - **Required verification:** Backend unit/API/PostgreSQL/migration/security tests and log-redaction check.
 - **Manual checks:** First guest, repeat launch token refresh, world create/current, foreign-ID attempt, logout.
 - **Review focus:** Token storage/rotation, `WorldId`, owner queries, same-world FKs, idempotency.
-- **Suggested branch/commit:** `feature/m03-guest-session-world`; `feat(auth): add guest session and private world ownership`.
+- **Suggested milestone commit:** `feat(auth): add guest session and private world ownership`.
 - **Exit criteria:** Isolated guest world demonstrated and M03 tests pass.
 - **Main risks:** Installation ID treated as credential, cross-world leakage, token replay, duplicate world.
 - **Rollback:** Roll back application artifact; use a reviewed compensating/backup strategy for the migration, never ad-hoc destructive SQL.
@@ -433,7 +418,7 @@ Every listed schema change includes an EF migration, clean/previous-schema Postg
 - **Required verification:** Flutter pub/format/analyze/unit/provider/widget tests and backend contract regression.
 - **Manual checks:** First/returning/offline/expired-session/missing-world/logout flows.
 - **Review focus:** Secure storage, interceptor loops, cache authority, navigation races, privacy.
-- **Suggested branch/commit:** `feature/m04-flutter-foundation`; `feat(mobile): add secure guest bootstrap and routing`.
+- **Suggested milestone commit:** `feat(mobile): add secure guest bootstrap and routing`.
 - **Exit criteria:** Reliable shell against M03 API with explicit loading/error/offline states.
 - **Main risks:** Refresh loops, token leakage, cache surviving account switch, router races.
 - **Rollback:** Revert mobile release/build; backend M03 remains independently usable.
@@ -455,7 +440,7 @@ Every listed schema change includes an EF migration, clean/previous-schema Postg
 - **Required verification:** Unit, PostgreSQL/migration, API ownership/contract, Flutter mapping/provider/widget tests.
 - **Manual checks:** Create world, inspect about 10 profiles, offline revisit, foreign character link.
 - **Review focus:** Hidden state disclosure, deterministic seed, Actor/detail integrity, cache scope.
-- **Suggested branch/commit:** `feature/m05-character-catalogue`; `feat(characters): add deterministic private-world catalogue`.
+- **Suggested milestone commit:** `feat(characters): add deterministic private-world catalogue`.
 - **Exit criteria:** Character vertical slice passes automated/manual acceptance.
 - **Main risks:** Non-deterministic seeding, sensitive goal/opinion leakage, inconsistent actor identity.
 - **Rollback:** Revert artifact; migration rollback through approved compensating/restore path while preserving owned world data.
@@ -477,7 +462,7 @@ Every listed schema change includes an EF migration, clean/previous-schema Postg
 - **Required verification:** API/PostgreSQL/cursor/idempotency tests plus Flutter repository/provider/widget tests.
 - **Manual checks:** Empty and seeded feed, paging, offline cache, post timeout/retry, foreign post ID.
 - **Review focus:** Cursor stability, author derivation, world isolation, pending reconciliation.
-- **Suggested branch/commit:** `feature/m06-social-feed`; `feat(feed): add private cursor-paginated feed`.
+- **Suggested milestone commit:** `feat(feed): add private cursor-paginated feed`.
 - **Exit criteria:** Feed vertical slice stable with no deferred social features.
 - **Main risks:** Open ordering choice, duplicate optimistic rows, cache mistaken for truth.
 - **Rollback:** Revert app/API; preserve post rows or use explicit migration recovery—never drop user posts casually.
@@ -499,7 +484,7 @@ Every listed schema change includes an EF migration, clean/previous-schema Postg
 - **Required verification:** Rule/unit, API/PostgreSQL ownership/constraint, Flutter provider/widget tests.
 - **Manual checks:** Like/unlike, reply, follow/unfollow, retry, foreign actor/post.
 - **Review focus:** Server-derived actor, uniqueness, cached counts, optimistic rollback.
-- **Suggested branch/commit:** `feature/m07-social-actions`; `feat(social): add replies likes and follows`.
+- **Suggested milestone commit:** `feat(social): add replies likes and follows`.
 - **Exit criteria:** Released social actions stable and idempotent.
 - **Main risks:** Count drift, duplicate edges, client AI impersonation.
 - **Rollback:** Revert clients/API; preserve history and rebuild cached counts from source rows.
@@ -521,7 +506,7 @@ Every listed schema change includes an EF migration, clean/previous-schema Postg
 - **Required verification:** Unit/scenario/PostgreSQL/concurrency/architecture/security tests and deterministic snapshot comparison.
 - **Manual checks:** Run fixed seed twice from restored fixture; inspect reasons/template posts; retry interval.
 - **Review focus:** Uncontrolled time/randomness, ordering, idempotency, AI absence, `WorldId`.
-- **Suggested branch/commit:** `feature/m08-rule-simulation`; `feat(simulation): add deterministic action engine`.
+- **Suggested milestone commit:** `feat(simulation): add deterministic action engine`.
 - **Exit criteria:** Reproducible auditable rules pass independent simulation review.
 - **Main risks:** Hidden nondeterminism, interval overlap, overlarge transactions, premature rule families.
 - **Rollback:** Disable scheduling, deploy prior compatible artifact, preserve run/action audit rows and cursors.
@@ -543,7 +528,7 @@ Every listed schema change includes an EF migration, clean/previous-schema Postg
 - **Required verification:** Unit/stub integration/security/architecture tests and budget/fallback manual check.
 - **Manual checks:** Staging wording under strict budget, forced timeout/invalid output, inspect logs/context metadata.
 - **Review focus:** Mechanical capability boundary, privacy, provider secrets, retries/cost.
-- **Suggested branch/commit:** `feature/m09-ai-generation`; `feat(ai): generate validated wording for decided actions`.
+- **Suggested milestone commit:** `feat(ai): generate validated wording for decided actions`.
 - **Exit criteria:** AI affects wording only and provider failure cannot break mechanics.
 - **Main risks:** Cost growth, prompt injection, secret leakage, repetitive text.
 - **Rollback:** Disable provider/use fallback; retain committed mechanics and safe diagnostics.
@@ -565,7 +550,7 @@ Every listed schema change includes an EF migration, clean/previous-schema Postg
 - **Required verification:** Rule/scenario/PostgreSQL/ownership/API/Flutter tests and architecture review.
 - **Manual checks:** Positive/negative interaction, asymmetric projection, cap boundary, foreign actor.
 - **Review focus:** Formula fidelity, transaction/idempotency, hidden-score privacy, separation of romance.
-- **Suggested branch/commit:** `feature/m10-relationships`; `feat(relationships): add deterministic directional relationship engine`.
+- **Suggested milestone commit:** `feat(relationships): add deterministic directional relationship engine`.
 - **Exit criteria:** Relationship slice passes game-rule/database/Flutter review.
 - **Main risks:** Pacing imbalance, duplicate deltas, wrong direction, exposing hidden values.
 - **Rollback:** Disable new event production if needed; preserve immutable history and use compensating events/migration, not row rewriting.
@@ -587,7 +572,7 @@ Every listed schema change includes an EF migration, clean/previous-schema Postg
 - **Required verification:** Rule/API/PostgreSQL/privacy/Flutter repository-provider-widget tests.
 - **Manual checks:** New/existing conversation, send timeout/retry, fallback/no-response, offline history, foreign conversation.
 - **Review focus:** Private-body logging, participant/world checks, idempotency, full-history exclusion.
-- **Suggested branch/commit:** `feature/m11-private-messaging`; `feat(messaging): add private character conversations`.
+- **Suggested milestone commit:** `feat(messaging): add private character conversations`.
 - **Exit criteria:** Persistent private messaging works without unreleased timing behavior.
 - **Main risks:** Privacy leakage, duplicate sends, cursor errors, accidental delayed-feature scope.
 - **Rollback:** Disable reply worker while retaining player messages; revert compatible clients/API without deleting conversation history.
@@ -609,7 +594,7 @@ Every listed schema change includes an EF migration, clean/previous-schema Postg
 - **Required verification:** Rule/scenario/PostgreSQL/security/AI-context tests and safe projection checks.
 - **Manual checks:** Create meaningful/trivial interaction; inspect relevant recall and secret exclusion; force fallback.
 - **Review focus:** Knowledge provenance, secret privacy, bounded context, duplicate/reinforcement semantics.
-- **Suggested branch/commit:** `feature/m12-memory`; `feat(memory): add structured bounded character memory`.
+- **Suggested milestone commit:** `feat(memory): add structured bounded character memory`.
 - **Exit criteria:** Memory continuity works with no unauthorized context.
 - **Main risks:** Secret leakage, context cost, duplicate memories, confusing contradictions.
 - **Rollback:** Disable recall/context use while retaining structured records; use reviewed data migration for schema rollback.
@@ -631,7 +616,7 @@ Every listed schema change includes an EF migration, clean/previous-schema Postg
 - **Required verification:** Rule/scenario/PostgreSQL/API/security/Flutter tests and romance-content review.
 - **Manual checks:** Eligible/ineligible/rejected/accepted path, duplicate retry, required romantic history, deferred-transition rejection, foreign character.
 - **Review focus:** Consent/content boundaries, canonical status, client mechanical fields, history consistency.
-- **Suggested branch/commit:** `feature/m13-dating`; `feat(dating): add rule-based invitation and history`.
+- **Suggested milestone commit:** `feat(dating): add rule-based invitation and history`.
 - **Exit criteria:** Basic dating vertical slice is auditable, safe, and phase-correct.
 - **Main risks:** Pacing/content safety, status duplication, AI contradicting outcome.
 - **Rollback:** Feature-gate invitations; preserve immutable history and current compatible status.
@@ -653,7 +638,7 @@ Every listed schema change includes an EF migration, clean/previous-schema Postg
 - **Required verification:** Pre-activation source-decision audit; after activation full rule/PostgreSQL/API/Flutter suites.
 - **Manual checks:** After activation only: event start/end, actor reaction, trend start/end, foreign world.
 - **Review focus:** Release authorization, deterministic mechanics, event frequency, deferred-feature leakage.
-- **Suggested branch/commit:** `feature/m14-world-events-trends`; `feat(events): add fictional world events and trends` only after approval.
+- **Suggested milestone commit:** `feat(events): add fictional world events and trends` only after approval.
 - **Exit criteria:** Either documented intentional deferral, or approved Version 1 slice passes all gates.
 - **Main risks:** Violating MVP scope, simulation noise, database growth, premature Explore UI.
 - **Rollback:** Disable new event evaluation and retain history; migrate only through approved path.
@@ -675,7 +660,7 @@ Every listed schema change includes an EF migration, clean/previous-schema Postg
 - **Required verification:** Fixed-seed scenario, PostgreSQL concurrency/recovery, API idempotency, Flutter provider/widget/integration tests.
 - **Manual checks:** No/short/long absence, forced partial failure/retry, concurrent resume, fallback summary.
 - **Review focus:** Cursor correctness, bounded work, transaction checkpoints, priority, AI independence.
-- **Suggested branch/commit:** `feature/m15-catch-up`; `feat(simulation): add bounded catch-up and return summary`.
+- **Suggested milestone commit:** `feat(simulation): add bounded catch-up and return summary`.
 - **Exit criteria:** The core MVP gameplay loop is demonstrable and stable; release gates remain.
 - **Main risks:** Long-running work, duplicate mechanics, noisy summary, cost.
 - **Rollback:** Pause catch-up scheduling, preserve last committed cursor, deploy prior compatible processor.
@@ -697,7 +682,7 @@ Every listed schema change includes an EF migration, clean/previous-schema Postg
 - **Required verification:** API/PostgreSQL/security/Flutter tests; websocket tests only when applicable.
 - **Manual checks:** Unread/read/deep link/offline refresh; if applicable reconnect/logout/wrong-world.
 - **Review focus:** Recipient ownership, sensitive preview, duplicate delivery, release gating.
-- **Suggested branch/commit:** `feature/m16-notifications-realtime`; `feat(notifications): add private in-app activity indicators`.
+- **Suggested milestone commit:** `feat(notifications): add private in-app activity indicators`.
 - **Exit criteria:** MVP notification subset passes; realtime status is explicitly Implemented or Deferred.
 - **Main risks:** Sensitive previews, missed/duplicate events, mandatory realtime scope creep.
 - **Rollback:** Disable realtime and retain HTTP/persisted notifications; never roll back source gameplay transaction.
@@ -719,7 +704,7 @@ Every listed schema change includes an EF migration, clean/previous-schema Postg
 - **Required verification:** Full auth/security/PostgreSQL/API/Flutter regression and log/secret checks.
 - **Manual checks:** Upgrade populated guest, relaunch/login, recovery, second device, duplicate registered identifier, account switch.
 - **Review focus:** Identity proof, session rotation/reuse, enumeration, cache/data preservation.
-- **Suggested branch/commit:** `feature/m17-registration-login`; `feat(auth): upgrade guest accounts without progress loss`.
+- **Suggested milestone commit:** `feat(auth): upgrade guest accounts without progress loss`.
 - **Exit criteria:** Version 1 auth decisions are accepted and flows pass independent security review.
 - **Main risks:** Account takeover, data reassignment, email enumeration, recovery complexity.
 - **Rollback:** Roll back application while retaining compatible guest identity; never copy worlds to a replacement user.
@@ -741,7 +726,7 @@ Every listed schema change includes an EF migration, clean/previous-schema Postg
 - **Required verification:** Exact CI/release commands, security/dependency/secret scans, migration/restore, staging smoke, release build, safe post-deploy checks.
 - **Manual checks:** Full player journey, offline/recovery, ownership negative, log redaction, provider outage, rollback rehearsal.
 - **Review focus:** Release readiness, operations/security, data loss, cost/performance, honest evidence.
-- **Suggested branch/commit:** `feature/m18-production-hardening`; `chore(release): harden staging and production readiness`.
+- **Suggested milestone commit:** `chore(release): harden staging and production readiness`.
 - **Exit criteria:** Signed release checklist and approved versioned artifact; no future work hidden in hardening.
 - **Main risks:** Late operational gaps, migration failure, sensitive logs, runaway AI cost, one-developer overload.
 - **Rollback:** Versioned prior artifact, compatible schema strategy, verified backup/restore, feature/provider kill switches.

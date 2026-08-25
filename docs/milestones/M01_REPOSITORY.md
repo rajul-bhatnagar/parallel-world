@@ -10,11 +10,11 @@ None beyond a launchable empty shell.
 Approved planning documents; no implementation milestone.
 
 ## Required branch and workflow
-- Start from an updated `main` and confirm a clean working tree.
-- Create and work only on `feature/m01-repository-bootstrap`; this branch name is required.
-- After implementation and all applicable M01 verification, inspect the diff, commit, push the branch, and open a pull request into `main`.
-- Require successful applicable CI checks and review the pull request before merging into `main`.
-- A reviewed local merge is not an accepted alternative, and a local commit alone does not complete M01.
+- Update `dev` from the approved repository state and confirm a clean working tree.
+- Implement M01 on the persistent `dev` development and integration branch.
+- After implementation and all applicable M01 verification, inspect the diff, create the milestone-specific commit `feat(m01): bootstrap repository`, and push `dev`.
+- A pull request is not required solely to complete M01 on `dev`.
+- When `dev` reaches an approved stable checkpoint, promote it to `main` only through a reviewed `dev`-to-`main` pull request with applicable CI. A reviewed local merge is not an accepted substitute.
 
 ## Scope
 - **Toolchain/platform:** .NET 10 LTS targeting `net10.0`; stable Flutter 3.47 with its bundled Dart 3.13 line; Android-first with Android API 24 minimum; iOS deferred. Select and pin exact stable compatible patch versions within these accepted lines during M01. Preview, beta, RC, dev, master, and nightly toolchains are prohibited.
@@ -42,4 +42,4 @@ The exact stable compatible patches are pinned within the accepted .NET 10/`net1
 Clone/setup instructions work on a clean machine or clean workspace.
 
 ## Exit criteria
-All acceptance criteria and applicable local/CI checks pass; the diff has no unresolved Critical/High finding; `feature/m01-repository-bootstrap` is pushed, reviewed through a pull request into `main`, and merged only after successful applicable CI. A local commit or reviewed local merge is insufficient.
+All acceptance criteria and applicable local/CI checks pass; the diff has no unresolved Critical/High finding; and the milestone-specific commit is pushed to `dev`. That completes M01 on `dev`. Stable/release-ready promotion to `main` is separate and occurs only at an approved checkpoint through a reviewed `dev`-to-`main` pull request with applicable CI; a reviewed local merge is insufficient.

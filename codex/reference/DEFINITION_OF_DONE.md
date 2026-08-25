@@ -17,4 +17,5 @@ A task is done only when:
 - Remaining risks are recorded.
 - A commit can stand independently without hidden future work.
 - No future-milestone or unrelated work is included.
-- An implementation milestone is not merged or complete merely because a local commit or reviewed local merge exists. Its required branch must be pushed, opened as a pull request into `main`, pass all applicable CI, receive the required review, and be merged through that pull request.
+- An implementation milestone is complete on `dev` when its acceptance criteria and applicable verification pass, its diff is reviewed, and its milestone-specific commit is pushed to `dev`. This does not make it stable/release-ready on `main`.
+- Promotion from `dev` to stable/release-ready `main` occurs only at an approved checkpoint through a pull request with applicable CI and review. A reviewed local merge is not an accepted substitute.

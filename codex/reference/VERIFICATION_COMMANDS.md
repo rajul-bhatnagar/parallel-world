@@ -2,6 +2,8 @@
 
 Run commands from the repository root and adapt paths only when the project layout requires it. Run every check relevant to the changed area. Record each as **Passed**, **Failed**, **Unavailable**, or **Not applicable — with reason**. Do not invent a path or require a tool, project, migration, database, or UI surface that the current milestone has not created.
 
+Run milestone verification before creating the milestone-specific commit and pushing `dev`. At an approved stable checkpoint, applicable CI must pass on the `dev`-to-`main` pull request before promotion; a pull request is not required after every milestone.
+
 ## Backend
 
 ```bash

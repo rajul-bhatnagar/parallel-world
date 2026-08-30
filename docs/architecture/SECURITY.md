@@ -90,7 +90,7 @@ No control assumes UUID secrecy, app obfuscation, CORS, root detection, or IP ad
 
 ## 5. Authentication phases
 
-- **MVP:** random installation identity, guest `User`, one exposed owned world, short-lived access token, rotating refresh token, current-device logout. Authentication exists for ownership/cloud persistence, not multiplayer.
+- **MVP:** random installation identity, guest `User`, one exposed owned world, 15-minute RS256 JWT access tokens, rotating 30-day opaque refresh tokens, current-device logout, and server-side current/all-family revocation policy. Authentication exists for ownership/cloud persistence, not multiplayer.
 - **Version 1:** email registration/login, same-user guest upgrade, verification/recovery method, multiple devices, richer session revocation.
 - **Later:** verified Google/Apple providers, explicit account linking, stronger device management, optional MFA if risk justifies it.
 
@@ -100,7 +100,7 @@ The database may support multiple owned worlds, but PRODUCT.md/API_CONVENTIONS.m
 
 1. Flutter securely loads or creates a cryptographically random installation public ID.
 2. It calls `POST /api/v1/auth/guest` with platform/app version and stable idempotency key.
-3. API applies payload validation and per-installation/IP guest-creation limits.
+3. API applies payload validation and the M03 guest-creation limit of 10 attempts per IP per 10 minutes.
 4. In one idempotent use case, Accounts resolves/creates the installation and guest user, then persists the user-scoped idempotency result.
 5. API issues access and refresh tokens and returns the current world summary when present.
 6. Flutter stores tokens/installation identity securely; installation identity alone never authenticates later requests.
@@ -161,30 +161,33 @@ flowchart TD
 
 ## 9. Access tokens
 
-Use a signed JWT or later accepted equivalent. Exact algorithm, key storage, and lifetime remain open, but implementation must:
+M03 uses JWT bearer access tokens signed with RS256. The server allowlists RS256 and its configured keys; it never trusts a token-declared algorithm alone. Every token has a 15-minute lifetime and a `kid` header. Validation requires:
 
-- Use an explicit server allowlist for algorithm/key; never trust token-declared algorithm alone.
-- Validate signature, issuer, audience, expiry/not-before, key identifier, and small configured clock skew.
-- Keep lifetime short; embed only stable user subject, session/token version identifier when useful, and minimal account-state claim when required.
-- Never embed refresh token, email/private profile, owned WorldIds, roles that replace current authorization, or game state.
-- Rotate signing keys with overlap for currently valid tokens and emergency revocation procedure.
+- A valid RS256 signature from the configured current or previous still-valid verification key.
+- Exact issuer `parallel-world-api` and audience `parallel-world-mobile`.
+- Valid `exp` and `nbf` when present, with the configured allowed clock skew set to exactly 30 seconds.
+- A stable user identifier in `sub` and a unique token identifier in `jti`.
 
-World ownership is loaded from current server data. Ordinary logout revokes refresh/session state; a previously issued access token may remain valid until short expiry unless a high-risk use case also checks server session version. This limitation must be tested/documented.
+Claims are minimal. They never contain refresh tokens, signing material, private messages, memories, email/private profile data, owned WorldIds, roles that replace current authorization, or game state.
+
+The private signing key is never committed. Development uses a local key outside the repository. Production obtains private key material from environment or secret-management infrastructure; the exact provider is an M18 deployment decision. Controlled rotation publishes the current `kid` while verification accepts the current key and the previous verification key only while tokens signed by that previous key can still be valid.
+
+World ownership is loaded from current server data. Ordinary logout or family revocation does not require a distributed access-token denylist: a previously issued token may remain usable until its 15-minute expiry unless a higher-priority security rule requires an immediate server-side check. Any future immediate-revocation or sender-constrained-token mechanism requires a new decision.
 
 ## 10. Refresh tokens
 
-Refresh tokens are high-entropy random bearer values. Only a one-way hash is stored; plaintext is returned once through TLS and kept in Flutter Secure Storage. Each record is associated with user, device installation, rotation family, expiry, revocation/replacement state, and timestamps.
+Refresh tokens are opaque cryptographically random bearer values, not JWTs, with at least 256 bits of entropy and a 30-day lifetime from issuance. Only a secure cryptographic hash is stored in PostgreSQL; plaintext is returned once through TLS and kept in Flutter Secure Storage. Each record is associated with user, device installation, device/session rotation family, expiry, consumption, revocation/replacement state, and safe audit timestamps.
 
 Rotation is atomic:
 
 1. Receive token in body—not URL—and never log it.
 2. Hash/look up and lock the record.
 3. Verify token, user/session, device, expiry, revocation, and replacement state.
-4. Mark old token rotated/replaced and insert a new hashed token.
+4. Mark the old token consumed/rotated/replaced and insert a new hashed token in the same family.
 5. Commit, then return new access/refresh tokens.
-6. Reuse of a rotated token is a security event: revoke the active family/descendants and require session recovery.
+6. Reuse of a consumed or replaced token is a security event: transactionally revoke that entire family and require creation/restoration of a valid session. Unrelated device/session families remain valid.
 
-Flutter single-flight refresh reduces legitimate concurrent reuse. Strict replay containment is the safe baseline; any bounded retry-grace design requires a reviewed decision and must not allow an attacker to reuse a token.
+The same refresh token cannot successfully rotate twice, including under concurrent requests. Flutter single-flight refresh reduces legitimate concurrent reuse, while the server remains authoritative. Strict replay containment at the device/session-family level is the accepted baseline; there is no retry grace.
 
 ### Diagram 4 — token lifecycle
 
@@ -216,7 +219,7 @@ sequenceDiagram
     A->>P: Transaction: revoke old + insert new hash
     A-->>F: New access + refresh token
     F->>A: Old token replayed
-    A->>P: Detect replaced token; revoke family descendants
+    A->>P: Detect replaced token; revoke entire family
     A-->>F: 401 refresh_token_reused
 ```
 
@@ -225,8 +228,10 @@ sequenceDiagram
 One installation record represents one app installation and records user association, installation public ID, platform, app version, last seen, created/revoked state, and later push token. Installation ID and push token are locators, not credentials.
 
 - Device revocation blocks future refresh and later push delivery.
+- Each active device/session has its own refresh-token family. A user has at most five active families; creating a sixth transactionally revokes the oldest active family before the new family becomes active.
 - Account switch/log out clears or separates local tokens, private cache, queues, and realtime subscriptions.
 - A device has one active account association unless a future multi-account design explicitly changes it.
+- Guest and registered users use the same family model. A later same-user upgrade preserves the existing `UserId` and worlds.
 - Push tokens rotate/update independently and never establish identity.
 - Lost-device remote management is Version 1; an unregistered guest who loses all credentials may be unrecoverable.
 
@@ -244,7 +249,7 @@ One installation record represents one app installation and records user associa
 | Device revoked | Device/session action | No refresh/push | Reauthentication/re-registration if permitted |
 | Upgrade-pending | Credential verification incomplete | Guest-safe behavior per approved policy | Registered or rollback/expiry |
 
-Password change, compromise, guest upgrade, account deletion, and logout-all revoke the configured session scope. Exact device/session limits and user-facing management are open.
+Current-device logout revokes the current refresh family. All-device logout revokes every active family for the user. Revoked or expired families cannot mint access tokens. The all-family revocation behavior and five-family cap are M03 backend invariants; M17 still owns registered authentication and public user-facing device/session management.
 
 ## 13. Authorization
 
@@ -339,9 +344,9 @@ Recovery must not reveal account existence or transfer worlds to a new `UserId`.
 
 ## 20. Logout and revocation
 
-Current-device logout authenticates the caller, atomically revokes the presented refresh session/family as designed, unregisters/marks device delivery state as needed, and returns idempotent success. Flutter then clears secure tokens, private cache, pending operations, and realtime state. An access token may remain cryptographically valid until short expiry unless the endpoint/use case performs server session-version checks.
+Current-device logout authenticates the caller, atomically revokes the presented refresh family, unregisters/marks device delivery state as needed, and returns idempotent success. Flutter then clears secure tokens, private cache, pending operations, and realtime state. An access token may remain cryptographically valid until its 15-minute expiry unless a higher-priority rule requires an immediate server-side check.
 
-Logout-all/session management is Version 1. Lost/compromised device response revokes the device and all associated refresh descendants. Password/recovery/upgrade/account deletion rotate or revoke sessions per policy.
+The backend session policy also supports revoking every active family for the user. M03 verifies this all-family operation; the public logout-all and user-facing session-management contracts remain Version 1/M17. Lost/compromised device response revokes that device family without revoking unrelated device families. Password/recovery/upgrade/account deletion rotate or revoke sessions per their later accepted policies.
 
 ### Diagram 7 — logout and session revocation
 
@@ -361,14 +366,18 @@ sequenceDiagram
 
 ## 21. Rate limiting
 
-Use endpoint policies with per-user limits after auth, per-installation limits for guest/device flows, and per-IP fallback—stricter for anonymous requests. IP is an abuse signal, not identity; avoid permanent IP-only lockout.
+Use endpoint policies with per-user limits after auth, per-family/device limits for refresh, and per-IP limits for anonymous or invalid-token traffic. IP is an abuse signal, not identity; avoid permanent IP-only lockout.
 
-- Auth: guest creation, login, refresh, reset, verification resend.
+- M03 guest/session creation: 10 attempts per IP per 10 minutes.
+- M03 refresh: 30 attempts per device/session family per 10 minutes.
+- M03 invalid refresh/replay: 10 attempts per IP per 10 minutes.
+- M03 logout: 30 requests per authenticated user per 10 minutes.
+- Later auth: login, reset, and verification resend limits are selected with their owning feature.
 - Content: post, reply, reaction, follow, message.
 - AI-heavy: message reply generation, world resume/catch-up, Development-only simulation, any future regeneration.
 - Operational: dev endpoints and push registration; health probes are separately controlled.
 
-Return `429` ProblemDetails, stable `rate_limit_exceeded` or `ai_generation_limit_reached`, and `Retry-After`. Exact numbers, distributed strategy, IP metadata retention, and user-visible quota UX remain configurable/open. Limits do not disclose internal AI budgets.
+Return `429` ProblemDetails, stable `rate_limit_exceeded` or `ai_generation_limit_reached`, and `Retry-After`. M03 keeps enforcement simple and compatible with the initial single-deployment modular monolith; it does not add Redis or distributed infrastructure solely for rate limiting. Production tuning, distributed coordination if topology changes, IP metadata retention, later endpoint values, and user-visible quota UX remain later decisions. Limits do not disclose internal AI budgets or log raw tokens.
 
 ## 22. Abuse prevention
 
@@ -551,7 +560,7 @@ Do not destroy evidence casually or keep excess private data “just in case.”
 
 Required automated/integration coverage:
 
-- Authentication: guest create/replay/conflicting key, access expiry/claims, refresh rotation/concurrency/reuse/family revoke, logout/revocation/device revoke; upgrade/recovery later.
+- Authentication: guest create/replay/conflicting key; valid access authentication; wrong issuer, wrong audience, expiry, invalid signature, and clock-skew boundaries; refresh success, rotation, concurrency, expiry, consumed-token replay and family revoke; unrelated-family survival; current/all-family logout; sixth-family oldest revocation; raw-token persistence/log redaction; rate-limit `429`; cross-user/session attacks. M03 verifies the same-identity/world invariant needed by later guest upgrade; the upgrade endpoint and recovery remain later.
 - Authorization: cross-user world and cross-world actor/post/parent/quote/reaction/follow/conversation/message/relationship/romance/memory/secret/promise/notification/summary/simulation targets.
 - Input/error: malformed JSON/UUID/enums/cursors/idempotency, oversized/control text, safe `401/403/404/409/429/5xx`, no disclosure.
 - AI: hostile prompt treated as data, memory/secret filtering, context cap, output cannot alter mechanics, invalid/provider failure fallback, budget/rate controls.
@@ -580,12 +589,14 @@ Use real PostgreSQL-compatible integration tests for relational ownership/constr
 
 ## 43. Open security decisions
 
-1. Exact access-token format/algorithm, signing-key storage/rotation, lifetime, and clock skew.
-2. Refresh-token lifetime, exact family scope per device/session, session/device limits, user-visible management, and whether a reviewed bounded concurrency grace ever supersedes the strict replay baseline.
-3. Password versus magic-link registration/recovery and email-verification requirements.
-4. External-provider order, linking UX, and MFA trigger if ever justified.
-5. Guest-loss/recovery UX before registration.
-6. Exact authentication/content/AI rate limits and temporary restriction behavior.
+ADR-013 resolves the M03 access-token, signing-key contract, refresh lifetime/family/replay policy, five-family limit, current/all-family revocation behavior, and initial authentication rate limits.
+
+1. Password versus magic-link registration/recovery and email-verification requirements for M17.
+2. External-provider order, linking UX, and MFA trigger if ever justified.
+3. Guest-loss and account-recovery UX before/after registration.
+4. Production secret-management provider and hosting-specific key custody/rotation operations for M18.
+5. User-facing device/session-management contracts for M17.
+6. Production tuning and distributed coordination for rate limits if observed traffic/topology requires it; later authentication/content/AI endpoint values and temporary restriction behavior.
 7. IP/device metadata collection and retention.
 8. Message, memory/history, notification, AI diagnostic, idempotency, work, log, and backup retention.
 9. Private-message field encryption and Drift encryption.
@@ -594,7 +605,7 @@ Use real PostgreSQL-compatible integration tests for relational ownership/constr
 12. Admin/support access model; none exists by default.
 13. Dependency, SAST/DAST, secret-scanning, SBOM, and vulnerability-scanning tools.
 14. Hosting/provider-specific TLS, encryption, audit, backup, and incident contacts.
-15. Whether selected high-risk requests check server session version before access-token expiry.
+15. Whether selected high-risk requests require immediate access-token rejection, and whether sender-constrained mechanisms such as DPoP or mTLS are justified.
 16. Broader conversational AI context; blocked by the recorded GAME_RULES.md conflict until corrected.
 
 ### Matrix 7 — MVP versus deferred security controls

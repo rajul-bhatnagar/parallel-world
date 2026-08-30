@@ -92,13 +92,20 @@ Indexes and constraints:
 - Unique `InstallationPublicId`.
 - Index `(UserId, LastSeenAt DESC)`.
 - FK to Users uses `ON DELETE CASCADE` only during an explicitly authorized hard account deletion.
+- `InstallationPublicId` is metadata/recovery context, never a credential. Authentication requires valid token/session state resolved server-side.
 
 ### RefreshTokens
 
-- `Id`, `UserId`, `DeviceInstallationId`, `TokenHash`, `RotationFamilyId`, `ExpiresAt`, `RevokedAt`, `ReplacedByTokenId`, `CreatedAt`
+- `Id`, `UserId`, `DeviceInstallationId`, `TokenHash`, `RotationFamilyId`, `ExpiresAt`, `ConsumedAt`, `RevokedAt`, `ReplacedByTokenId`, `CreatedAt`
 - Unique `TokenHash`.
-- Index `(UserId, DeviceInstallationId, ExpiresAt)` and `(RotationFamilyId)`.
-- Store hashes only; never persist plaintext tokens.
+- Index `(UserId, DeviceInstallationId, ExpiresAt)` and `(RotationFamilyId, ExpiresAt)`; family/oldest-active queries must be covered by an implementation-verified index.
+- `ReplacedByTokenId` is a self-reference to the successor created by successful rotation. Family membership and device association are non-null and immutable after issuance.
+- Store only a secure cryptographic hash of the opaque token; never persist plaintext tokens. The raw value has at least 256 bits of entropy and exists server-side only transiently for one-time issuance/rotation.
+- M03 issues tokens with `ExpiresAt` exactly 30 days after `CreatedAt`. `ExpiresAt > CreatedAt` is database constrained; the exact lifetime is also an application/configuration test.
+- Successful rotation atomically sets `ConsumedAt` and `ReplacedByTokenId` and inserts the successor in the same family. A token with `ConsumedAt`, `RevokedAt`, or elapsed `ExpiresAt` cannot mint an access token.
+- Replay of a consumed/replaced token transactionally revokes every still-active token in that family while preserving unrelated families. Timestamps, replacement links, family ID, user ID, and device ID provide replay audit context without raw token material.
+- Accounts enforces at most five active families per user. Creating a sixth locks/rechecks the user's active families and revokes the oldest before activating the new family. Current logout revokes one family; all-device revocation marks every active family for the user revoked.
+- Access JWTs and an access-token denylist are not persisted for MVP.
 
 ## 4. Worlds and ownership
 
@@ -447,6 +454,8 @@ No cascade may cross from one world to another. Every migration declares delete 
 
 The following are one transaction:
 
+- Rotate a refresh token by consuming the old record and inserting its successor; replay detection and whole-family revocation are committed consistently.
+- Create a device/session family while enforcing the five-active-family limit and revoking the oldest active family when necessary.
 - Create world, settings, simulation state, player profile, and player Actor.
 - Create a post/message/follow/reaction plus GameplayEvent and idempotency result.
 - Apply RelationshipEvent, directional values, daily ledger, romantic transition/history, and qualifying memories/notification.
@@ -512,3 +521,5 @@ Before accepting an implementation or migration, verify:
 13. Cached counts rebuild exactly from source rows and never go negative.
 14. Deletes are RESTRICT/soft by default and cannot erase audit history accidentally.
 15. Secrets, promises, and recalled memory context cannot reference another world.
+16. Refresh rows contain hashes only; rotation permits one successor, consumed-token replay revokes only its family, and unrelated device families remain active.
+17. Expired/revoked families cannot mint access tokens; current/all-family revocation and the five-active-family limit are transactionally consistent.

@@ -623,7 +623,7 @@ Growth alone does not justify microservices.
 10. Exact PostgreSQL strategy for simulation/job claiming when more than one backend instance exists.
 11. Trigger and candidate technology for a durable scheduler/queue beyond BackgroundService.
 12. Metrics/tracing library and hosting integration; Serilog remains required for structured logs.
-13. Guest refresh-token lifetime/rotation details and later registration methods, consistent with SECURITY.md.
+13. Registered authentication and recovery methods for M17; ADR-013 and SECURITY.md resolve the M03 guest access/refresh/session-family policy.
 14. Offline write scope and conflict UX, consistent with PRODUCT.md.
 15. Push-notification provider setup, payload policy, and introduction milestone; FCM is planned later.
 16. Group-conversation persistence model if the deferred product feature is ever approved.

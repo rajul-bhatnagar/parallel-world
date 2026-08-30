@@ -45,7 +45,7 @@ Protected requests use:
 Authorization: Bearer <access-token>
 ```
 
-Tokens never appear in URLs. Access tokens are short-lived. Refresh tokens are rotated, revocable, returned only at issuance/rotation, stored securely by Flutter, and never exposed as hashes.
+Tokens never appear in URLs. M03 access tokens are RS256 JWTs issued by `parallel-world-api` for `parallel-world-mobile`, expire after 15 minutes, and use exactly 30 seconds of allowed clock skew. The API validates signature, exact issuer/audience, `exp`, `nbf` when present, stable user `sub`, and unique `jti`. Refresh tokens are opaque values with at least 256 bits of entropy and a 30-day lifetime; they are rotated, revocable, returned only at issuance/rotation, stored securely by Flutter, and never exposed as hashes.
 
 MVP uses guest authentication through `POST /api/v1/auth/guest`, refresh, and logout. Registration, login, recovery, and guest upgrade are Version 1 contracts and must preserve the existing `UserId` and world history.
 
@@ -320,7 +320,16 @@ Global HTTP body/header limits are configured defensively and documented operati
 
 Policies are grouped by authentication (guest/login/refresh/reset), content (post/reply/message/follow/reaction), AI-heavy (message reply generation/resume/simulation), and operational traffic. Limits combine per-user, per-installation, and per-IP fallback dimensions; anonymous traffic is stricter.
 
-Responses use `429`, `Retry-After`, `retryAfterSeconds`, and `rate_limit_exceeded` or `ai_generation_limit_reached`. Public responses never reveal internal AI budgets. Exact numbers are tunable and remain open; health checks are separately controlled so orchestration probes are not blocked by user limits.
+M03 authentication policies are:
+
+| Operation | Initial limit |
+|---|---|
+| Guest/session creation | 10 attempts per IP per 10 minutes |
+| Refresh | 30 attempts per device/session family per 10 minutes |
+| Invalid refresh/replay | 10 attempts per IP per 10 minutes |
+| Logout | 30 requests per authenticated user per 10 minutes |
+
+Responses use `429`, `Retry-After`, `retryAfterSeconds`, and `rate_limit_exceeded` or `ai_generation_limit_reached`. Public responses never reveal internal AI budgets. M03 uses a simple non-Redis implementation compatible with the initial modular-monolith deployment. Production tuning and later endpoint values remain open; health checks are separately controlled so orchestration probes are not blocked by user limits.
 
 ## 23. Realtime SignalR conventions
 
@@ -356,7 +365,13 @@ POST /api/v1/auth/refresh
 POST /api/v1/auth/logout
 ```
 
-Guest creation accepts installation ID, platform, app version, and required idempotency key. Installation identity alone is not authorization. Refresh rotates tokens; logout revokes the presented refresh session/device scope as defined by security policy.
+Guest creation accepts installation ID, platform, app version, and required idempotency key. Installation identity is metadata/recovery context only and never authorization. Access-token validation follows section 3 and `SECURITY.md`; ownership always derives from the validated `sub`, never a client-supplied `UserId`.
+
+Refresh accepts an opaque refresh token in the request body, never a URL. A successful refresh atomically consumes the presented token and returns a replacement refresh token in the same device/session family plus a new access token. Under concurrency, the same token succeeds at most once. Presenting a consumed/replaced token returns a safe authentication failure and transactionally revokes that family; unrelated families remain usable. Expired or revoked families cannot mint an access token.
+
+`POST /api/v1/auth/logout` revokes the current refresh family and returns idempotent success. The M03 backend also enforces the all-family revocation operation, but a public logout-all/session-management endpoint remains M17 scope. Issued access tokens ordinarily remain valid only until their 15-minute expiry; MVP has no distributed access-token denylist.
+
+All authentication endpoints use the section 22 rate limits and standard ProblemDetails conventions. Access tokens, refresh tokens, authorization headers, and cookies are never logged.
 
 **Example 1 — guest session creation**
 
@@ -793,7 +808,7 @@ Response also includes `Retry-After: 30`.
 
 ## 42. Open API decisions
 
-1. Exact access/refresh-token response shape and authentication methods after guest MVP.
+1. Registered authentication/recovery methods and their response shapes for M17. The M03 guest/token fields and semantics in sections 3 and 25 are accepted by ADR-013.
 2. ETag/`If-Match` versus explicit version fields for editable resources.
 3. Final `409` versus `412` concurrency mapping after concurrency transport is selected.
 4. **Recorded conflict:** this planning request recommends `400` only for malformed syntax and `422` for valid domain-validation failures, while approved `ARCHITECTURE.md` section 24 specifies `400` with field errors for validation. The API preserves `400`. If `422` is approved later, `docs/architecture/ARCHITECTURE.md` requires correction before this document changes.
@@ -806,7 +821,7 @@ Response also includes `Retry-After: 30`.
 11. First SignalR milestone; HTTP refresh/polling remains valid before it.
 12. Synchronous versus asynchronous default for world resume; contract supports `200/202` without changing mechanics.
 13. API host domain and final ProblemDetails type host.
-14. Exact rate-limit values.
+14. Production rate-limit tuning and values for endpoints introduced after M03.
 15. OpenAPI generation/compatibility-check approach.
 16. Idempotency retention period and offline-write retry window.
 17. Initial feed ordering and any permitted feed-mode query.

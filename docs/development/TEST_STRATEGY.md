@@ -182,12 +182,30 @@ Cover auth bypass, token expiry/modification/claims, refresh reuse, revoked sess
 |---|---|---|---|
 | First online installation | Idempotently create guest/session hashes | Offline cannot fabricate guest; installation ID alone fails | MVP |
 | Existing guest | Same identity/world | Different installation gives distinct guest | MVP |
-| Access token | Valid minimal claims | Expired/modified/wrong issuer-audience-algorithm denied | MVP |
-| Refresh | Atomic rotation | Concurrent/reused old token revokes family | MVP |
-| Logout/device revoke | Refresh blocked, Flutter clears | Repetition safe; short-lived access limitation tested | MVP |
+| Access token | Valid RS256 JWT; exact issuer/audience; 15-minute expiry; `sub`, `jti`, `kid`; 30-second skew | Expired, invalid signature, wrong issuer/audience/algorithm, and outside-skew token denied | MVP/M03 |
+| Refresh | Opaque hash-only 30-day token; atomic one-use rotation in one device/session family | Concurrent second use fails; consumed replay revokes that family while unrelated family remains valid | MVP/M03 |
+| Session-family limit | At most five active families per user | Sixth creation revokes oldest active family; revoked/expired family cannot refresh | MVP/M03 |
+| Logout/device revoke | Current-family and all-family backend revocation block refresh; short-lived access limitation tested | Repetition safe; unrelated family survives current-family logout | MVP/M03; public all-device management M17 |
+| Auth rate limit | M03 guest/refresh/invalid-refresh/logout windows return standard `429` when exceeded | Limits cannot authenticate an installation ID or disclose/log tokens | MVP/M03 |
 | Registration/login | Generic safe credential flow | Duplicate email/invalid password/enumeration | Version 1 |
-| Guest upgrade | Same user and all data | Parallel/partial/duplicate-email rollback | Version 1 |
+| Guest upgrade | Same user and all data | M03 proves identity/world continuity; M17 proves parallel/partial/duplicate-identity rollback end to end | M03 invariant; Version 1 endpoint |
 | Recovery/providers/devices | Approved proof/session policy | Replay, bad claims, silent merge denied | Later |
+
+### M03 authentication and session gate
+
+M03 automated coverage explicitly includes:
+
+1. A valid access token authenticates the stable `sub` user.
+2. Wrong issuer, wrong audience, expired token, invalid signature, and timestamps immediately inside/outside the 30-second clock-skew boundary are accepted or rejected as specified.
+3. Refresh succeeds once, rotates to a new hash-only 30-day token in the same family, and an expired token fails.
+4. Two synchronized requests using the same refresh token produce exactly one successful rotation.
+5. Replaying the consumed/replaced token transactionally revokes its family, while another device/session family for that user remains valid.
+6. Current-device logout revokes only the current family; the all-family backend operation revokes every active family. The public all-device/session-management API remains M17.
+7. Creating a sixth active family revokes the oldest active family and no newer unrelated family.
+8. PostgreSQL never contains the raw refresh value, and captured application/request logs contain no raw access token, refresh token, authorization header, or cookie value.
+9. Session and world operations preserve the guest `UserId` and owned world identity needed for later same-user upgrade. M03 does not implement the M17 upgrade endpoint; M17 adds the full transactional upgrade test.
+10. Each M03 auth limit returns standard `429` ProblemDetails at the accepted boundary: guest creation 10/IP/10 minutes, refresh 30/family/10 minutes, invalid refresh/replay 10/IP/10 minutes, and logout 30/authenticated user/10 minutes.
+11. Installation-ID-only, client-supplied `UserId`, cross-user refresh/logout, and other cross-user/session ownership attacks fail without disclosure.
 
 ## 16. Authorization and ownership testing
 
@@ -450,7 +468,7 @@ Use behavior names such as `DatingInvitation_WhenTrustBelowThreshold_IsRejected`
 
 | Capability | MVP gate | Deferred gate |
 |---|---|---|
-| Guest/session/world | Guest, rotating refresh, logout, one exposed world, isolation | Registration, recovery, devices, same-user upgrade |
+| Guest/session/world | Guest, ADR-013 access/refresh/family limits and backend revocation, current logout, one exposed world, isolation, upgrade identity invariant | Registration, recovery, public device/session management, full same-user upgrade endpoint |
 | Feed/social | Profiles, posts, replies, likes, follows, cursor | Reposts, quotes, rich reactions, hashtags, mentions, ranking |
 | Simulation/AI | Determinism, persisted actions, wording-only AI, fallback | Provider/tuning expansion |
 | Relationships/dating | Basic directional state, invitation/outcome, Dating, necessary romantic history | Breakup, FormerPartner/reconciliation, commitment, engagement, marriage, separation, divorce |
@@ -470,7 +488,7 @@ A feature is complete only when acceptance criteria are met; sources/existing co
 |---|---|
 | M01 Repository/tooling | Structure, paths/links, baseline command validation |
 | M02 Backend foundation | Startup/config, health, ProblemDetails, production dev-route gate |
-| M03 Guest session/world | Guest replay/conflict, token basics, world creation/ownership denial |
+| M03 Guest session/world | Guest replay/conflict; ADR-013 JWT validation matrix; hash-only refresh rotation/concurrency/replay/family isolation/expiry; current/all-family revocation; five-family cap; redaction/persistence; auth `429`; upgrade identity invariant; world creation/ownership denial |
 | M04 Flutter foundation | Bootstrap/session, secure storage abstraction, routing, error mapping |
 | M05 Characters | Seed/profile/traits, cursor, cross-world denial, screen states |
 | M06 Feed | Create, order/cursor/tie, pending reconciliation, isolation |

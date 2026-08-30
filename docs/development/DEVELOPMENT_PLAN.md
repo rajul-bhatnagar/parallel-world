@@ -383,16 +383,16 @@ Every listed schema change includes an EF migration, clean/previous-schema Postg
 
 - **Goal:** Deliver the first owned private-world flow.
 - **User-visible result:** Online guest creates/restores a session, creates one exposed world, and retrieves it.
-- **Dependencies:** M02 and resolved token-format/lifetime decisions required for implementation.
-- **Backend scope:** Guest create/replay, minimal access token, rotating hashed refresh token, logout basics, world create/list/current/get, reusable world ownership policy.
-- **Database scope:** Users, DeviceInstallations, RefreshTokens, GameWorlds, WorldSettings, WorldSimulationState (`world_simulation_states`), player Actor/Profile; composite ownership constraints and migration. No character Actor or Character row is created.
+- **Dependencies:** M02 and accepted ADR-013 M03 token/session policy.
+- **Backend scope:** Guest create/replay; 15-minute RS256 JWT issuance/validation; opaque hashed 30-day refresh rotation; transactional family replay containment; current-family logout; backend all-family revocation; five-active-family limit; M03 auth rate limits; world create/list/current/get; reusable world ownership policy. Registered-authentication and public logout-all/session-management endpoints remain M17.
+- **Database scope:** Users, DeviceInstallations, hash-only RefreshTokens with device/session family, expiry, consumption, replacement, revocation, and audit state, GameWorlds, WorldSettings, WorldSimulationState (`world_simulation_states`), player Actor/Profile; composite ownership constraints and migration. No character Actor or Character row is created.
 - **Flutter scope:** None beyond contract fixtures; M04 owns UI/session implementation.
-- **Infrastructure scope:** Local/CI PostgreSQL migration execution; protected signing configuration names.
+- **Infrastructure scope:** Local/CI PostgreSQL migration execution; protected current/previous signing-key configuration with `kid`; no committed private key, cloud-vendor key provider, distributed token denylist, Redis, or distributed rate-limit infrastructure.
 - **Seed data:** Idempotent initial player actor/profile/world settings; no characters.
-- **Test scope:** Guest first/repeat/conflicting key, refresh/concurrency/reuse baseline, world create/replay, one player, two-user denial, cross-world constraints, clean migration.
+- **Test scope:** Guest first/repeat/conflicting key; valid access authentication; wrong issuer/audience, expired token, invalid signature, and 30-second skew boundary; refresh success/rotation/expiry; same token cannot rotate twice; consumed-token replay revokes its family while another device family remains valid; current-family and all-family revocation; sixth family revokes the oldest active family; raw refresh token is not persisted and raw tokens are not logged; session/identity continuity preserves the guest `UserId` and world for later upgrade without implementing M17; auth rate limits return `429`; cross-user/session ownership attacks fail; world create/replay, one player, two-user denial, cross-world constraints, clean migration.
 - **Documentation updates:** API/database/security docs only if implementation requires approved contract clarification; otherwise setup notes.
 - **Explicit exclusions:** Registration/password/recovery, characters, feed, multiple exposed worlds, real-user interaction.
-- **Acceptance criteria:** Guest and owned world persist; foreign user gets ownership-safe denial; retries create one effect; migration applies cleanly.
+- **Acceptance criteria:** Guest and owned world persist; ADR-013 token validation, rotation, replay containment, family limits/revocation, redaction, and rate limits behave as specified; foreign user gets ownership-safe denial; retries create one effect; migration applies cleanly.
 - **Required verification:** Backend unit/API/PostgreSQL/migration/security tests and log-redaction check.
 - **Manual checks:** First guest, repeat launch token refresh, world create/current, foreign-ID attempt, logout.
 - **Review focus:** Token storage/rotation, `WorldId`, owner queries, same-world FKs, idempotency.
@@ -800,7 +800,7 @@ Do not silently settle these before the affected milestone:
 
 1. Hosting provider, managed PostgreSQL vendor, and production topology details.
 3. Initial AI provider/model, moderation, budget, and provider-selection policy.
-4. Access-token algorithm/lifetime/key rotation and exact refresh/session/device policies.
+4. Production secret-management provider and hosting-specific signing-key custody/rotation operations for M18; ADR-013 resolves the M03 token/session contract.
 5. Registration/recovery method and email verification for Version 1.
 6. Exact CI runner operating systems beyond the accepted GitHub Actions M01 checks.
 7. Release cadence, staging timing, first beta size, and app-store order.

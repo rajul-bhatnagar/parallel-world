@@ -80,6 +80,41 @@ Use a milestone feature branch, push it, open a pull request into `main`, requir
 
 `main` is the stable/release-ready branch and `dev` is the persistent active development and integration branch. Implement M01 and later milestones sequentially on `dev`. After each milestone, run its verification, inspect the diff, create a milestone-specific commit, and push `dev`; a pull request is not required after every milestone. When `dev` reaches an approved stable checkpoint, promote it through a pull request from `dev` into `main`, require all applicable CI checks to succeed, review the pull request, and merge through that pull request. A reviewed local merge is not an accepted substitute for this promotion. Direct feature development on `main` is prohibited. Short-lived `feature/...` branches are optional for isolated or risky work and are not required by the milestone workflow. For a one-developer project self-review is acceptable, but the independent Codex diff review required by `DEVELOPMENT_PLAN.md` remains mandatory.
 
+## ADR-013 — M03 access-token and session-family policy
+
+**Date:** 2026-08-30
+**Status:** Accepted
+
+**Context**
+
+M03 requires concrete access-token, refresh-token, replay-containment, session-limit, signing-key, revocation, and authentication-rate-limit rules. The earlier sources defined the security boundaries but intentionally left these values open, blocking implementation.
+
+**Decision**
+
+- Access tokens are JWT bearer tokens signed only with RS256. Validation requires the signature, issuer `parallel-world-api`, audience `parallel-world-mobile`, expiration, and `not-before` when present, with an allowed clock skew of exactly 30 seconds. Tokens last 15 minutes, carry a stable user identifier in `sub` and a unique `jti`, and contain no secrets, private content, world lists, or unnecessary profile data.
+- Every token carries a `kid`. The signing private key is never committed. Development loads a local key from outside the repository; production obtains key material through environment or secret-management infrastructure. Verification accepts the current key and the previous still-valid verification key during controlled rotation. The production secret provider remains an M18 decision.
+- Refresh tokens are opaque cryptographically random bearer values with at least 256 bits of entropy and a 30-day lifetime from issuance. PostgreSQL stores only a secure cryptographic hash. Successful use atomically consumes the token and issues a replacement in the same family; no token can rotate successfully twice.
+- One refresh-token family represents one device/session. A consumed or replaced token replay transactionally revokes that entire family and requires a new or restored valid session, but does not revoke unrelated families. Records retain device association, expiry, consumption, replacement, revocation, and safe audit timestamps without raw tokens.
+- A user may have at most five active device/session families. Creating a sixth revokes the oldest active family. Guest and registered users share this model. Current-device logout revokes the current family; all-device logout revokes every active family for the user. Revoked or expired families cannot mint access tokens. Guest upgrade preserves the same `UserId` and worlds.
+- Installation identifiers are metadata/recovery hints, never authentication credentials. Ownership and session scope resolve server-side and never from a client-supplied `UserId`.
+- Issued access tokens ordinarily remain usable until their 15-minute expiry. MVP has no distributed access-token denylist. A future immediate-revocation or sender-constrained-token requirement requires a new decision.
+- Initial M03 limits are: guest/session creation 10 attempts per IP per 10 minutes; refresh 30 attempts per device/session family per 10 minutes; invalid refresh/replay 10 attempts per IP per 10 minutes; logout 30 requests per authenticated user per 10 minutes. Exceeding a limit returns the standard `429` ProblemDetails response. M03 uses a simple modular-monolith-compatible implementation and does not introduce Redis or other distributed rate-limit infrastructure.
+- Access and refresh tokens, authorization headers, and cookies remain protected by the existing logging redaction rules. Refresh rotation is concurrency-safe; replay detection and family revocation are transactional.
+
+M03 must test the concrete token-validation matrix, rotation/concurrency/replay behavior, family isolation, expiry and logout scopes, five-family limit, absence of raw token persistence/logging, rate limiting, cross-user/session attacks, and identity continuity required for later same-user upgrade. Registered authentication, recovery, and public upgrade/session-management endpoints remain M17 work.
+
+**Alternatives considered**
+
+Symmetric signing, JWT refresh tokens, nonrotating refresh tokens, plaintext refresh storage, global revocation after one-device replay, a distributed access-token denylist, and Redis-backed MVP rate limiting were rejected because they either weaken containment or add unnecessary initial operational scope.
+
+**Consequences**
+
+M03 can implement and verify one precise session model. Ordinary logout does not immediately invalidate an already issued access token, so the short expiry is an explicit accepted limitation. Production key custody, hosting integration, and tuning remain later operational work.
+
+**Revisit when**
+
+M17 selects registered authentication/recovery, M18 selects production secret infrastructure, observed traffic requires rate-limit tuning or distributed coordination, or a higher-risk use case requires immediate or sender-constrained access-token revocation such as DPoP or mTLS.
+
 ## New ADR template
 
 ### ADR-XXX — Title

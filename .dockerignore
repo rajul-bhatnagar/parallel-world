@@ -1,0 +1,11 @@
+.git
+.github
+.tooling
+**/bin
+**/obj
+**/TestResults
+docs
+codex
+mobile
+*.user
+*.suo

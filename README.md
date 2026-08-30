@@ -27,7 +27,7 @@ If repository guidance conflicts with an accepted source-of-truth document, stop
 - `mobile/` — Flutter mobile application
 - `infrastructure/` — local and production infrastructure
 
-M01 adds buildable backend and Android application shells only. Product behavior is added one milestone at a time after the planning documents have been reviewed and accepted.
+M01 adds buildable backend and Android application shells. M02 adds the production-shaped backend host and configurable PostgreSQL connectivity without game entities or gameplay behavior. Product behavior is added one milestone at a time after the planning documents have been reviewed and accepted.
 
 ## Pinned toolchain
 
@@ -43,7 +43,17 @@ M01 adds buildable backend and Android application shells only. Product behavior
 1. Install the .NET SDK version from `global.json`.
 2. Install Flutter 3.47.1 stable directly or through FVM, and confirm `flutter --version` reports Dart 3.13.1.
 3. Install the Android SDK and accept its licenses. The generated Android application supports API 24 and newer.
-4. From the repository root, restore and verify the backend:
+4. Provide an isolated PostgreSQL connection through `ConnectionStrings__Default`. For example, start the M02 PostgreSQL container and configure the current shell:
+
+   Use a generated local-only PostgreSQL password containing only ASCII letters, digits, `.`, `_`, and `-`. Compose injects this value into an Npgsql connection string, so connection-string delimiters such as `;` are intentionally excluded.
+
+   ```powershell
+   $env:POSTGRES_PASSWORD = '<local-only-password>'
+   docker compose --file infrastructure/docker/compose.yml up --detach postgres
+   $env:ConnectionStrings__Default = "Host=localhost;Port=5432;Database=parallel_world;Username=parallel_world;Password=$env:POSTGRES_PASSWORD"
+   ```
+
+5. From the repository root, restore and verify the backend:
 
    ```bash
    dotnet restore backend/ParallelWorld.sln --configfile NuGet.Config
@@ -52,7 +62,7 @@ M01 adds buildable backend and Android application shells only. Product behavior
    dotnet test backend/ParallelWorld.sln --configuration Release --no-build
    ```
 
-5. Restore and verify the Flutter shell:
+6. Restore and verify the Flutter shell:
 
    ```bash
    cd mobile/parallel_world_app
@@ -63,12 +73,36 @@ M01 adds buildable backend and Android application shells only. Product behavior
    flutter run
    ```
 
-The API project is an intentionally empty executable shell with no endpoints. The Docker directory is also a placeholder: PostgreSQL, Compose, migrations, and containerized backend startup are not part of M01.
+The API exposes only operational M02 endpoints: `/health/live`, `/health/ready`, and Development-only `/openapi/v1.json`. It requires `ConnectionStrings__Default` at startup. Store the connection string in user-secrets, a local environment variable, or a deployment secret manager; never commit its value.
+
+For local PostgreSQL and the containerized API:
+
+```powershell
+$env:POSTGRES_PASSWORD = '<local-only-password>'
+docker compose --file infrastructure/docker/compose.yml config --quiet
+docker compose --file infrastructure/docker/compose.yml up --build
+```
+
+For direct local API execution against that PostgreSQL instance:
+
+```powershell
+$env:ConnectionStrings__Default = "Host=localhost;Port=5432;Database=parallel_world;Username=parallel_world;Password=$env:POSTGRES_PASSWORD"
+dotnet run --project backend/src/ParallelWorld.Api/ParallelWorld.Api.csproj
+```
+
+Stop the containerized services with `docker compose --file infrastructure/docker/compose.yml down`.
 
 ## Bootstrap dependencies
 
 - Backend test projects use `Microsoft.NET.Test.Sdk`, xUnit, the Visual Studio xUnit runner, and `coverlet.collector`, supplied by the .NET 10 xUnit template, for test discovery and future coverage collection.
 - The Flutter app uses only the Flutter SDK at runtime. `flutter_test` supplies the baseline widget test and `flutter_lints` 6.0.0 supplies the configured static-analysis rules.
+
+## Backend foundation dependencies
+
+- EF Core 10.0.11 and `Npgsql.EntityFrameworkCore.PostgreSQL` 10.0.3 register the empty PostgreSQL `DbContext`; M02 creates no entities or migration.
+- `Microsoft.AspNetCore.OpenApi` 10.0.11 provides framework-native OpenAPI generation.
+- `Serilog.AspNetCore` 10.0.0 provides structured console and request logging; sensitive property names are redacted before sinks.
+- `Microsoft.AspNetCore.Mvc.Testing` 10.0.11 hosts the real API pipeline in integration tests.
 
 ## Development workflow
 

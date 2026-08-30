@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <ItemGroup>
+    <ProjectReference Include="..\ParallelWorld.Application\ParallelWorld.Application.csproj" />
+    <ProjectReference Include="..\ParallelWorld.Infrastructure\ParallelWorld.Infrastructure.csproj" />
+    <ProjectReference Include="..\ParallelWorld.Simulation\ParallelWorld.Simulation.csproj" />
+    <ProjectReference Include="..\ParallelWorld.AI\ParallelWorld.AI.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>

@@ -156,11 +156,11 @@ sequenceDiagram
 
 ## 11. API contract testing
 
-For every released endpoint verify route, method, authentication, JSON shape, unknown-field rejection, lower-camel enums, UTC timestamps, status, ProblemDetails, opaque cursors, idempotency, concurrency, and rate-limit response. Prove ownership-safe `404 resource_not_available`, approved `400` validation, `409` conflict, and `429` with `Retry-After`. OpenAPI compatibility checks may be added after tooling is selected; tests must match `API_CONVENTIONS.md` examples/inventory.
+For every released endpoint verify route, method, authentication, JSON shape, unknown-field rejection, lower-camel enums, UTC timestamps, status, ProblemDetails, opaque cursors, the endpoint's approved idempotency or non-idempotency semantics, concurrency, and rate-limit response. Prove ownership-safe `404 resource_not_available`, approved `400` validation, `409` conflict, and `429` with `Retry-After`. OpenAPI compatibility checks may be added after tooling is selected; tests must match `API_CONVENTIONS.md` examples/inventory.
 
 ## 12. Database testing
 
-Run EF migrations against PostgreSQL from empty and previous-release schemas. Verify bounded checks; every composite `(WorldId, Id)` FK; unique/idempotency constraints; explicit delete behavior; transaction sets; cursor indexes; canonical romantic pair; direct-conversation uniqueness; simulation cursor/interval claim; token-hash uniqueness/rotation; and later guest-upgrade ownership preservation.
+Run EF migrations against PostgreSQL from empty and previous-release schemas. Verify bounded checks; every composite `(WorldId, Id)` FK; unique/idempotency constraints; explicit delete behavior; transaction sets; cursor indexes; canonical romantic pair; direct-conversation uniqueness; simulation cursor/interval claim; token/proof-hash uniqueness and rotation/consumption; and later guest-upgrade ownership preservation.
 
 Initial migrations are forward-only. Rollback uses verified backup/restore or reviewed compensating migration. Destructive changes require explicit review and expand/migrate/contract planning. Representative query plans are inspected after realistic data exists.
 
@@ -172,7 +172,7 @@ The additional .NET architecture-test library is open; xUnit is already approved
 
 ## 14. Security testing
 
-Cover auth bypass, token expiry/modification/claims, refresh reuse, revoked session/device, rate/size limits, malformed input, error/log redaction, production dev-route absence, AI-context minimization, and nonsensitive push previews when push ships. Captured responses/logs must contain no authorization headers, tokens, installation/push IDs, credentials, message/post bodies, prompts/responses, secret memories, or hidden values.
+Cover auth bypass, token expiry/modification/claims, refresh reuse, guest-bootstrap proof reuse/expiry/scope, revoked session/device, rate/size limits, malformed input, error/log redaction, production dev-route absence, AI-context minimization, and nonsensitive push previews when push ships. Captured responses/logs must contain no authorization headers, tokens, raw guest-bootstrap proofs, installation/push IDs, credentials, message/post bodies, prompts/responses, secret memories, or hidden values.
 
 ## 15. Authentication testing
 
@@ -180,10 +180,10 @@ Cover auth bypass, token expiry/modification/claims, refresh reuse, revoked sess
 
 | State/flow | Required behavior | Negative/concurrency case | Release |
 |---|---|---|---|
-| First online installation | Idempotently create guest/session hashes | Offline cannot fabricate guest; installation ID alone fails | MVP |
-| Existing guest | Same identity/world | Different installation gives distinct guest | MVP |
+| First online installation | Client supplies an independent 256-bit-or-greater proof; one transaction creates guest/session/world/player and stores proof/token hashes only | Same-proof races create one identity/world/family; installation ID alone fails | MVP/M03 |
+| Bootstrap response recovery | One valid proof retry within 10 minutes returns the same User/world with newly rotated credentials, then the client discards the proof | Expired/consumed proof fails; at most one concurrent recovery succeeds; proof cannot authenticate or call unrelated endpoints | MVP/M03 |
 | Access token | Valid RS256 JWT; exact issuer/audience; 15-minute expiry; `sub`, `jti`, `kid`; 30-second skew | Expired, invalid signature, wrong issuer/audience/algorithm, and outside-skew token denied | MVP/M03 |
-| Refresh | Opaque hash-only 30-day token; atomic one-use rotation in one device/session family | Concurrent second use fails; consumed replay revokes that family while unrelated family remains valid | MVP/M03 |
+| Refresh | Opaque hash-only 30-day token; atomic one-use, non-idempotent rotation in one device/session family | Concurrent second use fails; consumed replay, including after a lost response, revokes that family and never returns prior/new credentials; unrelated family remains valid | MVP/M03 |
 | Session-family limit | At most five active families per user | Sixth creation revokes oldest active family; revoked/expired family cannot refresh | MVP/M03 |
 | Logout/device revoke | Current-family and all-family backend revocation block refresh; short-lived access limitation tested | Repetition safe; unrelated family survives current-family logout | MVP/M03; public all-device management M17 |
 | Auth rate limit | M03 guest/refresh/invalid-refresh/logout windows return standard `429` when exceeded | Limits cannot authenticate an installation ID or disclose/log tokens | MVP/M03 |
@@ -195,17 +195,21 @@ Cover auth bypass, token expiry/modification/claims, refresh reuse, revoked sess
 
 M03 automated coverage explicitly includes:
 
-1. A valid access token authenticates the stable `sub` user.
-2. Wrong issuer, wrong audience, expired token, invalid signature, and timestamps immediately inside/outside the 30-second clock-skew boundary are accepted or rejected as specified.
-3. Refresh succeeds once, rotates to a new hash-only 30-day token in the same family, and an expired token fails.
-4. Two synchronized requests using the same refresh token produce exactly one successful rotation.
-5. Replaying the consumed/replaced token transactionally revokes its family, while another device/session family for that user remains valid.
-6. Current-device logout revokes only the current family; the all-family backend operation revokes every active family. The public all-device/session-management API remains M17.
-7. Creating a sixth active family revokes the oldest active family and no newer unrelated family.
-8. PostgreSQL never contains the raw refresh value, and captured application/request logs contain no raw access token, refresh token, authorization header, or cookie value.
-9. Session and world operations preserve the guest `UserId` and owned world identity needed for later same-user upgrade. M03 does not implement the M17 upgrade endpoint; M17 adds the full transactional upgrade test.
-10. Each M03 auth limit returns standard `429` ProblemDetails at the accepted boundary: guest creation 10/IP/10 minutes, refresh 30/family/10 minutes, invalid refresh/replay 10/IP/10 minutes, and logout 30/authenticated user/10 minutes.
-11. Installation-ID-only, client-supplied `UserId`, cross-user refresh/logout, and other cross-user/session ownership attacks fail without disclosure.
+1. First guest bootstrap with an independent CSPRNG proof of at least 256 bits transactionally creates exactly one User, installation/session lineage, initial refresh family, GameWorld, player Actor/Profile, WorldSettings, and WorldSimulationState.
+2. Exact proof retry within 10 minutes resolves the same User/world, invalidates the prior active initial-family credential as needed, issues new access/refresh credentials in the same lineage, and consumes the sole recovery. It does not replay token bytes.
+3. Expired/consumed proof fails; the proof cannot authenticate normal requests, rotate a refresh token, call unrelated endpoints, derive from/substitute for installation ID, or appear raw in PostgreSQL, logs, errors, URLs, or responses.
+4. Synchronized first-bootstrap requests using the same proof create no duplicate User, world, player, or family; synchronized recovery requests produce at most one success.
+5. A valid access token authenticates the stable `sub` user.
+6. Wrong issuer, wrong audience, expired token, invalid signature, and timestamps immediately inside/outside the 30-second clock-skew boundary are accepted or rejected as specified.
+7. Refresh succeeds once, rotates to a new hash-only 30-day token in the same family, and an expired token fails. It does not accept or use a generic idempotency key.
+8. Two synchronized requests using the same refresh token produce exactly one successful rotation.
+9. Replaying the consumed/replaced token, including after a simulated lost success response, transactionally revokes its family and returns neither the prior response nor a new token, while another device/session family remains valid.
+10. Current-device logout revokes only the current family; the all-family backend operation revokes every active family. The public all-device/session-management API remains M17.
+11. Creating a sixth active family revokes the oldest active family and no newer unrelated family.
+12. PostgreSQL never contains raw refresh/proof values, and captured application/request logs contain no raw access token, refresh token, bootstrap proof, authorization header, or cookie value.
+13. Session and world operations preserve the guest `UserId` and owned world identity needed for later same-user upgrade. M03 does not implement the M17 upgrade endpoint; M17 adds the full transactional upgrade test.
+14. Each M03 auth limit returns standard `429` ProblemDetails at the accepted boundary: guest creation 10/IP/10 minutes, refresh 30/family/10 minutes, invalid refresh/replay 10/IP/10 minutes, and logout 30/authenticated user/10 minutes.
+15. Installation-ID-only, client-supplied `UserId`, cross-user refresh/logout, and other cross-user/session ownership attacks fail without disclosure.
 
 ## 16. Authorization and ownership testing
 
@@ -230,7 +234,7 @@ Cross-world negative coverage is module-by-module; one global ownership test is 
 
 ## 17. Idempotency and concurrency testing
 
-Repeat and race guest session, world creation, post/reply/message creation, reaction, follow, date invitation, world resume, notification creation/read, simulation action, AI work, and later push delivery. The same key and fingerprint returns the recorded result; the same key with another fingerprint returns `409 idempotency_key_reused`. Natural PUT/DELETE operations return current/no-op success.
+Repeat and race world creation, post/reply/message creation, reaction, follow, date invitation, world resume, notification creation/read, simulation action, AI work, and later push delivery. For ordinary idempotent endpoints, the same key and fingerprint returns the recorded result and the same key with another fingerprint returns `409 idempotency_key_reused`. Guest bootstrap is the explicit credential exception: its proof provides identity idempotency and one newly rotated credential recovery, not byte-for-byte response replay. Refresh is explicitly non-idempotent and never uses a generic idempotency key. Natural PUT/DELETE operations return current/no-op success.
 
 Bounded concurrent tests cover profile update, resume, relationship events, reaction/follow, message send, date invitation, notification read, refresh rotation, work leases, and interval claims. Assert one effect, no lost update, correct conflict/reuse response, rollback on failure, and stable final state. Use synchronization barriers, not sleeps.
 
@@ -468,7 +472,7 @@ Use behavior names such as `DatingInvitation_WhenTrustBelowThreshold_IsRejected`
 
 | Capability | MVP gate | Deferred gate |
 |---|---|---|
-| Guest/session/world | Guest, ADR-013 access/refresh/family limits and backend revocation, current logout, one exposed world, isolation, upgrade identity invariant | Registration, recovery, public device/session management, full same-user upgrade endpoint |
+| Guest/session/world | ADR-014 proof-bound guest bootstrap and one lost-response recovery, ADR-013 access/non-idempotent refresh/family limits and backend revocation, current logout, one exposed world, isolation, upgrade identity invariant | Registered-account recovery, public device/session management, full same-user upgrade endpoint |
 | Feed/social | Profiles, posts, replies, likes, follows, cursor | Reposts, quotes, rich reactions, hashtags, mentions, ranking |
 | Simulation/AI | Determinism, persisted actions, wording-only AI, fallback | Provider/tuning expansion |
 | Relationships/dating | Basic directional state, invitation/outcome, Dating, necessary romantic history | Breakup, FormerPartner/reconciliation, commitment, engagement, marriage, separation, divorce |
@@ -488,7 +492,7 @@ A feature is complete only when acceptance criteria are met; sources/existing co
 |---|---|
 | M01 Repository/tooling | Structure, paths/links, baseline command validation |
 | M02 Backend foundation | Startup/config, health, ProblemDetails, production dev-route gate |
-| M03 Guest session/world | Guest replay/conflict; ADR-013 JWT validation matrix; hash-only refresh rotation/concurrency/replay/family isolation/expiry; current/all-family revocation; five-family cap; redaction/persistence; auth `429`; upgrade identity invariant; world creation/ownership denial |
+| M03 Guest session/world | ADR-014 proof bootstrap/recovery/expiry/scope/concurrency/hash-only/redaction; ADR-013 JWT validation matrix; non-idempotent hash-only refresh rotation/concurrency/lost-response replay/family isolation/expiry; current/all-family revocation; five-family cap; auth `429`; upgrade identity invariant; atomic world/player creation and ownership denial |
 | M04 Flutter foundation | Bootstrap/session, secure storage abstraction, routing, error mapping |
 | M05 Characters | Seed/profile/traits, cursor, cross-world denial, screen states |
 | M06 Feed | Create, order/cursor/tie, pending reconciliation, isolation |

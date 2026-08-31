@@ -51,6 +51,10 @@ Join tables include `WorldId` in their primary/unique key and in every participa
 ```mermaid
 erDiagram
     USERS ||--o{ GAME_WORLDS : owns
+    USERS ||--o{ DEVICE_INSTALLATIONS : registers
+    USERS ||--o{ GUEST_BOOTSTRAP_OPERATIONS : bootstraps
+    DEVICE_INSTALLATIONS ||--o{ REFRESH_TOKENS : scopes
+    DEVICE_INSTALLATIONS ||--o{ GUEST_BOOTSTRAP_OPERATIONS : binds
     GAME_WORLDS ||--|| WORLD_SETTINGS : configures
     GAME_WORLDS ||--|| SIMULATION_STATES : advances
     GAME_WORLDS ||--o{ ACTORS : contains
@@ -90,9 +94,21 @@ Indexes and constraints:
 
 - `Id`, `UserId`, `InstallationPublicId`, `Platform`, `LastSeenAt`, `CreatedAt`, `RevokedAt`
 - Unique `InstallationPublicId`.
+- Unique `(UserId, Id)` supports composite same-user references from session/bootstrap records.
 - Index `(UserId, LastSeenAt DESC)`.
 - FK to Users uses `ON DELETE CASCADE` only during an explicitly authorized hard account deletion.
-- `InstallationPublicId` is metadata/recovery context, never a credential. Authentication requires valid token/session state resolved server-side.
+- `InstallationPublicId` is metadata only, never an authentication, recovery, or rotation credential. Authentication requires valid token/session state resolved server-side.
+
+### GuestBootstrapOperations
+
+- `Id`, `ProofHash`, `UserId`, `DeviceInstallationId`, `RefreshTokenFamilyId`, `CreatedAt`, `ExpiresAt`, `CompletedAt`, `RecoveryConsumedAt`
+- Unique `ProofHash`; the raw `GuestBootstrapProof` is never persisted.
+- FKs bind the operation to its User and DeviceInstallation. The referenced installation must belong to the same User.
+- `RefreshTokenFamilyId` identifies the initial device/session family created by the bootstrap and is immutable after completion.
+- `CompletedAt` is set only after the first bootstrap transaction has created the full M03 identity/world/session result. `ExpiresAt` is exactly 10 minutes after `CompletedAt`.
+- A valid proof retry within that window may atomically set `RecoveryConsumedAt` once, invalidate the previously active initial-family credential as needed, and issue a new credential pair in the same family/session lineage. It resolves the existing User/world and never creates another identity, world, player, or family.
+- Conditional update/locking on `RecoveryConsumedAt` ensures concurrent recovery attempts have at most one success. Expired or consumed operations cannot recover credentials.
+- The proof record is bootstrap-only operational/audit state. It cannot authenticate normal requests, rotate refresh tokens, or authorize ownership. Exact hash-retention duration after its recovery need remains a later policy decision.
 
 ### RefreshTokens
 
@@ -104,6 +120,7 @@ Indexes and constraints:
 - M03 issues tokens with `ExpiresAt` exactly 30 days after `CreatedAt`. `ExpiresAt > CreatedAt` is database constrained; the exact lifetime is also an application/configuration test.
 - Successful rotation atomically sets `ConsumedAt` and `ReplacedByTokenId` and inserts the successor in the same family. A token with `ConsumedAt`, `RevokedAt`, or elapsed `ExpiresAt` cannot mint an access token.
 - Replay of a consumed/replaced token transactionally revokes every still-active token in that family while preserving unrelated families. Timestamps, replacement links, family ID, user ID, and device ID provide replay audit context without raw token material.
+- Refresh rotation is non-idempotent: a successful request returns newly generated credentials once. No reversible credential response or generic idempotency result is persisted. Re-presenting a consumed token, including after a lost success response, follows family-replay containment and never returns the prior response or another token.
 - Accounts enforces at most five active families per user. Creating a sixth locks/rechecks the user's active families and revokes the oldest before activating the new family. Current logout revokes one family; all-device revocation marks every active family for the user revoked.
 - Access JWTs and an access-token denylist are not persisted for MVP.
 
@@ -392,6 +409,7 @@ Catch-up reuses `SimulationRuns`; `RunType = CatchUp` identifies it without redu
 - When WorldId is present, composite FK `(UserId, WorldId) -> GameWorlds(OwnerUserId, Id) ON DELETE RESTRICT` proves that the idempotency owner owns the world. Account-level records leave WorldId null.
 - Same key with different RequestHash is a conflict, never a second operation.
 - Index `(Status, ExpiresAt)` for cleanup/recovery.
+- Safe response data never contains raw access tokens, refresh tokens, or guest-bootstrap proofs. Credential issuance at `/auth/guest` uses the hash-only GuestBootstrapOperation contract, and `/auth/refresh` is deliberately non-idempotent; neither endpoint replays credential bytes through this table.
 
 ### AIGenerationRequests
 
@@ -454,6 +472,8 @@ No cascade may cross from one world to another. Every migration declares delete 
 
 The following are one transaction:
 
+- Complete the first guest bootstrap by recording the proof hash and creating the User, DeviceInstallation/session lineage, initial refresh family, GameWorld, WorldSettings, WorldSimulationState, player Actor, and PlayerProfile; no partially initialized guest identity may commit.
+- Recover an initial guest bootstrap by atomically consuming the one allowed proof recovery, invalidating the prior active initial-family credential as needed, and inserting its replacement in the same lineage without recreating identity/world state.
 - Rotate a refresh token by consuming the old record and inserting its successor; replay detection and whole-family revocation are committed consistently.
 - Create a device/session family while enforcing the five-active-family limit and revoking the oldest active family when necessary.
 - Create world, settings, simulation state, player profile, and player Actor.
@@ -523,3 +543,4 @@ Before accepting an implementation or migration, verify:
 15. Secrets, promises, and recalled memory context cannot reference another world.
 16. Refresh rows contain hashes only; rotation permits one successor, consumed-token replay revokes only its family, and unrelated device families remain active.
 17. Expired/revoked families cannot mint access tokens; current/all-family revocation and the five-active-family limit are transactionally consistent.
+18. Guest-bootstrap rows contain proof hashes only; one proof maps to one User, installation, refresh family, world, and player bootstrap, expires 10 minutes after completion, and permits at most one successful recovery rotation.

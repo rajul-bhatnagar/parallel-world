@@ -256,14 +256,14 @@ Rules:
 
 ### MVP guest lifecycle
 
-1. App creates and securely stores a random installation identity.
-2. App calls guest-session creation with a client idempotency key.
-3. Accounts resolves or creates the guest `User` and refresh session.
-4. Backend returns short-lived access and rotating refresh tokens.
-5. Backend creates or returns the user's owned MVP world through an idempotent use case.
-6. Flutter stores tokens securely and caches only non-authoritative session metadata in Drift.
+1. App creates and securely stores a random installation identity, then creates an independent opaque `GuestBootstrapProof` with at least 256 bits of entropy for the bootstrap operation.
+2. App calls guest-session creation with installation metadata, the proof, and initial-world input. Generic idempotency keys do not govern this credential-issuing operation.
+3. In one transaction, Accounts hashes the proof and creates the guest `User`, installation/session lineage, initial refresh family, owned MVP world, player Actor/Profile, WorldSettings, and WorldSimulationState.
+4. Backend returns short-lived access and rotating refresh tokens plus the stable User/world identity.
+5. A valid proof retry within 10 minutes may recover once by rotating to new credentials in the same bootstrap/session lineage without creating duplicate identity/world state; concurrent recovery permits at most one success.
+6. Flutter stores tokens securely, discards the proof after durably storing the refresh token, and caches only non-authoritative session metadata in Drift.
 
-The installation identity is not trusted as sole authorization; valid server-issued credentials establish the current user. Refresh-token rotation/revocation is server-authoritative.
+The installation identity and bootstrap proof are never normal authentication or authorization credentials. Refresh-token rotation/revocation is server-authoritative and deliberately non-idempotent: a consumed-token retry, including after a lost response, triggers family-replay containment rather than credential-response replay.
 
 ### Later registration and recovery
 
@@ -306,7 +306,7 @@ sequenceDiagram
 
 - API validates transport shape; Application validation checks command semantics; Domain enforces invariants.
 - Transactions begin/end in the application use case or a transaction decorator, not in controllers.
-- Idempotency is checked before mutation and completed in the same transaction as its result where practical.
+- Idempotency is checked before mutation and completed in the same transaction as its result where practical. Credential endpoints follow the explicit API exception: guest bootstrap uses proof-bound identity idempotency with one newly rotated recovery, while refresh is non-idempotent.
 - Typed errors become consistent ProblemDetails at the API boundary.
 - Correlation ID, route, duration, outcome, user/world pseudonymous IDs, and safe reason codes are logged. Bodies, tokens, secrets, and private content are not.
 
@@ -487,7 +487,8 @@ Flutter maps codes to user-safe empty/error/offline/session-expired states, offe
 
 | Operation | Primary protection |
 |---|---|
-| Guest session | Installation/client key plus unique active session constraints |
+| Guest bootstrap | Unique proof hash plus transactional identity/world/session creation; one conditional recovery-consumption transition |
+| Refresh rotation | One-use token hash and transactional successor/replay-family revocation; no generic response replay |
 | World creation | Client idempotency key and user/world-slot uniqueness |
 | Post/message submission | Client operation ID scoped to user/world |
 | Reaction | Unique world/actor/post/reaction-type constraint |
@@ -512,7 +513,7 @@ Initial deployment assumes one backend instance. Multiple instances require a re
 
 Serilog produces structured, sanitized logs with correlation ID, route/use case, safe user/world identifiers, duration, outcome, reason/error code, and deployment version. Metrics/diagnostics cover request duration/error rate, simulation run duration/action counts/partial failures, catch-up lag, AI latency/failure/fallback/token usage, database query duration, background queue depth/lease failures/retries, SignalR connections, and notification delivery outcomes.
 
-Never log access/refresh tokens, signing keys, API keys, full private-message bodies, full AI prompts containing personal data, secret memories, passwords, or provider raw responses containing private context. Exact metrics/tracing library is open; observability must not introduce a distributed platform by default.
+Never log access/refresh tokens, raw guest-bootstrap proofs, signing keys, API keys, full private-message bodies, full AI prompts containing personal data, secret memories, passwords, or provider raw responses containing private context. Exact metrics/tracing library is open; observability must not introduce a distributed platform by default.
 
 ## 28. Security boundaries
 
@@ -521,7 +522,7 @@ Never log access/refresh tokens, signing keys, API keys, full private-message bo
 - PostgreSQL is reachable only from backend/deployment administration paths.
 - AI providers receive minimized, authorized context with no platform secrets or unrelated world data.
 - Runtime secrets come from environment variables or a hosting secret manager, never committed appsettings or Flutter source.
-- Flutter tokens and installation identity use secure storage; refresh tokens are rotatable/revocable.
+- Flutter tokens, installation identity, and the transient guest-bootstrap proof use secure storage; refresh tokens are rotatable/revocable and the bootstrap proof is discarded after durable token storage.
 - Logs, ProblemDetails, realtime, push, and analytics are sanitized.
 - Rate limits protect session/auth, messaging, simulation/catch-up, and AI-generating endpoints.
 - Background jobs and SignalR connections re-establish user/world scope rather than trusting client claims.
@@ -623,7 +624,7 @@ Growth alone does not justify microservices.
 10. Exact PostgreSQL strategy for simulation/job claiming when more than one backend instance exists.
 11. Trigger and candidate technology for a durable scheduler/queue beyond BackgroundService.
 12. Metrics/tracing library and hosting integration; Serilog remains required for structured logs.
-13. Registered authentication and recovery methods for M17; ADR-013 and SECURITY.md resolve the M03 guest access/refresh/session-family policy.
+13. Registered authentication and recovery methods for M17; ADR-013, ADR-014, and SECURITY.md resolve the M03 guest-bootstrap/access/refresh/session-family policy.
 14. Offline write scope and conflict UX, consistent with PRODUCT.md.
 15. Push-notification provider setup, payload policy, and introduction milestone; FCM is planned later.
 16. Group-conversation persistence model if the deferred product feature is ever approved.

@@ -96,7 +96,7 @@ M03 requires concrete access-token, refresh-token, replay-containment, session-l
 - Refresh tokens are opaque cryptographically random bearer values with at least 256 bits of entropy and a 30-day lifetime from issuance. PostgreSQL stores only a secure cryptographic hash. Successful use atomically consumes the token and issues a replacement in the same family; no token can rotate successfully twice.
 - One refresh-token family represents one device/session. A consumed or replaced token replay transactionally revokes that entire family and requires a new or restored valid session, but does not revoke unrelated families. Records retain device association, expiry, consumption, replacement, revocation, and safe audit timestamps without raw tokens.
 - A user may have at most five active device/session families. Creating a sixth revokes the oldest active family. Guest and registered users share this model. Current-device logout revokes the current family; all-device logout revokes every active family for the user. Revoked or expired families cannot mint access tokens. Guest upgrade preserves the same `UserId` and worlds.
-- Installation identifiers are metadata/recovery hints, never authentication credentials. Ownership and session scope resolve server-side and never from a client-supplied `UserId`.
+- Installation identifiers are metadata only, never authentication, recovery, or rotation credentials. Ownership and session scope resolve server-side and never from a client-supplied `UserId`. ADR-014 defines the separate guest-bootstrap recovery proof.
 - Issued access tokens ordinarily remain usable until their 15-minute expiry. MVP has no distributed access-token denylist. A future immediate-revocation or sender-constrained-token requirement requires a new decision.
 - Initial M03 limits are: guest/session creation 10 attempts per IP per 10 minutes; refresh 30 attempts per device/session family per 10 minutes; invalid refresh/replay 10 attempts per IP per 10 minutes; logout 30 requests per authenticated user per 10 minutes. Exceeding a limit returns the standard `429` ProblemDetails response. M03 uses a simple modular-monolith-compatible implementation and does not introduce Redis or other distributed rate-limit infrastructure.
 - Access and refresh tokens, authorization headers, and cookies remain protected by the existing logging redaction rules. Refresh rotation is concurrency-safe; replay detection and family revocation are transactional.
@@ -114,6 +114,37 @@ M03 can implement and verify one precise session model. Ordinary logout does not
 **Revisit when**
 
 M17 selects registered authentication/recovery, M18 selects production secret infrastructure, observed traffic requires rate-limit tuning or distributed coordination, or a higher-risk use case requires immediate or sender-constrained access-token revocation such as DPoP or mTLS.
+
+## ADR-014 — M03 guest-bootstrap recovery and non-idempotent refresh
+
+**Date:** 2026-08-30
+**Status:** Accepted; supplements ADR-013
+
+**Context**
+
+Generic idempotency required credential-issuing endpoints to replay their original response, while ADR-013 permits only hash storage and treats reuse of a consumed refresh token as replay. The original raw credential therefore cannot be reproduced safely, and installation identity cannot authorize guest recovery.
+
+**Decision**
+
+- `POST /api/v1/auth/refresh` is intentionally non-idempotent. It accepts no generic `Idempotency-Key` semantics. A successful call atomically consumes the presented token and returns its replacement exactly once. A consumed/replaced token presented again revokes only its affected family and never replays the earlier response or issues another replacement. Losing a successful refresh response may lose that family and require bootstrap or reauthentication; this is an accepted MVP tradeoff.
+- Initial `POST /api/v1/auth/guest` requires a client-generated opaque `GuestBootstrapProof` with at least 256 bits of cryptographic randomness, independent of installation identity. The server stores only its secure hash, scopes it to one bootstrap operation, never accepts it at another endpoint, and never logs or returns it.
+- The bootstrap proof has a 10-minute recovery window from successful bootstrap and permits at most one successful recovery rotation. The client discards it after safely persisting the initial refresh token. Expired or recovery-consumed proof cannot recover credentials.
+- First bootstrap transactionally creates exactly one guest `User`, `DeviceInstallation`, initial refresh family, `GameWorld`, player Actor/Profile, `WorldSettings`, and `WorldSimulationState`, then returns access/refresh credentials. Only hashes of bootstrap and refresh secrets are persisted.
+- A valid retry within the window returns the same User/world identity without duplicating bootstrap state. Because the original refresh token is unrecoverable, the retry atomically invalidates the currently active initial-family credential, issues new access/refresh credentials in the same bootstrap/session lineage, and marks recovery consumed. Concurrent bootstrap/recovery attempts create one identity/world and permit at most one successful recovery rotation.
+- Guest bootstrap is identity-idempotent, not byte-for-byte credential replay. Generic business idempotency remains unchanged for non-credential writes. Installation ID remains metadata only; generic idempotency keys remain deduplication inputs for approved non-credential operations. Neither is an authentication or recovery credential.
+- Guest bootstrap and recovery use the accepted M03 guest-auth rate limit. Proof hashes are retained only as required for bootstrap integrity, replay/audit, and the later accepted retention policy.
+
+**Alternatives considered**
+
+Reversible credential-response storage, refresh retry grace, installation-ID authentication, treating idempotency keys as credentials, and reproducing deterministic refresh tokens were rejected because they weaken ADR-013 or violate hash-only secret storage.
+
+**Consequences**
+
+M03 can safely recover an initial lost bootstrap response without retaining plaintext credentials. Ordinary refresh remains deliberately unforgiving under response loss. The Flutter bootstrap client in M04 must generate, protect during the request/recovery window, and then discard the proof.
+
+**Revisit when**
+
+Observed mobile network behavior justifies a different reviewed rotation protocol, M17 defines registered reauthentication, or the retention policy is finalized.
 
 ## New ADR template
 

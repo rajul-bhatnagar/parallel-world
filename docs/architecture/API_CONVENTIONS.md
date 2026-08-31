@@ -222,7 +222,7 @@ Idempotency-Key: <client-generated-value>
 ```
 
 - 8-100 ASCII characters from letters, digits, `.`, `_`, `:`, and `-`; random UUID/ULID values are recommended.
-- Persisted scope is `(UserId, operation, key)` as required by DATABASE.md. Guest creation first resolves or transactionally creates the user through the unique installation identity, then stores/loads the user-scoped idempotency result; installation identity alone never authorizes the replay.
+- Persisted scope is `(UserId, operation, key)` as required by DATABASE.md.
 - The request fingerprint covers method, normalized route, relevant content type, and canonical request body.
 - Same key/fingerprint returns the original status, safe body, `Location`, and concurrency headers with `Idempotency-Replayed: true`.
 - Same key with a different fingerprint returns `409 idempotency_key_reused`.
@@ -230,7 +230,14 @@ Idempotency-Key: <client-generated-value>
 - Clients persist and reuse the logical operation key across timeout/offline retries.
 - Exact retention duration remains open; it must cover the supported mobile retry window and is published operationally before offline writes ship.
 
-Required for guest session, world creation, post/reply/quote creation, message send, date invitation, world resume, account registration/upgrade, and other retryable POST actions. `PUT` reaction/repost/follow and read-state actions are naturally idempotent and return current state/no-op success on repetition.
+Required for world creation, post/reply/quote creation, message send, date invitation, world resume, account registration/upgrade, and other retryable non-credential POST actions. `PUT` reaction/repost/follow and read-state actions are naturally idempotent and return current state/no-op success on repetition.
+
+Credential-issuing endpoints have explicit security semantics instead of generic response replay:
+
+- `/auth/guest` uses a `GuestBootstrapProof`, not `Idempotency-Key`, to make User/world creation identity-idempotent. A valid lost-response recovery may return newly rotated credentials rather than the original token bytes.
+- `/auth/refresh` is intentionally non-idempotent and does not accept or honor `Idempotency-Key`. A consumed-token retry follows strict family replay handling.
+
+The server never stores reversible access/refresh credentials merely to replay an earlier response.
 
 ## 15. Concurrency
 
@@ -365,9 +372,13 @@ POST /api/v1/auth/refresh
 POST /api/v1/auth/logout
 ```
 
-Guest creation accepts installation ID, platform, app version, and required idempotency key. Installation identity is metadata/recovery context only and never authorization. Access-token validation follows section 3 and `SECURITY.md`; ownership always derives from the validated `sub`, never a client-supplied `UserId`.
+Guest creation accepts installation ID, platform, app version, the approved initial world name, and a required client-generated `guestBootstrapProof`. The proof is an opaque random value with at least 256 bits of entropy and is distinct from installation identity and refresh credentials. Installation identity is metadata only and never authorizes bootstrap retry, credential recovery, or another request. Access-token validation follows section 3 and `SECURITY.md`; ownership always derives from the validated `sub`, never a client-supplied `UserId`.
 
-Refresh accepts an opaque refresh token in the request body, never a URL. A successful refresh atomically consumes the presented token and returns a replacement refresh token in the same device/session family plus a new access token. Under concurrency, the same token succeeds at most once. Presenting a consumed/replaced token returns a safe authentication failure and transactionally revokes that family; unrelated families remain usable. Expired or revoked families cannot mint an access token.
+The first successful bootstrap atomically creates the guest User, installation/session lineage, initial refresh credential, GameWorld, player Actor/Profile, WorldSettings, and WorldSimulationState. PostgreSQL stores only hashes of the bootstrap proof and refresh token. The proof is valid for one credential-recovery rotation within 10 minutes of successful bootstrap and is then recovery-consumed. It is never accepted as bearer authentication.
+
+An exact proof retry within that window resolves the existing User/world, invalidates the currently active initial-family credential, issues new access/refresh credentials in the same bootstrap/session lineage, and marks recovery consumed. It never creates another User, world, player Actor, or independent family and does not reproduce the original raw token. Expired, consumed, unrelated, or concurrent losing proof use fails safely. The client discards the proof after it has durably stored the original refresh token.
+
+Refresh accepts an opaque refresh token in the request body, never a URL. It is non-idempotent and clients must not send a generic idempotency key. A successful refresh atomically consumes the presented token and returns a replacement refresh token in the same device/session family plus a new access token exactly once. Under concurrency, the same token succeeds at most once. Presenting a consumed/replaced token—including after a lost successful response—returns the safe replay error and transactionally revokes that family; it never returns the previous response or mints another replacement. Unrelated families remain usable. Expired or revoked families cannot mint an access token.
 
 `POST /api/v1/auth/logout` revokes the current refresh family and returns idempotent success. The M03 backend also enforces the all-family revocation operation, but a public logout-all/session-management endpoint remains M17 scope. Issued access tokens ordinarily remain valid only until their 15-minute expiry; MVP has no distributed access-token denylist.
 
@@ -377,10 +388,9 @@ All authentication endpoints use the section 22 rate limits and standard Problem
 
 ```http
 POST /api/v1/auth/guest
-Idempotency-Key: 01J44T6P6HF3A6QZQ9S7MCEYQK
 Content-Type: application/json
 
-{"installationId":"b7f16835-d9bc-44e4-93e4-cf1053f17dcc","platform":"android","appVersion":"1.0.0"}
+{"installationId":"b7f16835-d9bc-44e4-93e4-cf1053f17dcc","platform":"android","appVersion":"1.0.0","guestBootstrapProof":"<opaque-client-generated-proof>","worldName":"My Parallel World"}
 ```
 
 ```json
@@ -390,11 +400,11 @@ Content-Type: application/json
   "refreshToken": "<token>",
   "refreshTokenExpiresAtUtc": "2026-08-30T18:20:00Z",
   "user": {"id":"82af3e1d-e00f-46fd-809d-fc9e4d013937","accountType":"guest"},
-  "world": null
+  "world": {"id":"3aa4bd64-68c7-4db3-a3e1-91d095d1877e","name":"My Parallel World","status":"active","currentGameTimeUtc":"2026-07-31T18:20:00Z","player":{"actorId":"d389d482-c160-416c-93b0-dfa59045b7b5","displayName":"Player"},"createdAtUtc":"2026-07-31T18:20:00Z"}
 }
 ```
 
-Success: `201` for creation or replayed original result.
+Success: `201` for first bootstrap; `200` for the single valid proof recovery with the same identity/world and newly rotated credentials.
 
 ## 26. World endpoints
 
@@ -808,7 +818,7 @@ Response also includes `Retry-After: 30`.
 
 ## 42. Open API decisions
 
-1. Registered authentication/recovery methods and their response shapes for M17. The M03 guest/token fields and semantics in sections 3 and 25 are accepted by ADR-013.
+1. Registered authentication/recovery methods and their response shapes for M17. The M03 guest/token fields and semantics in sections 3 and 25 are accepted by ADR-013 and ADR-014.
 2. ETag/`If-Match` versus explicit version fields for editable resources.
 3. Final `409` versus `412` concurrency mapping after concurrency transport is selected.
 4. **Recorded conflict:** this planning request recommends `400` only for malformed syntax and `422` for valid domain-validation failures, while approved `ARCHITECTURE.md` section 24 specifies `400` with field errors for validation. The API preserves `400`. If `422` is approved later, `docs/architecture/ARCHITECTURE.md` requires correction before this document changes.
@@ -828,12 +838,12 @@ Response also includes `Retry-After: 30`.
 
 ### Consolidated endpoint inventory
 
-`Auth` means bearer authentication; `Idem` means `Idempotency-Key`; `Cursor` means opaque cursor pagination.
+`Auth` means bearer authentication; `Idem` normally means `Idempotency-Key`, while `Proof` is the guest-only bootstrap-proof retry contract; `Cursor` means opaque cursor pagination.
 
 | Method | Route | Purpose | Auth | Idem | Cursor | Release | Success |
 |---|---|---|---:|---:|---:|---|---|
-| POST | `/auth/guest` | Create/resolve guest session | No | Yes | No | MVP | 201 |
-| POST | `/auth/refresh` | Rotate session | Refresh | Yes | No | MVP | 200 |
+| POST | `/auth/guest` | Create/recover guest bootstrap | No | Proof | No | MVP | 200/201 |
+| POST | `/auth/refresh` | Rotate session once | Refresh | No | No | MVP | 200 |
 | POST | `/auth/logout` | Revoke session | Yes | Natural | No | MVP | 204 |
 | POST | `/worlds` | Create owned world | Yes | Yes | No | MVP | 201 |
 | GET | `/worlds` | List owned worlds | Yes | No | No for MVP one-world result | MVP | 200 |

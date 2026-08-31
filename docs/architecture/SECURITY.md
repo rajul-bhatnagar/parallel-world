@@ -85,7 +85,7 @@ No control assumes UUID secrecy, app obfuscation, CORS, root detection, or IP ad
 |---|---|---|---|
 | World-visible fictional: character profile, world post, fictional event | PostgreSQL; owned world only; optional Drift cache | No content logging by default; product retention | TLS; AI only when required by persisted decision |
 | Private: messages, relationships, memories, secrets, promises, email, device details | PostgreSQL; strict module/world/knowledge access; minimized cache | Bodies/secrets denied; duration open by category | TLS; AI only authorized minimal subset; email/device IDs never |
-| Sensitive operational: token/password hashes, signing/API/database/push credentials | Protected server/secret manager; least privilege; tokens in secure mobile storage | Values never logged; rotate/expire by policy | Never sent to AI/push/Flutter except one-time raw session token issuance |
+| Sensitive operational: token/bootstrap-proof/password hashes, signing/API/database/push credentials | Protected server/secret manager; least privilege; tokens and transient bootstrap proof in secure mobile storage | Values never logged; rotate/expire by policy | Never sent to AI/push/Flutter except one-time raw session token issuance and client-originated bootstrap proof |
 | Diagnostics: correlation/error codes, safe IDs, latency, token counts, fallback state | Protected logs/diagnostic tables | Content-free, access-controlled, duration open | Provider-neutral telemetry only; no private prompt/response |
 
 ## 5. Authentication phases
@@ -98,14 +98,16 @@ The database may support multiple owned worlds, but PRODUCT.md/API_CONVENTIONS.m
 
 ## 6. Guest authentication
 
-1. Flutter securely loads or creates a cryptographically random installation public ID.
-2. It calls `POST /api/v1/auth/guest` with platform/app version and stable idempotency key.
+1. Flutter securely loads or creates a cryptographically random installation public ID and a separate opaque `GuestBootstrapProof` with at least 256 bits of entropy for this bootstrap operation.
+2. It calls `POST /api/v1/auth/guest` with installation metadata, bootstrap proof, and the approved initial world input. Generic `Idempotency-Key` does not govern this credential-issuing endpoint.
 3. API applies payload validation and the M03 guest-creation limit of 10 attempts per IP per 10 minutes.
-4. In one idempotent use case, Accounts resolves/creates the installation and guest user, then persists the user-scoped idempotency result.
-5. API issues access and refresh tokens and returns the current world summary when present.
-6. Flutter stores tokens/installation identity securely; installation identity alone never authenticates later requests.
+4. In one transaction, Accounts hashes the proof and creates exactly one guest User, DeviceInstallation/session lineage, initial refresh family, GameWorld, player Actor/Profile, WorldSettings, and WorldSimulationState.
+5. API issues access and refresh tokens and returns the created User/current-world identity. PostgreSQL persists only proof/token hashes.
+6. Flutter stores tokens/installation identity securely and discards the proof after the refresh token is durably stored; installation identity alone never authenticates or recovers a session.
 
-Repeated identical requests return the recorded result/current guest identity where valid. A different fingerprint with the same key returns the API idempotency conflict. Installation ID is never logged or displayed.
+The bootstrap proof is random, independent of installation ID, scoped only to this bootstrap, and never accepted as bearer authentication or at another endpoint. It expires 10 minutes after successful bootstrap and permits one successful credential-recovery rotation. A valid proof retry resolves the same User/world, atomically invalidates the currently active initial-family credential, issues new credentials in the same lineage, and marks recovery consumed. It never reproduces the original token bytes. Concurrent first/recovery requests create one identity/world and permit at most one recovery rotation. Expired or recovery-consumed proof cannot recover credentials.
+
+Only a secure hash of the proof is stored. The raw proof never appears in logs, errors, URLs, or response bodies. Installation ID and generic idempotency keys cannot substitute for it. The proof hash is retained only for the bounded recovery/audit/idempotency need and any later accepted retention policy.
 
 A guest may be unrecoverable if both device storage and usable refresh credentials are lost before registration. MVP must communicate this limitation without forcing registration.
 
@@ -117,14 +119,14 @@ sequenceDiagram
     participant A as API
     participant AC as Accounts
     participant P as PostgreSQL
-    F->>A: POST /auth/guest + installation ID + idempotency key
+    F->>A: POST /auth/guest + installation metadata + bootstrap proof
     A->>A: Validate and rate limit
     A->>AC: CreateOrResolveGuest
-    AC->>P: Transaction: installation, user, idempotency, refresh hash
-    P-->>AC: Existing or new guest
-    AC-->>A: Tokens + safe user/world summary
-    A-->>F: 201 original/replay result
-    F->>F: Securely store tokens
+    AC->>P: Transaction: proof/token hashes + user/world/player/session
+    P-->>AC: Existing or new guest bootstrap
+    AC-->>A: New credentials + same safe user/world identity
+    A-->>F: 201 initial or 200 one-time recovery
+    F->>F: Securely store tokens; discard proof after success
 ```
 
 ## 7. Registered-account authentication
@@ -188,6 +190,8 @@ Rotation is atomic:
 6. Reuse of a consumed or replaced token is a security event: transactionally revoke that entire family and require creation/restoration of a valid session. Unrelated device/session families remain valid.
 
 The same refresh token cannot successfully rotate twice, including under concurrent requests. Flutter single-flight refresh reduces legitimate concurrent reuse, while the server remains authoritative. Strict replay containment at the device/session-family level is the accepted baseline; there is no retry grace.
+
+Refresh is intentionally non-idempotent and does not use generic `Idempotency-Key` behavior. The server never retains reversible credentials to replay a successful refresh response. If that response is lost, presenting the consumed token again triggers the same family-replay containment and may require guest bootstrap recovery or later registered reauthentication. This response-loss cost is an accepted MVP security tradeoff.
 
 ### Diagram 4 — token lifecycle
 
@@ -438,7 +442,7 @@ Use structured sanitized events and production-appropriate levels. Correlation I
 
 | Allowed when necessary | Prohibited |
 |---|---|
-| Safe route template, method, status, duration | Authorization headers; access/refresh/reset tokens |
+| Safe route template, method, status, duration | Authorization headers; access/refresh/reset tokens; guest bootstrap proofs |
 | Correlation ID, deployment version, safe error/reason code | Passwords, secrets, signing/provider/database credentials |
 | Simulation run/action IDs, counts, duration, fallback state | Private-message bodies, full post/draft content |
 | Provider/model identifier, latency and token counts | Full prompts/raw private provider responses |
@@ -535,7 +539,7 @@ Account deletion is later and follows database delete/retention constraints:
 6. Purge expired backups/logs according to disclosed retention capability.
 7. Confirm completion without leaking data.
 
-Private worlds have no real-user shared-content preservation requirement. Incidental cascade is prohibited; deletion is explicit/audited. Exact durations remain open for active/revoked refresh records, idempotency, messages, memories/history, notifications, AI diagnostics, durable work, logs, deleted-account delay, and backups.
+Private worlds have no real-user shared-content preservation requirement. Incidental cascade is prohibited; deletion is explicit/audited. Exact durations remain open for expired/consumed guest-bootstrap proof hashes, active/revoked refresh records, idempotency, messages, memories/history, notifications, AI diagnostics, durable work, logs, deleted-account delay, and backups.
 
 ### Diagram 9 — account deletion
 
@@ -560,7 +564,7 @@ Do not destroy evidence casually or keep excess private data “just in case.”
 
 Required automated/integration coverage:
 
-- Authentication: guest create/replay/conflicting key; valid access authentication; wrong issuer, wrong audience, expiry, invalid signature, and clock-skew boundaries; refresh success, rotation, concurrency, expiry, consumed-token replay and family revoke; unrelated-family survival; current/all-family logout; sixth-family oldest revocation; raw-token persistence/log redaction; rate-limit `429`; cross-user/session attacks. M03 verifies the same-identity/world invariant needed by later guest upgrade; the upgrade endpoint and recovery remain later.
+- Authentication: first guest bootstrap; same-proof identity/world stability; new-credential lost-response recovery; proof hash-only storage, 10-minute expiry, one-recovery limit, endpoint restriction, installation-ID rejection, bootstrap/recovery concurrency, and proof log redaction; valid access authentication; wrong issuer, wrong audience, expiry, invalid signature, and clock-skew boundaries; non-idempotent refresh success, one-time replacement, response-loss replay rejection, concurrency, expiry, consumed-token family revoke, and unrelated-family survival; current/all-family logout; sixth-family oldest revocation; raw-token persistence/log redaction; rate-limit `429`; cross-user/session attacks. M03 verifies the same-identity/world invariant needed by later guest upgrade; the upgrade endpoint and registered recovery remain later.
 - Authorization: cross-user world and cross-world actor/post/parent/quote/reaction/follow/conversation/message/relationship/romance/memory/secret/promise/notification/summary/simulation targets.
 - Input/error: malformed JSON/UUID/enums/cursors/idempotency, oversized/control text, safe `401/403/404/409/429/5xx`, no disclosure.
 - AI: hostile prompt treated as data, memory/secret filtering, context cap, output cannot alter mechanics, invalid/provider failure fallback, budget/rate controls.
@@ -575,6 +579,7 @@ Use real PostgreSQL-compatible integration tests for relational ownership/constr
 - Client-supplied `UserId`, `WorldId`, actor type, or UUID secrecy as authorization.
 - Direct Flutter database/Supabase/AI/provider access or secrets in the app.
 - Raw refresh tokens in PostgreSQL/logs/analytics; reusable nonrotating refresh tokens.
+- Raw guest-bootstrap proofs in PostgreSQL/logs/analytics, installation-ID recovery, or generic idempotent response replay for refresh.
 - Tokens/private messages/prompts/secrets/passwords in logs or URLs.
 - Full chat history/unrelated memories sent to AI.
 - AI output parsed into actions, scores, memories, relationships, or simulation state.
@@ -598,7 +603,7 @@ ADR-013 resolves the M03 access-token, signing-key contract, refresh lifetime/fa
 5. User-facing device/session-management contracts for M17.
 6. Production tuning and distributed coordination for rate limits if observed traffic/topology requires it; later authentication/content/AI endpoint values and temporary restriction behavior.
 7. IP/device metadata collection and retention.
-8. Message, memory/history, notification, AI diagnostic, idempotency, work, log, and backup retention.
+8. Guest-bootstrap proof audit retention beyond its recovery need, plus message, memory/history, notification, AI diagnostic, idempotency, work, log, and backup retention.
 9. Private-message field encryption and Drift encryption.
 10. Account-deletion reauthentication, delay, backup purge, and confirmation policy.
 11. Push preview/category/quiet-hours policy.

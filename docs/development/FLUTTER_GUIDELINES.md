@@ -24,7 +24,7 @@ This guide does not authorize implementation outside the current milestone. **MV
 | Navigation | GoRouter | One declarative route graph and guard model |
 | HTTP | Dio | Access only through core API/repositories, never widgets |
 | Local data | Drift | Cache, drafts, sync metadata, and approved pending work only |
-| Sensitive storage | Flutter Secure Storage | Tokens and installation identity only |
+| Sensitive storage | Flutter Secure Storage | Tokens, installation identity, and transient guest-bootstrap proof only |
 | Immutable/JSON models | Freezed and `json_serializable` where justified | Not mandatory for tiny types |
 | Realtime | SignalR later/when approved | HTTP remains authoritative; client package open |
 | Push | Firebase Cloud Messaging in Version 1/later | Delivery of persisted notifications only |
@@ -101,9 +101,9 @@ Bootstrap order:
 6. Build Dio and interceptors.
 7. Load/create cryptographically random installation identity.
 8. Restore access/refresh tokens.
-9. Refresh once when required and connectivity permits.
-10. Create/restore guest session when no valid session exists.
-11. Load current world or route to world creation.
+9. Refresh once when required and connectivity permits; do not generically retry an indeterminate refresh response.
+10. When no valid session exists, load or create a separate 256-bit-or-greater guest-bootstrap proof and create/recover the guest session with it.
+11. Persist returned tokens durably, discard the bootstrap proof, and resolve the world returned by bootstrap/current-world API.
 12. Resolve router/session state.
 13. Start SignalR only when released, authenticated, and world-resolved.
 14. Render the resolved application state.
@@ -128,7 +128,8 @@ flowchart TD
     TOKENS -->|"Yes"| REFRESH{"Refresh required?"}
     REFRESH -->|"No / success"| WORLD["GET current world"]
     TOKENS -->|"No"| ONLINE{"Online?"}
-    ONLINE -->|"Yes"| GUEST["POST /auth/guest with idempotency key"]
+    ONLINE -->|"Yes"| PROOF["Load/create transient bootstrap proof"]
+    PROOF --> GUEST["POST /auth/guest with proof"]
     GUEST --> WORLD
     ONLINE -->|"No"| FIRSTFAIL["First-launch offline state"]
     REFRESH -->|"Offline, prior session"| CACHE["Offline-authenticated cached shell"]
@@ -338,18 +339,18 @@ flowchart TD
 
 Session states: unknown, initializing, guestAuthenticated, registeredAuthenticated (Version 1), refreshing, offlineAuthenticated, unauthenticated, sessionExpired, and recoverable error.
 
-The session controller is the only owner of token lifecycle. Access/refresh tokens and installation identity use secure storage; ordinary feature providers never read tokens directly. Installation identity is random, persistent, not a password, not logged/shown, and not sufficient authorization.
+The session controller is the only owner of token lifecycle. Access/refresh tokens, installation identity, and any in-flight guest-bootstrap proof use secure storage; ordinary feature providers never read them directly. Installation identity is random, persistent metadata, not a password, not logged/shown, and cannot authenticate, recover, or rotate a session. The bootstrap proof is independently random, scoped only to initial bootstrap/recovery, never used as normal authentication, and discarded immediately after the returned refresh token is durably stored.
 
 Guest first launch:
 
 ```text
-installation ID -> POST /api/v1/auth/guest -> secure tokens
--> GET /api/v1/worlds/current -> create world or home
+installation ID + independent bootstrap proof -> POST /api/v1/auth/guest
+-> atomically created guest/world/player + secure tokens -> persist tokens -> discard proof -> home
 ```
 
 Future upgrade calls the approved `/auth/upgrade` contract, keeps the same backend `UserId`/worlds, rotates session credentials, updates local session, and does not clear same-account cache. Logout/account switch/revocation clears secure tokens, private cache, pending operations, realtime subscriptions, and navigation history.
 
-Token refresh is single-flight: one refresh runs; concurrent failed requests await it; success retries eligible requests once; permanent refresh failure clears credentials/session; network failure does not masquerade as revocation.
+Token refresh is single-flight: one refresh runs; concurrent failed requests await it; success durably replaces credentials before retrying eligible requests once; permanent refresh failure clears credentials/session. Refresh is deliberately non-idempotent: after an indeterminate/lost success response, the client does not submit the consumed token again through generic retry because replay revokes that family. A still-valid, unconsumed guest-bootstrap proof may perform its one bounded initial recovery; otherwise the app requires a fresh guest bootstrap or later registered reauthentication as applicable.
 
 ### Diagram 5 — token refresh coordination
 
@@ -554,7 +555,7 @@ Catch-up summary UI may present “While you were away,” meaningful committed 
 
 Permitted sanitized mobile logs: screen/route name, safe request method and route template, response status, duration, correlation ID, cache hit/miss, retry outcome, app/build version, and realtime connection state.
 
-Never log access/refresh tokens, authorization headers, installation ID, private message bodies, full post drafts, secrets, raw AI context, hidden relationship data, personal data, push tokens, or unredacted ProblemDetails. Disable verbose Dio logging in production.
+Never log access/refresh tokens, guest-bootstrap proofs, authorization headers, installation ID, private message bodies, full post drafts, secrets, raw AI context, hidden relationship data, personal data, push tokens, or unredacted ProblemDetails. Disable verbose Dio logging in production.
 
 Analytics is deferred until product/privacy approval. If added, collect feature-level events rather than private content, use privacy-safe identifiers, document disclosure/retention, honor platform requirements, and never send post/message bodies.
 
@@ -562,7 +563,7 @@ Analytics is deferred until product/privacy approval. If added, collect feature-
 
 Flutter and local storage are untrusted. Required controls:
 
-- Store tokens/installation identity only through secure storage abstractions.
+- Store tokens, installation identity, and transient guest-bootstrap proof only through secure storage abstractions; discard the proof after durable refresh-token storage.
 - Keep backend/provider/database secrets out of source, build config, logs, analytics, and app bundle.
 - Use TLS in production; certificate pinning is not required without a risk decision.
 - Treat local `WorldId`, actor IDs, deep links, cache, and push payloads only as locators; server reauthorizes.
@@ -587,11 +588,11 @@ Measure representative startup, cache load, feed/chat scrolling, pagination, not
 
 Required mobile coverage, aligned with TEST_STRATEGY.md:
 
-- Unit: DTO/enum mapping, ProblemDetails mapping, repository merge/cache policy, cursor pagination, idempotent pending retry, session refresh single-flight, cache synchronization.
+- Unit: DTO/enum mapping, ProblemDetails mapping, repository merge/cache policy, cursor pagination, idempotent pending retry, proof lifecycle/one recovery, non-idempotent session-refresh single-flight, cache synchronization.
 - Provider/controller: initial/refresh/page/offline/error, optimistic reconciliation/rollback, failed write, session expiry, current-world transition.
 - Widget: splash/bootstrap, feed all states, post composition, character profile, conversation list, pending/failed chat, relationship/dating projection, notifications, catch-up summary, accessibility/text scale.
 - Navigation: auth/world guards, deep links, missing/forbidden IDs, session expiry, offline routes, notification links.
-- Integration: guest session, world creation, feed/post, messaging, offline cache, resume/catch-up using fake/stub backend contracts.
+- Integration: proof-bound guest session/world bootstrap and lost-response recovery, feed/post, messaging, offline cache, resume/catch-up using fake/stub backend contracts.
 
 Use fake repositories, in-memory Drift, fake secure storage, fake clock/connectivity/realtime service, and mock API client only where appropriate. Prefer behavior assertions over implementation-detail mocks. Never use a real AI provider in Flutter tests.
 

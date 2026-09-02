@@ -27,7 +27,7 @@ If repository guidance conflicts with an accepted source-of-truth document, stop
 - `mobile/` — Flutter mobile application
 - `infrastructure/` — local and production infrastructure
 
-M01 adds buildable backend and Android application shells. M02 adds the production-shaped backend host and configurable PostgreSQL connectivity without game entities or gameplay behavior. Product behavior is added one milestone at a time after the planning documents have been reviewed and accepted.
+M01 adds buildable backend and Android application shells. M02 adds the production-shaped backend host and configurable PostgreSQL connectivity. M03 adds proof-bound guest sessions and the first isolated private world; later gameplay remains milestone-gated.
 
 ## Pinned toolchain
 
@@ -43,7 +43,7 @@ M01 adds buildable backend and Android application shells. M02 adds the producti
 1. Install the .NET SDK version from `global.json`.
 2. Install Flutter 3.47.1 stable directly or through FVM, and confirm `flutter --version` reports Dart 3.13.1.
 3. Install the Android SDK and accept its licenses. The generated Android application supports API 24 and newer.
-4. Provide an isolated PostgreSQL connection through `ConnectionStrings__Default`. For example, start the M02 PostgreSQL container and configure the current shell:
+4. Provide an isolated PostgreSQL connection through `ConnectionStrings__Default`. For example, start PostgreSQL and configure the current shell:
 
    Use a generated local-only PostgreSQL password containing only ASCII letters, digits, `.`, `_`, and `-`. Compose injects this value into an Npgsql connection string, so connection-string delimiters such as `;` are intentionally excluded.
 
@@ -53,16 +53,42 @@ M01 adds buildable backend and Android application shells. M02 adds the producti
    $env:ConnectionStrings__Default = "Host=localhost;Port=5432;Database=parallel_world;Username=parallel_world;Password=$env:POSTGRES_PASSWORD"
    ```
 
-5. From the repository root, restore and verify the backend:
+5. Generate an uncommitted local RSA key and expose the M03 signing configuration in the current PowerShell session:
 
-   ```bash
+   ```powershell
+   $jwtKey = [System.Security.Cryptography.RSA]::Create(2048)
+   $env:JWT_CURRENT_KEY_ID = 'local-development-key'
+   $env:JWT_CURRENT_PRIVATE_KEY_PEM = $jwtKey.ExportPkcs8PrivateKeyPem()
+   $env:JWT_CURRENT_PUBLIC_KEY_PEM = $jwtKey.ExportSubjectPublicKeyInfoPem()
+   $env:Authentication__CurrentKeyId = $env:JWT_CURRENT_KEY_ID
+   $env:Authentication__CurrentPrivateKeyPem = $env:JWT_CURRENT_PRIVATE_KEY_PEM
+   $env:Authentication__CurrentPublicKeyPem = $env:JWT_CURRENT_PUBLIC_KEY_PEM
+   ```
+
+   Keep these values outside the repository. A previous public key may additionally be supplied through `Authentication__PreviousKeyId` and `Authentication__PreviousPublicKeyPem` during a controlled rotation.
+
+6. From the repository root, restore tools and dependencies, apply the M03 migration, and verify the backend:
+
+   ```powershell
+   dotnet tool restore
    dotnet restore backend/ParallelWorld.sln --configfile NuGet.Config
+   dotnet tool run dotnet-ef database update --project backend/src/ParallelWorld.Infrastructure/ParallelWorld.Infrastructure.csproj --startup-project backend/src/ParallelWorld.Infrastructure/ParallelWorld.Infrastructure.csproj
    dotnet format backend/ParallelWorld.sln --verify-no-changes --no-restore
    dotnet build backend/ParallelWorld.sln --configuration Release --no-restore
+   $env:ConnectionStrings__Default = "Host=localhost;Port=5432;Database=parallel_world_tests;Username=parallel_world;Password=$env:POSTGRES_PASSWORD"
    dotnet test backend/ParallelWorld.sln --configuration Release --no-build
    ```
 
-6. Restore and verify the Flutter shell:
+   PostgreSQL integration tests require `ConnectionStrings__Default` to name the test-specific
+   administrative base `parallel_world_tests` (the base database need not already exist). Each
+   test fixture connects through PostgreSQL's administrative database, then creates and later drops
+   only a generated database named
+   `parallel_world_test_<32 lowercase hex characters>`. A hard guard rejects every other database
+   name before destructive lifecycle operations, so the normal `parallel_world` database is never
+   an integration-test deletion target. The configured PostgreSQL role must be allowed to create
+   and drop these temporary test databases.
+
+7. Restore and verify the Flutter shell:
 
    ```bash
    cd mobile/parallel_world_app
@@ -73,7 +99,7 @@ M01 adds buildable backend and Android application shells. M02 adds the producti
    flutter run
    ```
 
-The API exposes only operational M02 endpoints: `/health/live`, `/health/ready`, and Development-only `/openapi/v1.json`. It requires `ConnectionStrings__Default` at startup. Store the connection string in user-secrets, a local environment variable, or a deployment secret manager; never commit its value.
+The API exposes M03 guest session endpoints under `/api/v1/auth` and owned-world endpoints under `/api/v1/worlds`, alongside `/health/live`, `/health/ready`, and Development-only `/openapi/v1.json`. It requires the PostgreSQL connection and current RSA signing key configuration at startup. Store connection strings and private keys in local environment variables or a deployment secret manager; never commit them.
 
 For local PostgreSQL and the containerized API:
 
@@ -99,7 +125,9 @@ Stop the containerized services with `docker compose --file infrastructure/docke
 
 ## Backend foundation dependencies
 
-- EF Core 10.0.11 and `Npgsql.EntityFrameworkCore.PostgreSQL` 10.0.3 register the empty PostgreSQL `DbContext`; M02 creates no entities or migration.
+- EF Core 10.0.11 and `Npgsql.EntityFrameworkCore.PostgreSQL` 10.0.3 provide the PostgreSQL model and migration. The API pins `Microsoft.EntityFrameworkCore.Relational` 10.0.11 directly so its runtime graph matches the accepted EF patch level.
+- `Microsoft.EntityFrameworkCore.Design` 10.0.11 and repository-local `dotnet-ef` 10.0.11 provide migration generation and verification.
+- `Microsoft.AspNetCore.Authentication.JwtBearer` 10.0.11 provides allowlisted RS256 access-token validation.
 - `Microsoft.AspNetCore.OpenApi` 10.0.11 provides framework-native OpenAPI generation.
 - `Serilog.AspNetCore` 10.0.0 provides structured console and request logging; sensitive property names are redacted before sinks.
 - `Microsoft.AspNetCore.Mvc.Testing` 10.0.11 hosts the real API pipeline in integration tests.

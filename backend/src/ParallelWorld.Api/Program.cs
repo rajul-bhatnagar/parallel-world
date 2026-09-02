@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using ParallelWorld.Api.Endpoints;
 using ParallelWorld.Api.Errors;
 using ParallelWorld.Api.Health;
 using ParallelWorld.Api.Observability;
@@ -34,6 +35,8 @@ app.UseSerilogRequestLogging(options =>
 });
 app.UseExceptionHandler();
 app.UseStatusCodePages();
+app.UseAuthentication();
+app.UseAuthorization();
 
 if (app.Environment.IsDevelopment())
 {
@@ -56,6 +59,9 @@ if (app.Environment.IsEnvironment("Testing"))
 {
     app.MapGet("/_testing/error", ThrowTestException);
 }
+
+app.MapAuthenticationEndpoints();
+app.MapWorldEndpoints();
 
 await app.RunAsync();
 

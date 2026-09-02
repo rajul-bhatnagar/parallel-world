@@ -37,9 +37,7 @@ public sealed class OpenApiAndProductionTests
         {
             builder.UseEnvironment(environment);
             builder.ConfigureAppConfiguration((_, configuration) =>
-                configuration.AddInMemoryCollection(new Dictionary<string, string?>
-                {
-                    ["ConnectionStrings:Default"] = ApiFactory.UnavailableDatabaseConnectionString,
-                }));
+                configuration.AddInMemoryCollection(TestAuthenticationConfiguration.Create(
+                    ApiFactory.UnavailableDatabaseConnectionString)));
         });
 }

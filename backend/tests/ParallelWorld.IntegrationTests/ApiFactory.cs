@@ -13,9 +13,7 @@ public class ApiFactory : WebApplicationFactory<Program>
     {
         builder.UseEnvironment("Testing");
         builder.ConfigureAppConfiguration((_, configuration) =>
-            configuration.AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                ["ConnectionStrings:Default"] = UnavailableDatabaseConnectionString,
-            }));
+            configuration.AddInMemoryCollection(
+                TestAuthenticationConfiguration.Create(UnavailableDatabaseConnectionString)));
     }
 }

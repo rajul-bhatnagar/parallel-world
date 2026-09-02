@@ -88,6 +88,8 @@ public sealed class SensitiveDataEnricher : ILogEventEnricher
             || normalizedName.Contains("apikey", StringComparison.Ordinal)
             || normalizedName == "token"
             || normalizedName.EndsWith("token", StringComparison.Ordinal)
+            || normalizedName == "proof"
+            || normalizedName.EndsWith("proof", StringComparison.Ordinal)
             || normalizedName is "body" or "payload"
             || normalizedName.EndsWith("body", StringComparison.Ordinal)
             || normalizedName.EndsWith("payload", StringComparison.Ordinal);

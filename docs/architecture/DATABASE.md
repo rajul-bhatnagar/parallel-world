@@ -92,7 +92,7 @@ Indexes and constraints:
 
 ### DeviceInstallations
 
-- `Id`, `UserId`, `InstallationPublicId`, `Platform`, `LastSeenAt`, `CreatedAt`, `RevokedAt`
+- `Id`, `UserId`, `InstallationPublicId`, `Platform`, `AppVersion`, `LastSeenAt`, `CreatedAt`, `RevokedAt`
 - Unique `InstallationPublicId`.
 - Unique `(UserId, Id)` supports composite same-user references from session/bootstrap records.
 - Index `(UserId, LastSeenAt DESC)`.
@@ -128,7 +128,7 @@ Indexes and constraints:
 
 ### GameWorlds
 
-- `Id`, `OwnerUserId`, `Name`, `CurrentWorldTime`, `LastSimulatedAt`, `Status`, `CreatedAt`, `UpdatedAt`, `Version`
+- `Id`, `OwnerUserId`, `Name`, `Seed`, `CurrentWorldTime`, `LastSimulatedAt`, `Status`, `CreatedAt`, `UpdatedAt`, `Version`
 - FK `OwnerUserId -> Users.Id ON DELETE RESTRICT`.
 - Alternate key `UNIQUE (OwnerUserId, Id)` supports database-enforced owner/world references.
 - Index `(OwnerUserId, CreatedAt DESC, Id DESC)`.

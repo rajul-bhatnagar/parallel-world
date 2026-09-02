@@ -24,6 +24,9 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Development
       ConnectionStrings__Default: Host=postgres;Port=5432;Database=parallel_world;Username=parallel_world;Password=${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD to a local-only value}
+      Authentication__CurrentKeyId: ${JWT_CURRENT_KEY_ID:?Set JWT_CURRENT_KEY_ID}
+      Authentication__CurrentPrivateKeyPem: ${JWT_CURRENT_PRIVATE_KEY_PEM:?Set JWT_CURRENT_PRIVATE_KEY_PEM}
+      Authentication__CurrentPublicKeyPem: ${JWT_CURRENT_PUBLIC_KEY_PEM:?Set JWT_CURRENT_PUBLIC_KEY_PEM}
     depends_on:
       postgres:
         condition: service_healthy

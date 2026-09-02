@@ -14,6 +14,8 @@ public sealed class SensitiveDataEnricherTests
     [InlineData("DatabasePassword")]
     [InlineData("AccessToken")]
     [InlineData("RefreshToken")]
+    [InlineData("GuestBootstrapProof")]
+    [InlineData("BootstrapProof")]
     [InlineData("SigningSecret")]
     [InlineData("api_key")]
     [InlineData("ConnectionString")]

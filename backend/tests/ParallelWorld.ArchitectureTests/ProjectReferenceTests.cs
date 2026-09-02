@@ -32,13 +32,19 @@ public sealed class ProjectReferenceTests
             var document = XDocument.Load(projectPath);
             var actualReferences = document
                 .Descendants("ProjectReference")
-                .Select(element => Path.GetFileNameWithoutExtension(element.Attribute("Include")!.Value))
+                .Select(element => GetProjectName(element.Attribute("Include")!.Value))
                 .Order(StringComparer.Ordinal)
                 .ToArray();
 
             Assert.Equal(expectedReferences.Order(StringComparer.Ordinal), actualReferences);
         }
     }
+
+    [Theory]
+    [InlineData(@"..\ParallelWorld.Domain\ParallelWorld.Domain.csproj")]
+    [InlineData("../ParallelWorld.Domain/ParallelWorld.Domain.csproj")]
+    public void ProjectReferenceNameExtraction_SupportsBothSeparatorStyles(string include) =>
+        Assert.Equal("ParallelWorld.Domain", GetProjectName(include));
 
     [Fact]
     public void ApplicationUseCases_DoNotDependOnInfrastructureOrPersistenceFrameworks()
@@ -92,5 +98,11 @@ public sealed class ProjectReferenceTests
         }
 
         return current ?? throw new DirectoryNotFoundException("Could not locate the backend solution directory.");
+    }
+
+    private static string GetProjectName(string include)
+    {
+        var normalizedPath = include.Replace('\\', '/');
+        return Path.GetFileNameWithoutExtension(normalizedPath);
     }
 }

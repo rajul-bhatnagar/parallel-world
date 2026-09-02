@@ -1,4 +1,4 @@
-FROM mcr.microsoft.com/dotnet/sdk:10.0.400-bookworm-slim AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0.400-noble AS build
 WORKDIR /source
 
 COPY global.json NuGet.Config ./
@@ -19,7 +19,7 @@ RUN dotnet publish backend/src/ParallelWorld.Api/ParallelWorld.Api.csproj \
     --no-restore \
     --output /app/publish
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0.11-bookworm-slim AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:10.0.11-noble AS runtime
 WORKDIR /app
 
 ENV ASPNETCORE_HTTP_PORTS=8080

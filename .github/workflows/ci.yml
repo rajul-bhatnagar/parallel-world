@@ -76,7 +76,7 @@ jobs:
   flutter:
     name: Flutter
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 25
     defaults:
       run:
         working-directory: mobile/parallel_world_app
@@ -95,6 +95,12 @@ jobs:
       - name: Restore dependencies
         run: flutter pub get
 
+      - name: Generate Drift code
+        run: dart run build_runner build
+
+      - name: Verify generated Drift code is current
+        run: git diff --exit-code -- lib/features/world/data/cache/app_database.g.dart && test -z "$(git ls-files --others --exclude-standard lib)"
+
       - name: Verify formatting
         run: dart format --output=none --set-exit-if-changed .
 
@@ -103,3 +109,9 @@ jobs:
 
       - name: Test
         run: flutter test
+
+      - name: Build Android debug application
+        run: flutter build apk --debug --dart-define=API_BASE_URL=http://10.0.2.2:8080 --dart-define=APP_ENVIRONMENT=test
+
+      - name: Build Android release application
+        run: flutter build apk --release --dart-define=API_BASE_URL=https://api.example.test --dart-define=APP_ENVIRONMENT=production

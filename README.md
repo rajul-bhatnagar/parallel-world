@@ -27,7 +27,7 @@ If repository guidance conflicts with an accepted source-of-truth document, stop
 - `mobile/` — Flutter mobile application
 - `infrastructure/` — local and production infrastructure
 
-M01 adds buildable backend and Android application shells. M02 adds the production-shaped backend host and configurable PostgreSQL connectivity. M03 adds proof-bound guest sessions and the first isolated private world; later gameplay remains milestone-gated.
+M01 adds buildable backend and Android application shells. M02 adds the production-shaped backend host and configurable PostgreSQL connectivity. M03 adds proof-bound guest sessions and the first isolated private world. M04 adds the Android client foundation for secure guest bootstrap, session recovery, owned-world loading, and an explicitly offline cached view; later gameplay remains milestone-gated.
 
 ## Pinned toolchain
 
@@ -88,7 +88,7 @@ M01 adds buildable backend and Android application shells. M02 adds the producti
    an integration-test deletion target. The configured PostgreSQL role must be allowed to create
    and drop these temporary test databases.
 
-7. Restore and verify the Flutter shell:
+7. Restore and verify the Flutter application. `API_BASE_URL` is a required compile-time value; `10.0.2.2` is the Android emulator alias for the development host:
 
    ```bash
    cd mobile/parallel_world_app
@@ -96,7 +96,7 @@ M01 adds buildable backend and Android application shells. M02 adds the producti
    dart format --output=none --set-exit-if-changed .
    flutter analyze
    flutter test
-   flutter run
+   flutter run --dart-define=API_BASE_URL=http://10.0.2.2:8080 --dart-define=APP_ENVIRONMENT=local
    ```
 
 The API exposes M03 guest session endpoints under `/api/v1/auth` and owned-world endpoints under `/api/v1/worlds`, alongside `/health/live`, `/health/ready`, and Development-only `/openapi/v1.json`. It requires the PostgreSQL connection and current RSA signing key configuration at startup. Store connection strings and private keys in local environment variables or a deployment secret manager; never commit them.
@@ -118,10 +118,14 @@ dotnet run --project backend/src/ParallelWorld.Api/ParallelWorld.Api.csproj
 
 Stop the containerized services with `docker compose --file infrastructure/docker/compose.yml down`.
 
-## Bootstrap dependencies
+## Bootstrap and mobile-foundation dependencies
 
 - Backend test projects use `Microsoft.NET.Test.Sdk`, xUnit, the Visual Studio xUnit runner, and `coverlet.collector`, supplied by the .NET 10 xUnit template, for test discovery and future coverage collection.
-- The Flutter app uses only the Flutter SDK at runtime. `flutter_test` supplies the baseline widget test and `flutter_lints` 6.0.0 supplies the configured static-analysis rules.
+- `flutter_riverpod` 3.4.2 and `go_router` 18.0.0 provide explicit client state and navigation boundaries.
+- Dio 5.11.0 provides the HTTP pipeline, including sanitized request diagnostics and single-flight authenticated retry handling.
+- `flutter_secure_storage` 10.0.0 stores session and bootstrap-recovery secrets in platform-protected storage.
+- Drift 2.34.3 with `drift_flutter` 0.3.1 stores only the user-scoped cached world projection. `drift_dev` 2.34.5 and `build_runner` 2.15.3 generate the checked-in database code.
+- `flutter_test` supplies unit and widget testing, and `flutter_lints` 6.0.0 supplies the configured static-analysis rules.
 
 ## Backend foundation dependencies
 

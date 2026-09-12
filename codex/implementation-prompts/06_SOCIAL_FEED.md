@@ -1,18 +1,18 @@
 # Implementation Prompt — Social Feed
 
 ```text
-Read AGENTS.md, docs/milestones/M06_FEED.md, docs/product/PRODUCT.md, docs/game-design/GAME_RULES.md, docs/architecture/ARCHITECTURE.md, docs/architecture/DATABASE.md, docs/architecture/API_CONVENTIONS.md, docs/architecture/SECURITY.md, docs/development/FLUTTER_GUIDELINES.md, and docs/development/TEST_STRATEGY.md. Inspect the repository, current branch, status, and relevant diffs before editing.
+Read AGENTS.md, docs/milestones/M06_FEED.md, docs/product/PRODUCT.md, docs/game-design/GAME_RULES.md, docs/architecture/ARCHITECTURE.md, docs/architecture/DATABASE.md, docs/architecture/API_CONVENTIONS.md, docs/architecture/SECURITY.md, docs/development/DECISIONS.md (including ADR-015), docs/development/FLUTTER_GUIDELINES.md, and docs/development/TEST_STRATEGY.md. Inspect the repository, current branch, status, and relevant diffs before editing.
 
 Task: Social Feed
 
 Scope:
-Implement Posts with player/character/system authors, replies via ParentPostId, cursor feed API, player compose API, seed posts, Flutter feed/compose/pagination/cache/error states, migration and tests. Exclude reactions/reposts/hashtags.
+Implement Posts with player/character/system authors, replies via ParentPostId, a strict chronological `createdAtUtc DESC, id DESC` opaque-cursor feed API, player compose API, seed posts, Flutter feed/compose/pagination/cache/error states, migration and tests. Exclude reactions/reposts/hashtags.
 
 Explicit exclusions:
-- No reactions, reposts, hashtags, mentions, full trends, or unapproved ranking choice.
+- No reactions, reposts, hashtags, mentions, full trends, deterministic-ranked/personalized feed, ranking scores, popularity/relationship weighting, AI/simulation ordering, randomization, or client-side resorting.
 
 Tests:
-- Test cursor feed, authorship/ownership, same-world parent references, idempotent compose, cache/pagination, and UI states.
+- Test newest-first order, equal-time `id DESC` tie-break, deterministic repeated queries, opaque cursor continuation, no adjacent-page duplicates, invalid cursor handling, world isolation, absence of ranked/personalized M06 ordering, authorship/ownership, same-world parent references, idempotent compose, cache/pagination, and UI states.
 
 Before editing:
 1. List relevant existing files.

@@ -146,6 +146,36 @@ M03 can safely recover an initial lost bootstrap response without retaining plai
 
 Observed mobile network behavior justifies a different reviewed rotation protocol, M17 defines registered reauthentication, or the retention policy is finalized.
 
+## ADR-015 — M06 chronological feed ordering
+
+**Date:** 2026-09-12
+**Status:** Accepted
+
+**Context**
+
+M06 requires one stable total order for the private world feed before its API, cursor, database query, Flutter cache, and pagination tests can be implemented. Chronological and deterministic-ranked ordering were previously both listed as candidates, but M06 does not yet have the relationship, interaction, engagement, or simulation signals needed to justify a ranking model.
+
+**Decision**
+
+- M06 orders feed posts strictly by `createdAtUtc DESC, id DESC` within the authenticated user's authorized world. Newer posts appear first, and `id DESC` is the deterministic tie-breaker when timestamps are equal.
+- M06 uses no ranking score, popularity weighting, relationship weighting, AI-generated ranking, simulation-based ordering, randomization, or client-side resorting.
+- Cursor pagination uses the tuple `(createdAtUtc, id)`. The cursor is opaque, versioned, scope-bound, and validated by the server; clients do not decode it.
+- The next page contains only posts for which `createdAtUtc < cursor.createdAtUtc`, or `createdAtUtc = cursor.createdAtUtc` and `id < cursor.id`. This seek predicate prevents adjacent cursor pages from duplicating previously returned items when newer posts arrive between requests.
+- M06 guarantees stable chronological pagination under this tuple ordering. It does not introduce snapshot-isolation or feed-session semantics.
+- Deterministic-ranked or personalized ordering is deferred. A later ordering model requires a separate accepted decision after its signals and stable cursor tuple are explicitly defined.
+
+**Alternatives considered**
+
+Deterministic ranking and personalized ranking were deferred because their inputs and scoring contract do not exist in M06. Offset pagination and client-side sorting were rejected because they do not provide the required stable server-authoritative ordering for a growing feed.
+
+**Consequences**
+
+The M06 API, PostgreSQL query/index, Flutter cache, and automated tests share one exact ordering oracle. New posts may appear before an existing cursor between requests, but items already returned are not duplicated solely because of cursor continuation. Any future ranking change is a public pagination-contract change requiring compatibility review.
+
+**Revisit when**
+
+A later milestone has approved ranking signals such as relationships, interactions, recency weighting, simulation state, or engagement, and a separate decision defines the ranking, tie-breaks, cursor compatibility, and migration behavior.
+
 ## New ADR template
 
 ### ADR-XXX — Title

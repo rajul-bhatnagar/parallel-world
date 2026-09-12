@@ -255,7 +255,7 @@ flowchart LR
 | M03 | M02 | None |
 | M04 | M03 API contract | None |
 | M05 | M03-M04 | None |
-| M06 | M05 | Feed ordering decision before final implementation |
+| M06 | M05 | Chronological feed ordering accepted by ADR-015 |
 | M07 | M06 | None |
 | M08 | M05-M07 | None |
 | M09 | M08 persisted decisions | AI provider choice |
@@ -449,22 +449,22 @@ Every listed schema change includes an EF migration, clean/previous-schema Postg
 
 - **Goal:** Deliver the private text feed and player post creation.
 - **User-visible result:** Player reads character/player posts, paginates, refreshes, creates a post, and sees cache offline.
-- **Dependencies:** M05; resolve chronological versus deterministic ranked ordering before final feed implementation. Until then use the approved current chronological contract only if explicitly accepted.
-- **Backend scope:** Posts/reply-ready parent structure, author actor, GameplayEvent provenance, world feed, opaque cursor, player post idempotency, deterministic seeded character-post fixtures.
+- **Dependencies:** M05 and the chronological feed-ordering contract accepted by ADR-015.
+- **Backend scope:** Posts/reply-ready parent structure, author actor, GameplayEvent provenance, world feed ordered by `createdAtUtc DESC, id DESC`, opaque `(createdAtUtc, id)` cursor, player post idempotency, deterministic seeded character-post fixtures.
 - **Database scope:** Posts, composite actor/event/parent FKs, active feed/author/reply cursor indexes, count checks, migration.
 - **Flutter scope:** Feed/post card/composer, pull-to-refresh, next-page state, Drift cache, optimistic player post, failed retry.
 - **Infrastructure scope:** None beyond migration/test data.
 - **Seed data:** Deterministic same-world character posts; no simulated activity yet.
-- **Test scope:** Order/tie-break/cursor scope, duplicate pages, idempotent create, cross-world parent/author denial, optimistic reconciliation, all screen states.
+- **Test scope:** Newest-first order, equal-time `id DESC` tie-break, deterministic repeat order, cursor continuation/no adjacent-page duplicates, invalid cursor, world isolation, no M06 ranking, idempotent create, cross-world parent/author denial, optimistic reconciliation, and all screen states.
 - **Documentation updates:** Setup/contract examples only if needed.
-- **Explicit exclusions:** Quote/repost/hashtags/mentions/rich reactions, feed impressions, autonomous posting, public/global feed.
+- **Explicit exclusions:** Quote/repost/hashtags/mentions/rich reactions, feed impressions, deterministic-ranked/personalized ordering, autonomous posting, public/global feed.
 - **Acceptance criteria:** Stable private feed and one player post effect; cache is clearly stale/non-authoritative offline.
 - **Required verification:** API/PostgreSQL/cursor/idempotency tests plus Flutter repository/provider/widget tests.
 - **Manual checks:** Empty and seeded feed, paging, offline cache, post timeout/retry, foreign post ID.
 - **Review focus:** Cursor stability, author derivation, world isolation, pending reconciliation.
 - **Suggested milestone commit:** `feat(feed): add private cursor-paginated feed`.
 - **Exit criteria:** Feed vertical slice stable with no deferred social features.
-- **Main risks:** Open ordering choice, duplicate optimistic rows, cache mistaken for truth.
+- **Main risks:** Cursor-boundary defects, duplicate optimistic rows, cache mistaken for truth.
 - **Rollback:** Revert app/API; preserve post rows or use explicit migration recovery—never drop user posts casually.
 
 ## 20. M07 Reactions, replies, and follows
@@ -804,18 +804,17 @@ Do not silently settle these before the affected milestone:
 5. Registration/recovery method and email verification for Version 1.
 6. Exact CI runner operating systems beyond the accepted GitHub Actions M01 checks.
 7. Release cadence, staging timing, first beta size, and app-store order.
-8. Feed ordering: chronological or deterministic ranking.
-9. SignalR introduction milestone and client package; HTTP polling remains valid.
-10. ETag/version representation and final `409`/`412` mapping.
-11. New offline-write scope/conflict UX and idempotency retention.
-12. Performance targets, load-tooling threshold, and coverage thresholds.
-13. Crash-reporting and analytics providers, disclosure, and retention.
-14. Container/isolation tooling details beyond the accepted PostgreSQL snake_case policy and M03 Actor timing.
-15. Romance/content rating boundaries before broad dating release.
-16. Topic taxonomy and whether/when to activate the full Version 1 world-events/trends scope in M14.
-17. Retention, field/cache encryption, account deletion, backup purge, and support/admin model.
-18. Release-checklist ownership and authority for accepting known High risk.
-19. Advanced romance scope beyond the MVP Dating state, including breakup/FormerPartner, reconciliation, commitment, engagement, marriage, separation, and divorce.
+8. SignalR introduction milestone and client package; HTTP polling remains valid.
+9. ETag/version representation and final `409`/`412` mapping.
+10. New offline-write scope/conflict UX and idempotency retention.
+11. Performance targets, load-tooling threshold, and coverage thresholds.
+12. Crash-reporting and analytics providers, disclosure, and retention.
+13. Container/isolation tooling details beyond the accepted PostgreSQL snake_case policy and M03 Actor timing.
+14. Romance/content rating boundaries before broad dating release.
+15. Topic taxonomy and whether/when to activate the full Version 1 world-events/trends scope in M14.
+16. Retention, field/cache encryption, account deletion, backup purge, and support/admin model.
+17. Release-checklist ownership and authority for accepting known High risk.
+18. Advanced romance scope beyond the MVP Dating state, including breakup/FormerPartner, reconciliation, commitment, engagement, marriage, separation, and divorce.
 
 ### Resolved planning-review conflicts
 

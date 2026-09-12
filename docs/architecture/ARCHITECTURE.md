@@ -421,8 +421,9 @@ The shared romantic status is never copied independently into both directional r
 ## 20. Feed generation and pagination
 
 - Feed is strictly `WorldId` scoped and contains eligible player, AI-character, and approved system posts.
-- The initial ordering choice—chronological or simple deterministic ranking—remains open. Both must expose a stable total order.
-- Cursor pagination encodes the ordering tuple, initially suitable as `(CreatedAtUtc, Id)` descending for chronological order or `(RankSnapshot, CreatedAtUtc, Id)` for deterministic ranking.
+- M06 uses the chronological total order `(CreatedAtUtc DESC, Id DESC)`. It uses no ranking score, popularity or relationship weighting, AI-generated or simulation-based ordering, randomization, or client-side resorting.
+- Cursor pagination encodes the `(CreatedAtUtc, Id)` tuple in an opaque, versioned, world-scoped server cursor. A next-page query seeks strictly after the last visible tuple in the descending order, so newly inserted posts do not duplicate items already returned by adjacent cursor pages.
+- M06 does not promise snapshot-isolated feed sessions. Deterministic-ranked or personalized ordering is deferred and requires a separate accepted decision defining its inputs, total order, and cursor compatibility.
 - Offset pagination is prohibited for growing feed and message histories.
 - Cursor values are opaque to Flutter and validated/scoped server-side.
 - Flutter caches pages and synchronization cursors in Drift, deduplicates by server ID, and refreshes from the first page when ordering context changes.
@@ -617,17 +618,16 @@ Growth alone does not justify microservices.
 3. Initial external AI provider/model and provider-selection policy.
 4. Initial hosting provider and managed PostgreSQL vendor.
 5. Choice of EF naming-convention package versus explicit mappings; PostgreSQL `snake_case` itself is accepted.
-6. Exact feed ordering for MVP: chronological or simple deterministic ranking.
-7. First milestone that introduces SignalR versus API refresh/polling.
-8. Whether feed impressions are persisted and, if so, at what release stage.
-9. Whether the physical Actor abstraction is present in the first schema or introduced incrementally behind stable IDs/contracts.
-10. Exact PostgreSQL strategy for simulation/job claiming when more than one backend instance exists.
-11. Trigger and candidate technology for a durable scheduler/queue beyond BackgroundService.
-12. Metrics/tracing library and hosting integration; Serilog remains required for structured logs.
-13. Registered authentication and recovery methods for M17; ADR-013, ADR-014, and SECURITY.md resolve the M03 guest-bootstrap/access/refresh/session-family policy.
-14. Offline write scope and conflict UX, consistent with PRODUCT.md.
-15. Push-notification provider setup, payload policy, and introduction milestone; FCM is planned later.
-16. Group-conversation persistence model if the deferred product feature is ever approved.
-17. Object-storage provider and media processing architecture when media is approved.
+6. First milestone that introduces SignalR versus API refresh/polling.
+7. Whether feed impressions are persisted and, if so, at what release stage.
+8. Whether the physical Actor abstraction is present in the first schema or introduced incrementally behind stable IDs/contracts.
+9. Exact PostgreSQL strategy for simulation/job claiming when more than one backend instance exists.
+10. Trigger and candidate technology for a durable scheduler/queue beyond BackgroundService.
+11. Metrics/tracing library and hosting integration; Serilog remains required for structured logs.
+12. Registered authentication and recovery methods for M17; ADR-013, ADR-014, and SECURITY.md resolve the M03 guest-bootstrap/access/refresh/session-family policy.
+13. Offline write scope and conflict UX, consistent with PRODUCT.md.
+14. Push-notification provider setup, payload policy, and introduction milestone; FCM is planned later.
+15. Group-conversation persistence model if the deferred product feature is ever approved.
+16. Object-storage provider and media processing architecture when media is approved.
 
 Before implementation, affected open decisions must be resolved in `docs/development/DECISIONS.md` or the appropriate authoritative document. No implementation task may silently choose them.

@@ -262,7 +262,7 @@ Cover meaningful-event threshold; mandatory Promise, Secret, and released Romant
 
 ## 22. Feed and pagination testing
 
-Test empty/first/next/refresh feed, stable ordering, equal-time ID tie-break, no duplicates, deleted posts, reply rendering/depth, player optimistic reconciliation, likes/follows, isolation, limits, invalid/mismatched/tampered cursor, and high-volume boundaries. Quotes, reposts, hashtags, mentions, rich reactions, and ranked-feed specifics remain deferred.
+Test empty/first/next/refresh feed; newest-first `createdAtUtc DESC` ordering; equal-time `id DESC` tie-break; deterministic repeated-query ordering; opaque cursor continuation; no duplicates between adjacent pages when newer posts arrive; invalid, mismatched, or tampered cursor handling; world isolation; deleted posts; reply rendering/depth; player optimistic reconciliation; likes/follows; limits; and high-volume boundaries. Assert that M06 applies no ranked/personalized ordering, popularity weighting, relationship weighting, AI ranking, simulation ordering, randomization, or client-side resorting. Quotes, reposts, hashtags, mentions, rich reactions, and ranked-feed specifics remain deferred.
 
 ## 23. Catch-up simulation testing
 
@@ -540,10 +540,9 @@ A feature is complete only when acceptance criteria are met; sources/existing co
 12. Staging reset/retention and real-AI manual policy.
 13. Flaky tracking/quarantine ownership.
 14. Release checklist owner and High-risk acceptance authority.
-15. Feed-order oracle after its product decision.
-16. Concurrency tests after ETag/version and `409`/`412` decisions.
-17. SignalR/push test environments when released.
-18. New-offline-write tests after product/API decisions.
+15. Concurrency tests after ETag/version and `409`/`412` decisions.
+16. SignalR/push test environments when released.
+17. New-offline-write tests after product/API decisions.
 
 ### Recorded conflicts and phase mismatches
 

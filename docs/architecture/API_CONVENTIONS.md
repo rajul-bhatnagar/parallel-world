@@ -265,13 +265,15 @@ If ETags are approved, `ETag` and `If-Match` use an encoded opaque value, never 
 
 | Collection | Default | Maximum | Server order |
 |---|---:|---:|---|
-| Feed | 20 | 50 | `createdAtUtc DESC, id DESC` until feed-ranking decision changes it |
+| Feed | 20 | 50 | `createdAtUtc DESC, id DESC` |
 | Messages | 30 | 100 | `createdAtUtc DESC, id DESC`; Flutter may reverse for display |
 | Notifications | 30 | 100 | `createdAtUtc DESC, id DESC` |
 | Relationship history | 25 | 100 | `occurredAtUtc DESC, id DESC` |
 | Characters | 20 | 100 | stable server-defined catalogue order ending in `id` |
 
 Cursor encoding and expiry remain open implementation decisions; clients must never decode cursors.
+
+For the M06 feed, the opaque cursor represents the last visible `(createdAtUtc, id)` tuple. The next page seeks strictly after that tuple in descending order: `createdAtUtc < cursor.createdAtUtc`, or equal `createdAtUtc` with `id < cursor.id`. The cursor is bound to the authorized world and applicable filters. This prevents adjacent pages from duplicating previously returned items when newer posts arrive; it does not create a snapshot-isolated feed session.
 
 ## 17. Filtering and sorting
 
@@ -503,7 +505,7 @@ DELETE /api/v1/worlds/{worldId}/posts/{postId}
 POST   /api/v1/worlds/{worldId}/posts/{postId}/replies
 ```
 
-Post editing is open and not in MVP. Delete performs approved logical removal. Author is always the authenticated player; the client cannot post as an AI actor. Feed origin/provider diagnostics remain internal. Feed mode is unavailable until chronological versus deterministic ranking is decided.
+Post editing is open and not in MVP. Delete performs approved logical removal. Author is always the authenticated player; the client cannot post as an AI actor. Feed origin/provider diagnostics remain internal. M06 exposes one feed mode: strict chronological `createdAtUtc DESC, id DESC` ordering with an opaque `(createdAtUtc, id)` cursor. It uses the standard `{ "items": [], "nextCursor": null, "hasMore": false }` collection envelope. Ranked/personalized feed modes are deferred and are not accepted query options.
 
 **Example 4 — feed page**
 
@@ -834,7 +836,6 @@ Response also includes `Retry-After: 30`.
 14. Production rate-limit tuning and values for endpoints introduced after M03.
 15. OpenAPI generation/compatibility-check approach.
 16. Idempotency retention period and offline-write retry window.
-17. Initial feed ordering and any permitted feed-mode query.
 
 ### Consolidated endpoint inventory
 

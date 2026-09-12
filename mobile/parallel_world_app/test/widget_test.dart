@@ -72,7 +72,7 @@ void main() {
 
     expect(find.text('Offline cached view'), findsOneWidget);
     expect(find.text('My Parallel World'), findsOneWidget);
-    expect(find.textContaining('later milestones'), findsOneWidget);
+    expect(find.text('View characters'), findsOneWidget);
   });
 
   testWidgets('bootstrap exhaustion offers an explicit new-session action', (

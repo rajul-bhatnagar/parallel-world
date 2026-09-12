@@ -5,8 +5,10 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using ParallelWorld.Application.Abstractions.Persistence;
 using ParallelWorld.Application.Authentication;
+using ParallelWorld.Application.Characters;
 using ParallelWorld.Application.Worlds;
 using ParallelWorld.Infrastructure.Authentication;
+using ParallelWorld.Infrastructure.Characters;
 using ParallelWorld.Infrastructure.Configuration;
 using ParallelWorld.Infrastructure.Persistence;
 using ParallelWorld.Infrastructure.Worlds;
@@ -71,6 +73,8 @@ public static class DependencyInjection
         services.AddScoped<ISessionAdministrationService>(serviceProvider =>
             serviceProvider.GetRequiredService<AuthenticationService>());
         services.AddScoped<IWorldService, WorldService>();
+        services.AddScoped<ICharacterRepository, CharacterRepository>();
+        services.AddScoped<ICharacterCatalogueService, CharacterCatalogueService>();
         services.AddSingleton<IConfigureOptions<JwtBearerOptions>, JwtBearerOptionsConfiguration>();
         services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer();
         services.AddAuthorization();

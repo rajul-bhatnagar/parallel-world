@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:parallel_world_app/app/theme.dart';
 import 'package:parallel_world_app/features/session/application/session_controller.dart';
 import 'package:parallel_world_app/features/session/application/session_state.dart';
@@ -52,16 +53,23 @@ class HomeScreen extends ConsumerWidget {
                   : 'Welcome, ${world.playerDisplayName}.',
             ),
             const SizedBox(height: AppSpacing.large),
-            const Card(
+            Card(
               child: Padding(
-                padding: EdgeInsets.all(AppSpacing.large),
+                padding: const EdgeInsets.all(AppSpacing.large),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('World ready', style: TextStyle(fontSize: 20)),
-                    SizedBox(height: AppSpacing.small),
-                    Text(
-                      'Character and feed features arrive in later milestones.',
+                    const Text(
+                      'Meet the characters',
+                      style: TextStyle(fontSize: 20),
+                    ),
+                    const SizedBox(height: AppSpacing.small),
+                    const Text('Browse the people who live in this world.'),
+                    const SizedBox(height: AppSpacing.medium),
+                    FilledButton.icon(
+                      onPressed: () => context.push('/characters'),
+                      icon: const Icon(Icons.people_outline),
+                      label: const Text('View characters'),
                     ),
                   ],
                 ),

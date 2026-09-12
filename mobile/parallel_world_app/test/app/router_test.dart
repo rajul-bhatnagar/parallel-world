@@ -38,6 +38,17 @@ void main() {
     expect(
       routeForSession(
         SessionState(
+          phase: SessionPhase.authenticated,
+          userId: 'user',
+          world: testWorld,
+        ),
+        '/characters/character-id',
+      ),
+      isNull,
+    );
+    expect(
+      routeForSession(
+        SessionState(
           phase: SessionPhase.offlineAuthenticated,
           world: testWorld,
         ),
@@ -51,6 +62,20 @@ void main() {
         '/retry',
       ),
       isNull,
+    );
+  });
+
+  test('character deep links remain behind session and world guards', () {
+    expect(
+      routeForSession(const SessionState.initial(), '/characters/character-id'),
+      '/splash',
+    );
+    expect(
+      routeForSession(
+        const SessionState(phase: SessionPhase.authenticated, userId: 'user'),
+        '/characters/character-id',
+      ),
+      '/world/create',
     );
   });
 }

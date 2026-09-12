@@ -31,4 +31,20 @@ void main() {
     );
     expect(File('lib/core/cache/app_database.dart').existsSync(), isFalse);
   });
+
+  test('character presentation does not import Dio or Drift', () {
+    final violations = Directory('lib/features/characters/presentation')
+        .listSync(recursive: true)
+        .whereType<File>()
+        .where((file) => file.path.endsWith('.dart'))
+        .where((file) {
+          final contents = file.readAsStringSync();
+          return contents.contains('package:dio/') ||
+              contents.contains('package:drift/');
+        })
+        .map((file) => file.path)
+        .toList();
+
+    expect(violations, isEmpty);
+  });
 }

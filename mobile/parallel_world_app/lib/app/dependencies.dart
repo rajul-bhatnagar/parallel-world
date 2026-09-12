@@ -7,6 +7,11 @@ import 'package:parallel_world_app/core/auth/secure_key_value_store.dart';
 import 'package:parallel_world_app/core/auth/secure_session_store.dart';
 import 'package:parallel_world_app/core/config/app_config.dart';
 import 'package:parallel_world_app/core/logging/safe_logger.dart';
+import 'package:parallel_world_app/features/characters/application/character_contracts.dart';
+import 'package:parallel_world_app/features/characters/application/character_dependencies.dart';
+import 'package:parallel_world_app/features/characters/data/character_api.dart';
+import 'package:parallel_world_app/features/characters/data/character_cache.dart';
+import 'package:parallel_world_app/features/characters/data/character_repository.dart';
 import 'package:parallel_world_app/features/session/application/session_contracts.dart';
 import 'package:parallel_world_app/features/session/application/session_dependencies.dart';
 import 'package:parallel_world_app/features/session/data/auth_api.dart';
@@ -90,6 +95,25 @@ final _worldCacheImplementationProvider = Provider<WorldCache>(
   ),
 );
 
+final _characterGatewayProvider = Provider<CharacterGateway>(
+  (ref) => CharacterApi(ref.watch(authenticatedDioProvider)),
+);
+
+final _characterCacheProvider = Provider<CharacterCache>(
+  (ref) => DriftCharacterCache(
+    ref.watch(appDatabaseProvider),
+    utcNow: ref.watch(utcNowProvider),
+  ),
+);
+
+final _characterRepositoryImplementationProvider =
+    Provider<CharacterRepository>(
+      (ref) => ApiCachedCharacterRepository(
+        ref.watch(_characterGatewayProvider),
+        ref.watch(_characterCacheProvider),
+      ),
+    );
+
 Widget buildAppScope({required AppConfig config, required Widget child}) =>
     ProviderScope(
       overrides: [
@@ -102,6 +126,9 @@ Widget buildAppScope({required AppConfig config, required Widget child}) =>
         ),
         worldCacheProvider.overrideWith(
           (ref) => ref.watch(_worldCacheImplementationProvider),
+        ),
+        characterRepositoryProvider.overrideWith(
+          (ref) => ref.watch(_characterRepositoryImplementationProvider),
         ),
       ],
       child: child,

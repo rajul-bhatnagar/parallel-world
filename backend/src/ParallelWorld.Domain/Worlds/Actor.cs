@@ -16,6 +16,25 @@ public sealed class Actor
         CreatedAt = createdAt;
     }
 
+    public static Actor CreateCharacter(
+        Guid id,
+        Guid worldId,
+        Guid characterId,
+        DateTimeOffset createdAt)
+    {
+        var actor = new Actor
+        {
+            Id = id,
+            WorldId = worldId,
+            ActorType = ActorType.Character,
+            CharacterId = characterId,
+            Status = ActorStatus.Active,
+            CreatedAt = createdAt,
+        };
+
+        return actor;
+    }
+
     public Guid Id { get; private set; }
 
     public Guid WorldId { get; private set; }

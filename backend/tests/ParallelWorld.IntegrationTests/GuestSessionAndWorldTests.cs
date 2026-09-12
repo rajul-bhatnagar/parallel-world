@@ -47,10 +47,11 @@ public sealed class GuestSessionAndWorldTests
         Assert.Equal(1, await db.WorldSettings.CountAsync());
         Assert.Equal(1, await db.WorldSimulationStates.CountAsync());
         Assert.Equal(1, await db.PlayerProfiles.CountAsync());
-        Assert.Equal(1, await db.Actors.CountAsync(entity => entity.ActorType == ActorType.Player));
-        Assert.DoesNotContain(
-            db.Model.GetEntityTypes(),
-            entity => entity.ClrType.Name.Contains("Character", StringComparison.Ordinal));
+        Assert.Equal(1, await db.Actors.CountAsync(entity =>
+            entity.WorldId == session.World.Id && entity.ActorType == ActorType.Player));
+        Assert.Equal(0, await db.Characters.CountAsync(entity => entity.WorldId == session.World.Id));
+        Assert.Equal(0, await db.Actors.CountAsync(entity =>
+            entity.WorldId == session.World.Id && entity.ActorType == ActorType.Character));
 
         var operation = await db.GuestBootstrapOperations.SingleAsync();
         var refresh = await db.RefreshTokens.SingleAsync();

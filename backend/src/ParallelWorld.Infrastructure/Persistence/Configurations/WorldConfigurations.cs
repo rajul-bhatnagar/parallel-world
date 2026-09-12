@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using ParallelWorld.Domain.Accounts;
+using ParallelWorld.Domain.Characters;
 using ParallelWorld.Domain.Worlds;
 
 namespace ParallelWorld.Infrastructure.Persistence.Configurations;
@@ -172,6 +173,9 @@ public sealed class ActorConfiguration : IEntityTypeConfiguration<Actor>
             .IsUnique()
             .HasFilter("character_id IS NOT NULL")
             .HasDatabaseName("ux_actors_character_id");
+        builder.HasIndex(entity => new { entity.WorldId, entity.CharacterId })
+            .IsUnique()
+            .HasDatabaseName("ux_actors_world_character");
         builder.HasOne<GameWorld>()
             .WithMany()
             .HasForeignKey(entity => entity.WorldId)
@@ -183,5 +187,11 @@ public sealed class ActorConfiguration : IEntityTypeConfiguration<Actor>
             .HasPrincipalKey<PlayerProfile>(entity => new { entity.WorldId, entity.Id })
             .OnDelete(DeleteBehavior.Restrict)
             .HasConstraintName("fk_actors_player_profiles_world_profile");
+        builder.HasOne<Character>()
+            .WithOne()
+            .HasForeignKey<Actor>(entity => new { entity.WorldId, entity.CharacterId })
+            .HasPrincipalKey<Character>(entity => new { entity.WorldId, entity.Id })
+            .OnDelete(DeleteBehavior.Restrict)
+            .HasConstraintName("fk_actors_characters_world_character");
     }
 }

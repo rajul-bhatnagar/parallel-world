@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore.Storage;
 using ParallelWorld.Application.Abstractions.Persistence;
 using ParallelWorld.Domain.Accounts;
 using ParallelWorld.Domain.Characters;
+using ParallelWorld.Domain.Social;
 using ParallelWorld.Domain.Worlds;
 
 namespace ParallelWorld.Infrastructure.Persistence;
@@ -38,6 +39,12 @@ public sealed class ParallelWorldDbContext(DbContextOptions<ParallelWorldDbConte
     public DbSet<CharacterOpinion> CharacterOpinions => Set<CharacterOpinion>();
 
     public DbSet<CharacterSchedule> CharacterSchedules => Set<CharacterSchedule>();
+
+    public DbSet<GameplayEvent> GameplayEvents => Set<GameplayEvent>();
+
+    public DbSet<Post> Posts => Set<Post>();
+
+    public DbSet<IdempotencyRecord> IdempotencyRecords => Set<IdempotencyRecord>();
 
     public async Task<IApplicationTransaction> BeginTransactionAsync(
         ApplicationIsolationLevel isolationLevel,

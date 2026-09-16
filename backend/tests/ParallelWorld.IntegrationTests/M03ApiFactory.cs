@@ -1,5 +1,7 @@
 using System.Text.RegularExpressions;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -123,14 +125,17 @@ internal sealed partial class M03ApiFactory : ApiFactory
         builder.ConfigureAppConfiguration((_, configuration) =>
             configuration.AddInMemoryCollection(
                 TestAuthenticationConfiguration.Create(_testConnectionString)));
-        if (_timeProvider is not null)
+        builder.ConfigureTestServices(services =>
         {
-            builder.ConfigureServices(services =>
+            services.RemoveAll<IDataProtectionProvider>();
+            services.AddSingleton<IDataProtectionProvider>(
+                new EphemeralDataProtectionProvider());
+            if (_timeProvider is not null)
             {
                 services.RemoveAll<TimeProvider>();
                 services.AddSingleton(_timeProvider);
-            });
-        }
+            }
+        });
     }
 
     private async Task CreateDatabaseAsync()

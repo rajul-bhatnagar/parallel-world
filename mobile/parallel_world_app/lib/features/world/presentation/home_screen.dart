@@ -75,6 +75,26 @@ class HomeScreen extends ConsumerWidget {
                 ),
               ),
             ),
+            const SizedBox(height: AppSpacing.medium),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(AppSpacing.large),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('World feed', style: TextStyle(fontSize: 20)),
+                    const SizedBox(height: AppSpacing.small),
+                    const Text('See what is happening and share a post.'),
+                    const SizedBox(height: AppSpacing.medium),
+                    FilledButton.icon(
+                      onPressed: () => context.push('/feed'),
+                      icon: const Icon(Icons.dynamic_feed_outlined),
+                      label: const Text('Open feed'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
             if (session.message case final message?) ...[
               const SizedBox(height: AppSpacing.medium),
               Text(

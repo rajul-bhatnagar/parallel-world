@@ -89,11 +89,11 @@ class SessionController extends Notifier<SessionState> {
     state = state.copyWith(isBusy: true, clearMessage: true);
     try {
       await ref.read(sessionLifecycleProvider).logout();
-      await ref.read(worldCacheProvider).clear();
       state = const SessionState(
         phase: SessionPhase.sessionExpired,
         message: 'You are signed out. Start a new guest session to continue.',
       );
+      await ref.read(worldCacheProvider).clear();
     } on SessionRecoveryFailure catch (failure) {
       state = SessionState(
         phase: SessionPhase.sessionExpired,

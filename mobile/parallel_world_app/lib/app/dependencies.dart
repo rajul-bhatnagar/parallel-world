@@ -12,6 +12,11 @@ import 'package:parallel_world_app/features/characters/application/character_dep
 import 'package:parallel_world_app/features/characters/data/character_api.dart';
 import 'package:parallel_world_app/features/characters/data/character_cache.dart';
 import 'package:parallel_world_app/features/characters/data/character_repository.dart';
+import 'package:parallel_world_app/features/feed/application/feed_contracts.dart';
+import 'package:parallel_world_app/features/feed/application/feed_dependencies.dart';
+import 'package:parallel_world_app/features/feed/data/feed_api.dart';
+import 'package:parallel_world_app/features/feed/data/feed_cache.dart';
+import 'package:parallel_world_app/features/feed/data/feed_repository.dart';
 import 'package:parallel_world_app/features/session/application/session_contracts.dart';
 import 'package:parallel_world_app/features/session/application/session_dependencies.dart';
 import 'package:parallel_world_app/features/session/data/auth_api.dart';
@@ -114,6 +119,24 @@ final _characterRepositoryImplementationProvider =
       ),
     );
 
+final _feedGatewayProvider = Provider<FeedGateway>(
+  (ref) => FeedApi(ref.watch(authenticatedDioProvider)),
+);
+
+final _feedCacheProvider = Provider<FeedCache>(
+  (ref) => DriftFeedCache(
+    ref.watch(appDatabaseProvider),
+    utcNow: ref.watch(utcNowProvider),
+  ),
+);
+
+final _feedRepositoryImplementationProvider = Provider<FeedRepository>(
+  (ref) => ApiCachedFeedRepository(
+    ref.watch(_feedGatewayProvider),
+    ref.watch(_feedCacheProvider),
+  ),
+);
+
 Widget buildAppScope({required AppConfig config, required Widget child}) =>
     ProviderScope(
       overrides: [
@@ -129,6 +152,9 @@ Widget buildAppScope({required AppConfig config, required Widget child}) =>
         ),
         characterRepositoryProvider.overrideWith(
           (ref) => ref.watch(_characterRepositoryImplementationProvider),
+        ),
+        feedRepositoryProvider.overrideWith(
+          (ref) => ref.watch(_feedRepositoryImplementationProvider),
         ),
       ],
       child: child,

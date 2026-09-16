@@ -6,11 +6,13 @@ using Microsoft.Extensions.Options;
 using ParallelWorld.Application.Abstractions.Persistence;
 using ParallelWorld.Application.Authentication;
 using ParallelWorld.Application.Characters;
+using ParallelWorld.Application.Social;
 using ParallelWorld.Application.Worlds;
 using ParallelWorld.Infrastructure.Authentication;
 using ParallelWorld.Infrastructure.Characters;
 using ParallelWorld.Infrastructure.Configuration;
 using ParallelWorld.Infrastructure.Persistence;
+using ParallelWorld.Infrastructure.Social;
 using ParallelWorld.Infrastructure.Worlds;
 
 namespace ParallelWorld.Infrastructure;
@@ -49,6 +51,7 @@ public static class DependencyInjection
 
             options.UseNpgsql(databaseOptions.ConnectionString);
         });
+        services.AddDataProtection();
 
         services.AddScoped<IUnitOfWork>(serviceProvider =>
             serviceProvider.GetRequiredService<ParallelWorldDbContext>());
@@ -75,6 +78,9 @@ public static class DependencyInjection
         services.AddScoped<IWorldService, WorldService>();
         services.AddScoped<ICharacterRepository, CharacterRepository>();
         services.AddScoped<ICharacterCatalogueService, CharacterCatalogueService>();
+        services.AddSingleton<IFeedCursorCodec, FeedCursorCodec>();
+        services.AddScoped<ISocialRepository, SocialRepository>();
+        services.AddScoped<ISocialFeedService, SocialFeedService>();
         services.AddSingleton<IConfigureOptions<JwtBearerOptions>, JwtBearerOptionsConfiguration>();
         services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer();
         services.AddAuthorization();

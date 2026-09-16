@@ -78,4 +78,26 @@ void main() {
       '/world/create',
     );
   });
+
+  test('feed remains behind session and world guards', () {
+    expect(routeForSession(const SessionState.initial(), '/feed'), '/splash');
+    expect(
+      routeForSession(
+        const SessionState(phase: SessionPhase.authenticated, userId: 'user'),
+        '/feed',
+      ),
+      '/world/create',
+    );
+    expect(
+      routeForSession(
+        SessionState(
+          phase: SessionPhase.authenticated,
+          userId: 'user',
+          world: testWorld,
+        ),
+        '/feed',
+      ),
+      isNull,
+    );
+  });
 }

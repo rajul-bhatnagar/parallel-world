@@ -9,6 +9,7 @@ import 'package:parallel_world_app/features/world/presentation/home_screen.dart'
 import 'package:parallel_world_app/features/world/presentation/world_create_screen.dart';
 import 'package:parallel_world_app/features/characters/presentation/character_catalogue_screen.dart';
 import 'package:parallel_world_app/features/characters/presentation/character_profile_screen.dart';
+import 'package:parallel_world_app/features/feed/presentation/feed_screen.dart';
 
 final appRouterProvider = Provider<GoRouter>((ref) {
   final refresh = _RouterRefreshNotifier();
@@ -31,6 +32,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         builder: (_, _) => const WorldCreateScreen(),
       ),
       GoRoute(path: '/home', builder: (_, _) => const HomeScreen()),
+      GoRoute(path: '/feed', builder: (_, _) => const FeedScreen()),
       GoRoute(
         path: '/characters',
         builder: (_, _) => const CharacterCatalogueScreen(),
@@ -48,6 +50,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
 String? routeForSession(SessionState session, String location) {
   final authenticatedLocation =
       location == '/home' ||
+      location == '/feed' ||
       location == '/characters' ||
       location.startsWith('/characters/');
   final target = switch (session.phase) {

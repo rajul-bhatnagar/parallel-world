@@ -69,12 +69,48 @@ class CachedCharacterDetails extends Table {
   Set<Column<Object>> get primaryKey => {userId, worldId, characterId};
 }
 
+class CachedFeedMetadata extends Table {
+  TextColumn get userId => text()();
+  TextColumn get worldId => text()();
+  DateTimeColumn get cachedAtUtc => dateTime()();
+  TextColumn get nextCursor => text().nullable()();
+  BoolColumn get hasMore => boolean()();
+
+  @override
+  Set<Column<Object>> get primaryKey => {userId, worldId};
+}
+
+class CachedFeedPosts extends Table {
+  TextColumn get userId => text()();
+  TextColumn get worldId => text()();
+  TextColumn get postId => text()();
+  TextColumn get authorActorId => text()();
+  TextColumn get authorDisplayName => text()();
+  TextColumn get authorHandle => text()();
+  TextColumn get authorActorType => text()();
+  TextColumn get content => text().withLength(min: 1, max: 500)();
+  DateTimeColumn get createdAtUtc => dateTime()();
+  TextColumn get parentPostId => text().nullable()();
+  IntColumn get likeCount => integer()();
+  IntColumn get replyCount => integer()();
+  TextColumn get visibility => text()();
+  TextColumn get localState => text()();
+  TextColumn get clientPostId => text().nullable()();
+  TextColumn get idempotencyKey => text().nullable()();
+  TextColumn get failureMessage => text().nullable()();
+
+  @override
+  Set<Column<Object>> get primaryKey => {userId, worldId, postId};
+}
+
 @DriftDatabase(
   tables: [
     CachedWorlds,
     CachedCharacterCatalogues,
     CachedCharacterSummaries,
     CachedCharacterDetails,
+    CachedFeedMetadata,
+    CachedFeedPosts,
   ],
 )
 class AppDatabase extends _$AppDatabase {
@@ -82,7 +118,7 @@ class AppDatabase extends _$AppDatabase {
     : super(executor ?? driftDatabase(name: 'parallel_world_cache'));
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -92,6 +128,10 @@ class AppDatabase extends _$AppDatabase {
         await migrator.createTable(cachedCharacterCatalogues);
         await migrator.createTable(cachedCharacterSummaries);
         await migrator.createTable(cachedCharacterDetails);
+      }
+      if (from < 3) {
+        await migrator.createTable(cachedFeedMetadata);
+        await migrator.createTable(cachedFeedPosts);
       }
     },
   );
@@ -137,6 +177,8 @@ class AppDatabase extends _$AppDatabase {
   }
 
   Future<void> clearPrivateData() => transaction(() async {
+    await delete(cachedFeedPosts).go();
+    await delete(cachedFeedMetadata).go();
     await delete(cachedCharacterDetails).go();
     await delete(cachedCharacterSummaries).go();
     await delete(cachedCharacterCatalogues).go();

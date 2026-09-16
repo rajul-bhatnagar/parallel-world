@@ -47,4 +47,20 @@ void main() {
 
     expect(violations, isEmpty);
   });
+
+  test('feed presentation does not import Dio or Drift', () {
+    final violations = Directory('lib/features/feed/presentation')
+        .listSync(recursive: true)
+        .whereType<File>()
+        .where((file) => file.path.endsWith('.dart'))
+        .where((file) {
+          final contents = file.readAsStringSync();
+          return contents.contains('package:dio/') ||
+              contents.contains('package:drift/');
+        })
+        .map((file) => file.path)
+        .toList();
+
+    expect(violations, isEmpty);
+  });
 }

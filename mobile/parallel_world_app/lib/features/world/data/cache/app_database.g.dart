@@ -2229,6 +2229,1394 @@ class CachedCharacterDetailsCompanion
   }
 }
 
+class $CachedFeedMetadataTable extends CachedFeedMetadata
+    with TableInfo<$CachedFeedMetadataTable, CachedFeedMetadataData> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $CachedFeedMetadataTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _userIdMeta = const VerificationMeta('userId');
+  @override
+  late final GeneratedColumn<String> userId = GeneratedColumn<String>(
+    'user_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _worldIdMeta = const VerificationMeta(
+    'worldId',
+  );
+  @override
+  late final GeneratedColumn<String> worldId = GeneratedColumn<String>(
+    'world_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _cachedAtUtcMeta = const VerificationMeta(
+    'cachedAtUtc',
+  );
+  @override
+  late final GeneratedColumn<DateTime> cachedAtUtc = GeneratedColumn<DateTime>(
+    'cached_at_utc',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _nextCursorMeta = const VerificationMeta(
+    'nextCursor',
+  );
+  @override
+  late final GeneratedColumn<String> nextCursor = GeneratedColumn<String>(
+    'next_cursor',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _hasMoreMeta = const VerificationMeta(
+    'hasMore',
+  );
+  @override
+  late final GeneratedColumn<bool> hasMore = GeneratedColumn<bool>(
+    'has_more',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: true,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("has_more" IN (0, 1))',
+    ),
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    userId,
+    worldId,
+    cachedAtUtc,
+    nextCursor,
+    hasMore,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'cached_feed_metadata';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<CachedFeedMetadataData> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('user_id')) {
+      context.handle(
+        _userIdMeta,
+        userId.isAcceptableOrUnknown(data['user_id']!, _userIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_userIdMeta);
+    }
+    if (data.containsKey('world_id')) {
+      context.handle(
+        _worldIdMeta,
+        worldId.isAcceptableOrUnknown(data['world_id']!, _worldIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_worldIdMeta);
+    }
+    if (data.containsKey('cached_at_utc')) {
+      context.handle(
+        _cachedAtUtcMeta,
+        cachedAtUtc.isAcceptableOrUnknown(
+          data['cached_at_utc']!,
+          _cachedAtUtcMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_cachedAtUtcMeta);
+    }
+    if (data.containsKey('next_cursor')) {
+      context.handle(
+        _nextCursorMeta,
+        nextCursor.isAcceptableOrUnknown(data['next_cursor']!, _nextCursorMeta),
+      );
+    }
+    if (data.containsKey('has_more')) {
+      context.handle(
+        _hasMoreMeta,
+        hasMore.isAcceptableOrUnknown(data['has_more']!, _hasMoreMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_hasMoreMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {userId, worldId};
+  @override
+  CachedFeedMetadataData map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return CachedFeedMetadataData(
+      userId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}user_id'],
+      )!,
+      worldId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}world_id'],
+      )!,
+      cachedAtUtc: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}cached_at_utc'],
+      )!,
+      nextCursor: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}next_cursor'],
+      ),
+      hasMore: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}has_more'],
+      )!,
+    );
+  }
+
+  @override
+  $CachedFeedMetadataTable createAlias(String alias) {
+    return $CachedFeedMetadataTable(attachedDatabase, alias);
+  }
+}
+
+class CachedFeedMetadataData extends DataClass
+    implements Insertable<CachedFeedMetadataData> {
+  final String userId;
+  final String worldId;
+  final DateTime cachedAtUtc;
+  final String? nextCursor;
+  final bool hasMore;
+  const CachedFeedMetadataData({
+    required this.userId,
+    required this.worldId,
+    required this.cachedAtUtc,
+    this.nextCursor,
+    required this.hasMore,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['user_id'] = Variable<String>(userId);
+    map['world_id'] = Variable<String>(worldId);
+    map['cached_at_utc'] = Variable<DateTime>(cachedAtUtc);
+    if (!nullToAbsent || nextCursor != null) {
+      map['next_cursor'] = Variable<String>(nextCursor);
+    }
+    map['has_more'] = Variable<bool>(hasMore);
+    return map;
+  }
+
+  CachedFeedMetadataCompanion toCompanion(bool nullToAbsent) {
+    return CachedFeedMetadataCompanion(
+      userId: Value(userId),
+      worldId: Value(worldId),
+      cachedAtUtc: Value(cachedAtUtc),
+      nextCursor: nextCursor == null && nullToAbsent
+          ? const Value.absent()
+          : Value(nextCursor),
+      hasMore: Value(hasMore),
+    );
+  }
+
+  factory CachedFeedMetadataData.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return CachedFeedMetadataData(
+      userId: serializer.fromJson<String>(json['userId']),
+      worldId: serializer.fromJson<String>(json['worldId']),
+      cachedAtUtc: serializer.fromJson<DateTime>(json['cachedAtUtc']),
+      nextCursor: serializer.fromJson<String?>(json['nextCursor']),
+      hasMore: serializer.fromJson<bool>(json['hasMore']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'userId': serializer.toJson<String>(userId),
+      'worldId': serializer.toJson<String>(worldId),
+      'cachedAtUtc': serializer.toJson<DateTime>(cachedAtUtc),
+      'nextCursor': serializer.toJson<String?>(nextCursor),
+      'hasMore': serializer.toJson<bool>(hasMore),
+    };
+  }
+
+  CachedFeedMetadataData copyWith({
+    String? userId,
+    String? worldId,
+    DateTime? cachedAtUtc,
+    Value<String?> nextCursor = const Value.absent(),
+    bool? hasMore,
+  }) => CachedFeedMetadataData(
+    userId: userId ?? this.userId,
+    worldId: worldId ?? this.worldId,
+    cachedAtUtc: cachedAtUtc ?? this.cachedAtUtc,
+    nextCursor: nextCursor.present ? nextCursor.value : this.nextCursor,
+    hasMore: hasMore ?? this.hasMore,
+  );
+  CachedFeedMetadataData copyWithCompanion(CachedFeedMetadataCompanion data) {
+    return CachedFeedMetadataData(
+      userId: data.userId.present ? data.userId.value : this.userId,
+      worldId: data.worldId.present ? data.worldId.value : this.worldId,
+      cachedAtUtc: data.cachedAtUtc.present
+          ? data.cachedAtUtc.value
+          : this.cachedAtUtc,
+      nextCursor: data.nextCursor.present
+          ? data.nextCursor.value
+          : this.nextCursor,
+      hasMore: data.hasMore.present ? data.hasMore.value : this.hasMore,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('CachedFeedMetadataData(')
+          ..write('userId: $userId, ')
+          ..write('worldId: $worldId, ')
+          ..write('cachedAtUtc: $cachedAtUtc, ')
+          ..write('nextCursor: $nextCursor, ')
+          ..write('hasMore: $hasMore')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(userId, worldId, cachedAtUtc, nextCursor, hasMore);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is CachedFeedMetadataData &&
+          other.userId == this.userId &&
+          other.worldId == this.worldId &&
+          other.cachedAtUtc == this.cachedAtUtc &&
+          other.nextCursor == this.nextCursor &&
+          other.hasMore == this.hasMore);
+}
+
+class CachedFeedMetadataCompanion
+    extends UpdateCompanion<CachedFeedMetadataData> {
+  final Value<String> userId;
+  final Value<String> worldId;
+  final Value<DateTime> cachedAtUtc;
+  final Value<String?> nextCursor;
+  final Value<bool> hasMore;
+  final Value<int> rowid;
+  const CachedFeedMetadataCompanion({
+    this.userId = const Value.absent(),
+    this.worldId = const Value.absent(),
+    this.cachedAtUtc = const Value.absent(),
+    this.nextCursor = const Value.absent(),
+    this.hasMore = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  CachedFeedMetadataCompanion.insert({
+    required String userId,
+    required String worldId,
+    required DateTime cachedAtUtc,
+    this.nextCursor = const Value.absent(),
+    required bool hasMore,
+    this.rowid = const Value.absent(),
+  }) : userId = Value(userId),
+       worldId = Value(worldId),
+       cachedAtUtc = Value(cachedAtUtc),
+       hasMore = Value(hasMore);
+  static Insertable<CachedFeedMetadataData> custom({
+    Expression<String>? userId,
+    Expression<String>? worldId,
+    Expression<DateTime>? cachedAtUtc,
+    Expression<String>? nextCursor,
+    Expression<bool>? hasMore,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (userId != null) 'user_id': userId,
+      if (worldId != null) 'world_id': worldId,
+      if (cachedAtUtc != null) 'cached_at_utc': cachedAtUtc,
+      if (nextCursor != null) 'next_cursor': nextCursor,
+      if (hasMore != null) 'has_more': hasMore,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  CachedFeedMetadataCompanion copyWith({
+    Value<String>? userId,
+    Value<String>? worldId,
+    Value<DateTime>? cachedAtUtc,
+    Value<String?>? nextCursor,
+    Value<bool>? hasMore,
+    Value<int>? rowid,
+  }) {
+    return CachedFeedMetadataCompanion(
+      userId: userId ?? this.userId,
+      worldId: worldId ?? this.worldId,
+      cachedAtUtc: cachedAtUtc ?? this.cachedAtUtc,
+      nextCursor: nextCursor ?? this.nextCursor,
+      hasMore: hasMore ?? this.hasMore,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (userId.present) {
+      map['user_id'] = Variable<String>(userId.value);
+    }
+    if (worldId.present) {
+      map['world_id'] = Variable<String>(worldId.value);
+    }
+    if (cachedAtUtc.present) {
+      map['cached_at_utc'] = Variable<DateTime>(cachedAtUtc.value);
+    }
+    if (nextCursor.present) {
+      map['next_cursor'] = Variable<String>(nextCursor.value);
+    }
+    if (hasMore.present) {
+      map['has_more'] = Variable<bool>(hasMore.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('CachedFeedMetadataCompanion(')
+          ..write('userId: $userId, ')
+          ..write('worldId: $worldId, ')
+          ..write('cachedAtUtc: $cachedAtUtc, ')
+          ..write('nextCursor: $nextCursor, ')
+          ..write('hasMore: $hasMore, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $CachedFeedPostsTable extends CachedFeedPosts
+    with TableInfo<$CachedFeedPostsTable, CachedFeedPost> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $CachedFeedPostsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _userIdMeta = const VerificationMeta('userId');
+  @override
+  late final GeneratedColumn<String> userId = GeneratedColumn<String>(
+    'user_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _worldIdMeta = const VerificationMeta(
+    'worldId',
+  );
+  @override
+  late final GeneratedColumn<String> worldId = GeneratedColumn<String>(
+    'world_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _postIdMeta = const VerificationMeta('postId');
+  @override
+  late final GeneratedColumn<String> postId = GeneratedColumn<String>(
+    'post_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _authorActorIdMeta = const VerificationMeta(
+    'authorActorId',
+  );
+  @override
+  late final GeneratedColumn<String> authorActorId = GeneratedColumn<String>(
+    'author_actor_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _authorDisplayNameMeta = const VerificationMeta(
+    'authorDisplayName',
+  );
+  @override
+  late final GeneratedColumn<String> authorDisplayName =
+      GeneratedColumn<String>(
+        'author_display_name',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: true,
+      );
+  static const VerificationMeta _authorHandleMeta = const VerificationMeta(
+    'authorHandle',
+  );
+  @override
+  late final GeneratedColumn<String> authorHandle = GeneratedColumn<String>(
+    'author_handle',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _authorActorTypeMeta = const VerificationMeta(
+    'authorActorType',
+  );
+  @override
+  late final GeneratedColumn<String> authorActorType = GeneratedColumn<String>(
+    'author_actor_type',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _contentMeta = const VerificationMeta(
+    'content',
+  );
+  @override
+  late final GeneratedColumn<String> content = GeneratedColumn<String>(
+    'content',
+    aliasedName,
+    false,
+    additionalChecks: GeneratedColumn.checkTextLength(
+      minTextLength: 1,
+      maxTextLength: 500,
+    ),
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _createdAtUtcMeta = const VerificationMeta(
+    'createdAtUtc',
+  );
+  @override
+  late final GeneratedColumn<DateTime> createdAtUtc = GeneratedColumn<DateTime>(
+    'created_at_utc',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _parentPostIdMeta = const VerificationMeta(
+    'parentPostId',
+  );
+  @override
+  late final GeneratedColumn<String> parentPostId = GeneratedColumn<String>(
+    'parent_post_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _likeCountMeta = const VerificationMeta(
+    'likeCount',
+  );
+  @override
+  late final GeneratedColumn<int> likeCount = GeneratedColumn<int>(
+    'like_count',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _replyCountMeta = const VerificationMeta(
+    'replyCount',
+  );
+  @override
+  late final GeneratedColumn<int> replyCount = GeneratedColumn<int>(
+    'reply_count',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _visibilityMeta = const VerificationMeta(
+    'visibility',
+  );
+  @override
+  late final GeneratedColumn<String> visibility = GeneratedColumn<String>(
+    'visibility',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _localStateMeta = const VerificationMeta(
+    'localState',
+  );
+  @override
+  late final GeneratedColumn<String> localState = GeneratedColumn<String>(
+    'local_state',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _clientPostIdMeta = const VerificationMeta(
+    'clientPostId',
+  );
+  @override
+  late final GeneratedColumn<String> clientPostId = GeneratedColumn<String>(
+    'client_post_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _idempotencyKeyMeta = const VerificationMeta(
+    'idempotencyKey',
+  );
+  @override
+  late final GeneratedColumn<String> idempotencyKey = GeneratedColumn<String>(
+    'idempotency_key',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _failureMessageMeta = const VerificationMeta(
+    'failureMessage',
+  );
+  @override
+  late final GeneratedColumn<String> failureMessage = GeneratedColumn<String>(
+    'failure_message',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    userId,
+    worldId,
+    postId,
+    authorActorId,
+    authorDisplayName,
+    authorHandle,
+    authorActorType,
+    content,
+    createdAtUtc,
+    parentPostId,
+    likeCount,
+    replyCount,
+    visibility,
+    localState,
+    clientPostId,
+    idempotencyKey,
+    failureMessage,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'cached_feed_posts';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<CachedFeedPost> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('user_id')) {
+      context.handle(
+        _userIdMeta,
+        userId.isAcceptableOrUnknown(data['user_id']!, _userIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_userIdMeta);
+    }
+    if (data.containsKey('world_id')) {
+      context.handle(
+        _worldIdMeta,
+        worldId.isAcceptableOrUnknown(data['world_id']!, _worldIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_worldIdMeta);
+    }
+    if (data.containsKey('post_id')) {
+      context.handle(
+        _postIdMeta,
+        postId.isAcceptableOrUnknown(data['post_id']!, _postIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_postIdMeta);
+    }
+    if (data.containsKey('author_actor_id')) {
+      context.handle(
+        _authorActorIdMeta,
+        authorActorId.isAcceptableOrUnknown(
+          data['author_actor_id']!,
+          _authorActorIdMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_authorActorIdMeta);
+    }
+    if (data.containsKey('author_display_name')) {
+      context.handle(
+        _authorDisplayNameMeta,
+        authorDisplayName.isAcceptableOrUnknown(
+          data['author_display_name']!,
+          _authorDisplayNameMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_authorDisplayNameMeta);
+    }
+    if (data.containsKey('author_handle')) {
+      context.handle(
+        _authorHandleMeta,
+        authorHandle.isAcceptableOrUnknown(
+          data['author_handle']!,
+          _authorHandleMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_authorHandleMeta);
+    }
+    if (data.containsKey('author_actor_type')) {
+      context.handle(
+        _authorActorTypeMeta,
+        authorActorType.isAcceptableOrUnknown(
+          data['author_actor_type']!,
+          _authorActorTypeMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_authorActorTypeMeta);
+    }
+    if (data.containsKey('content')) {
+      context.handle(
+        _contentMeta,
+        content.isAcceptableOrUnknown(data['content']!, _contentMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_contentMeta);
+    }
+    if (data.containsKey('created_at_utc')) {
+      context.handle(
+        _createdAtUtcMeta,
+        createdAtUtc.isAcceptableOrUnknown(
+          data['created_at_utc']!,
+          _createdAtUtcMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_createdAtUtcMeta);
+    }
+    if (data.containsKey('parent_post_id')) {
+      context.handle(
+        _parentPostIdMeta,
+        parentPostId.isAcceptableOrUnknown(
+          data['parent_post_id']!,
+          _parentPostIdMeta,
+        ),
+      );
+    }
+    if (data.containsKey('like_count')) {
+      context.handle(
+        _likeCountMeta,
+        likeCount.isAcceptableOrUnknown(data['like_count']!, _likeCountMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_likeCountMeta);
+    }
+    if (data.containsKey('reply_count')) {
+      context.handle(
+        _replyCountMeta,
+        replyCount.isAcceptableOrUnknown(data['reply_count']!, _replyCountMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_replyCountMeta);
+    }
+    if (data.containsKey('visibility')) {
+      context.handle(
+        _visibilityMeta,
+        visibility.isAcceptableOrUnknown(data['visibility']!, _visibilityMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_visibilityMeta);
+    }
+    if (data.containsKey('local_state')) {
+      context.handle(
+        _localStateMeta,
+        localState.isAcceptableOrUnknown(data['local_state']!, _localStateMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_localStateMeta);
+    }
+    if (data.containsKey('client_post_id')) {
+      context.handle(
+        _clientPostIdMeta,
+        clientPostId.isAcceptableOrUnknown(
+          data['client_post_id']!,
+          _clientPostIdMeta,
+        ),
+      );
+    }
+    if (data.containsKey('idempotency_key')) {
+      context.handle(
+        _idempotencyKeyMeta,
+        idempotencyKey.isAcceptableOrUnknown(
+          data['idempotency_key']!,
+          _idempotencyKeyMeta,
+        ),
+      );
+    }
+    if (data.containsKey('failure_message')) {
+      context.handle(
+        _failureMessageMeta,
+        failureMessage.isAcceptableOrUnknown(
+          data['failure_message']!,
+          _failureMessageMeta,
+        ),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {userId, worldId, postId};
+  @override
+  CachedFeedPost map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return CachedFeedPost(
+      userId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}user_id'],
+      )!,
+      worldId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}world_id'],
+      )!,
+      postId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}post_id'],
+      )!,
+      authorActorId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}author_actor_id'],
+      )!,
+      authorDisplayName: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}author_display_name'],
+      )!,
+      authorHandle: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}author_handle'],
+      )!,
+      authorActorType: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}author_actor_type'],
+      )!,
+      content: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}content'],
+      )!,
+      createdAtUtc: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}created_at_utc'],
+      )!,
+      parentPostId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}parent_post_id'],
+      ),
+      likeCount: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}like_count'],
+      )!,
+      replyCount: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}reply_count'],
+      )!,
+      visibility: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}visibility'],
+      )!,
+      localState: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}local_state'],
+      )!,
+      clientPostId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}client_post_id'],
+      ),
+      idempotencyKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}idempotency_key'],
+      ),
+      failureMessage: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}failure_message'],
+      ),
+    );
+  }
+
+  @override
+  $CachedFeedPostsTable createAlias(String alias) {
+    return $CachedFeedPostsTable(attachedDatabase, alias);
+  }
+}
+
+class CachedFeedPost extends DataClass implements Insertable<CachedFeedPost> {
+  final String userId;
+  final String worldId;
+  final String postId;
+  final String authorActorId;
+  final String authorDisplayName;
+  final String authorHandle;
+  final String authorActorType;
+  final String content;
+  final DateTime createdAtUtc;
+  final String? parentPostId;
+  final int likeCount;
+  final int replyCount;
+  final String visibility;
+  final String localState;
+  final String? clientPostId;
+  final String? idempotencyKey;
+  final String? failureMessage;
+  const CachedFeedPost({
+    required this.userId,
+    required this.worldId,
+    required this.postId,
+    required this.authorActorId,
+    required this.authorDisplayName,
+    required this.authorHandle,
+    required this.authorActorType,
+    required this.content,
+    required this.createdAtUtc,
+    this.parentPostId,
+    required this.likeCount,
+    required this.replyCount,
+    required this.visibility,
+    required this.localState,
+    this.clientPostId,
+    this.idempotencyKey,
+    this.failureMessage,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['user_id'] = Variable<String>(userId);
+    map['world_id'] = Variable<String>(worldId);
+    map['post_id'] = Variable<String>(postId);
+    map['author_actor_id'] = Variable<String>(authorActorId);
+    map['author_display_name'] = Variable<String>(authorDisplayName);
+    map['author_handle'] = Variable<String>(authorHandle);
+    map['author_actor_type'] = Variable<String>(authorActorType);
+    map['content'] = Variable<String>(content);
+    map['created_at_utc'] = Variable<DateTime>(createdAtUtc);
+    if (!nullToAbsent || parentPostId != null) {
+      map['parent_post_id'] = Variable<String>(parentPostId);
+    }
+    map['like_count'] = Variable<int>(likeCount);
+    map['reply_count'] = Variable<int>(replyCount);
+    map['visibility'] = Variable<String>(visibility);
+    map['local_state'] = Variable<String>(localState);
+    if (!nullToAbsent || clientPostId != null) {
+      map['client_post_id'] = Variable<String>(clientPostId);
+    }
+    if (!nullToAbsent || idempotencyKey != null) {
+      map['idempotency_key'] = Variable<String>(idempotencyKey);
+    }
+    if (!nullToAbsent || failureMessage != null) {
+      map['failure_message'] = Variable<String>(failureMessage);
+    }
+    return map;
+  }
+
+  CachedFeedPostsCompanion toCompanion(bool nullToAbsent) {
+    return CachedFeedPostsCompanion(
+      userId: Value(userId),
+      worldId: Value(worldId),
+      postId: Value(postId),
+      authorActorId: Value(authorActorId),
+      authorDisplayName: Value(authorDisplayName),
+      authorHandle: Value(authorHandle),
+      authorActorType: Value(authorActorType),
+      content: Value(content),
+      createdAtUtc: Value(createdAtUtc),
+      parentPostId: parentPostId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(parentPostId),
+      likeCount: Value(likeCount),
+      replyCount: Value(replyCount),
+      visibility: Value(visibility),
+      localState: Value(localState),
+      clientPostId: clientPostId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(clientPostId),
+      idempotencyKey: idempotencyKey == null && nullToAbsent
+          ? const Value.absent()
+          : Value(idempotencyKey),
+      failureMessage: failureMessage == null && nullToAbsent
+          ? const Value.absent()
+          : Value(failureMessage),
+    );
+  }
+
+  factory CachedFeedPost.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return CachedFeedPost(
+      userId: serializer.fromJson<String>(json['userId']),
+      worldId: serializer.fromJson<String>(json['worldId']),
+      postId: serializer.fromJson<String>(json['postId']),
+      authorActorId: serializer.fromJson<String>(json['authorActorId']),
+      authorDisplayName: serializer.fromJson<String>(json['authorDisplayName']),
+      authorHandle: serializer.fromJson<String>(json['authorHandle']),
+      authorActorType: serializer.fromJson<String>(json['authorActorType']),
+      content: serializer.fromJson<String>(json['content']),
+      createdAtUtc: serializer.fromJson<DateTime>(json['createdAtUtc']),
+      parentPostId: serializer.fromJson<String?>(json['parentPostId']),
+      likeCount: serializer.fromJson<int>(json['likeCount']),
+      replyCount: serializer.fromJson<int>(json['replyCount']),
+      visibility: serializer.fromJson<String>(json['visibility']),
+      localState: serializer.fromJson<String>(json['localState']),
+      clientPostId: serializer.fromJson<String?>(json['clientPostId']),
+      idempotencyKey: serializer.fromJson<String?>(json['idempotencyKey']),
+      failureMessage: serializer.fromJson<String?>(json['failureMessage']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'userId': serializer.toJson<String>(userId),
+      'worldId': serializer.toJson<String>(worldId),
+      'postId': serializer.toJson<String>(postId),
+      'authorActorId': serializer.toJson<String>(authorActorId),
+      'authorDisplayName': serializer.toJson<String>(authorDisplayName),
+      'authorHandle': serializer.toJson<String>(authorHandle),
+      'authorActorType': serializer.toJson<String>(authorActorType),
+      'content': serializer.toJson<String>(content),
+      'createdAtUtc': serializer.toJson<DateTime>(createdAtUtc),
+      'parentPostId': serializer.toJson<String?>(parentPostId),
+      'likeCount': serializer.toJson<int>(likeCount),
+      'replyCount': serializer.toJson<int>(replyCount),
+      'visibility': serializer.toJson<String>(visibility),
+      'localState': serializer.toJson<String>(localState),
+      'clientPostId': serializer.toJson<String?>(clientPostId),
+      'idempotencyKey': serializer.toJson<String?>(idempotencyKey),
+      'failureMessage': serializer.toJson<String?>(failureMessage),
+    };
+  }
+
+  CachedFeedPost copyWith({
+    String? userId,
+    String? worldId,
+    String? postId,
+    String? authorActorId,
+    String? authorDisplayName,
+    String? authorHandle,
+    String? authorActorType,
+    String? content,
+    DateTime? createdAtUtc,
+    Value<String?> parentPostId = const Value.absent(),
+    int? likeCount,
+    int? replyCount,
+    String? visibility,
+    String? localState,
+    Value<String?> clientPostId = const Value.absent(),
+    Value<String?> idempotencyKey = const Value.absent(),
+    Value<String?> failureMessage = const Value.absent(),
+  }) => CachedFeedPost(
+    userId: userId ?? this.userId,
+    worldId: worldId ?? this.worldId,
+    postId: postId ?? this.postId,
+    authorActorId: authorActorId ?? this.authorActorId,
+    authorDisplayName: authorDisplayName ?? this.authorDisplayName,
+    authorHandle: authorHandle ?? this.authorHandle,
+    authorActorType: authorActorType ?? this.authorActorType,
+    content: content ?? this.content,
+    createdAtUtc: createdAtUtc ?? this.createdAtUtc,
+    parentPostId: parentPostId.present ? parentPostId.value : this.parentPostId,
+    likeCount: likeCount ?? this.likeCount,
+    replyCount: replyCount ?? this.replyCount,
+    visibility: visibility ?? this.visibility,
+    localState: localState ?? this.localState,
+    clientPostId: clientPostId.present ? clientPostId.value : this.clientPostId,
+    idempotencyKey: idempotencyKey.present
+        ? idempotencyKey.value
+        : this.idempotencyKey,
+    failureMessage: failureMessage.present
+        ? failureMessage.value
+        : this.failureMessage,
+  );
+  CachedFeedPost copyWithCompanion(CachedFeedPostsCompanion data) {
+    return CachedFeedPost(
+      userId: data.userId.present ? data.userId.value : this.userId,
+      worldId: data.worldId.present ? data.worldId.value : this.worldId,
+      postId: data.postId.present ? data.postId.value : this.postId,
+      authorActorId: data.authorActorId.present
+          ? data.authorActorId.value
+          : this.authorActorId,
+      authorDisplayName: data.authorDisplayName.present
+          ? data.authorDisplayName.value
+          : this.authorDisplayName,
+      authorHandle: data.authorHandle.present
+          ? data.authorHandle.value
+          : this.authorHandle,
+      authorActorType: data.authorActorType.present
+          ? data.authorActorType.value
+          : this.authorActorType,
+      content: data.content.present ? data.content.value : this.content,
+      createdAtUtc: data.createdAtUtc.present
+          ? data.createdAtUtc.value
+          : this.createdAtUtc,
+      parentPostId: data.parentPostId.present
+          ? data.parentPostId.value
+          : this.parentPostId,
+      likeCount: data.likeCount.present ? data.likeCount.value : this.likeCount,
+      replyCount: data.replyCount.present
+          ? data.replyCount.value
+          : this.replyCount,
+      visibility: data.visibility.present
+          ? data.visibility.value
+          : this.visibility,
+      localState: data.localState.present
+          ? data.localState.value
+          : this.localState,
+      clientPostId: data.clientPostId.present
+          ? data.clientPostId.value
+          : this.clientPostId,
+      idempotencyKey: data.idempotencyKey.present
+          ? data.idempotencyKey.value
+          : this.idempotencyKey,
+      failureMessage: data.failureMessage.present
+          ? data.failureMessage.value
+          : this.failureMessage,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('CachedFeedPost(')
+          ..write('userId: $userId, ')
+          ..write('worldId: $worldId, ')
+          ..write('postId: $postId, ')
+          ..write('authorActorId: $authorActorId, ')
+          ..write('authorDisplayName: $authorDisplayName, ')
+          ..write('authorHandle: $authorHandle, ')
+          ..write('authorActorType: $authorActorType, ')
+          ..write('content: $content, ')
+          ..write('createdAtUtc: $createdAtUtc, ')
+          ..write('parentPostId: $parentPostId, ')
+          ..write('likeCount: $likeCount, ')
+          ..write('replyCount: $replyCount, ')
+          ..write('visibility: $visibility, ')
+          ..write('localState: $localState, ')
+          ..write('clientPostId: $clientPostId, ')
+          ..write('idempotencyKey: $idempotencyKey, ')
+          ..write('failureMessage: $failureMessage')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    userId,
+    worldId,
+    postId,
+    authorActorId,
+    authorDisplayName,
+    authorHandle,
+    authorActorType,
+    content,
+    createdAtUtc,
+    parentPostId,
+    likeCount,
+    replyCount,
+    visibility,
+    localState,
+    clientPostId,
+    idempotencyKey,
+    failureMessage,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is CachedFeedPost &&
+          other.userId == this.userId &&
+          other.worldId == this.worldId &&
+          other.postId == this.postId &&
+          other.authorActorId == this.authorActorId &&
+          other.authorDisplayName == this.authorDisplayName &&
+          other.authorHandle == this.authorHandle &&
+          other.authorActorType == this.authorActorType &&
+          other.content == this.content &&
+          other.createdAtUtc == this.createdAtUtc &&
+          other.parentPostId == this.parentPostId &&
+          other.likeCount == this.likeCount &&
+          other.replyCount == this.replyCount &&
+          other.visibility == this.visibility &&
+          other.localState == this.localState &&
+          other.clientPostId == this.clientPostId &&
+          other.idempotencyKey == this.idempotencyKey &&
+          other.failureMessage == this.failureMessage);
+}
+
+class CachedFeedPostsCompanion extends UpdateCompanion<CachedFeedPost> {
+  final Value<String> userId;
+  final Value<String> worldId;
+  final Value<String> postId;
+  final Value<String> authorActorId;
+  final Value<String> authorDisplayName;
+  final Value<String> authorHandle;
+  final Value<String> authorActorType;
+  final Value<String> content;
+  final Value<DateTime> createdAtUtc;
+  final Value<String?> parentPostId;
+  final Value<int> likeCount;
+  final Value<int> replyCount;
+  final Value<String> visibility;
+  final Value<String> localState;
+  final Value<String?> clientPostId;
+  final Value<String?> idempotencyKey;
+  final Value<String?> failureMessage;
+  final Value<int> rowid;
+  const CachedFeedPostsCompanion({
+    this.userId = const Value.absent(),
+    this.worldId = const Value.absent(),
+    this.postId = const Value.absent(),
+    this.authorActorId = const Value.absent(),
+    this.authorDisplayName = const Value.absent(),
+    this.authorHandle = const Value.absent(),
+    this.authorActorType = const Value.absent(),
+    this.content = const Value.absent(),
+    this.createdAtUtc = const Value.absent(),
+    this.parentPostId = const Value.absent(),
+    this.likeCount = const Value.absent(),
+    this.replyCount = const Value.absent(),
+    this.visibility = const Value.absent(),
+    this.localState = const Value.absent(),
+    this.clientPostId = const Value.absent(),
+    this.idempotencyKey = const Value.absent(),
+    this.failureMessage = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  CachedFeedPostsCompanion.insert({
+    required String userId,
+    required String worldId,
+    required String postId,
+    required String authorActorId,
+    required String authorDisplayName,
+    required String authorHandle,
+    required String authorActorType,
+    required String content,
+    required DateTime createdAtUtc,
+    this.parentPostId = const Value.absent(),
+    required int likeCount,
+    required int replyCount,
+    required String visibility,
+    required String localState,
+    this.clientPostId = const Value.absent(),
+    this.idempotencyKey = const Value.absent(),
+    this.failureMessage = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : userId = Value(userId),
+       worldId = Value(worldId),
+       postId = Value(postId),
+       authorActorId = Value(authorActorId),
+       authorDisplayName = Value(authorDisplayName),
+       authorHandle = Value(authorHandle),
+       authorActorType = Value(authorActorType),
+       content = Value(content),
+       createdAtUtc = Value(createdAtUtc),
+       likeCount = Value(likeCount),
+       replyCount = Value(replyCount),
+       visibility = Value(visibility),
+       localState = Value(localState);
+  static Insertable<CachedFeedPost> custom({
+    Expression<String>? userId,
+    Expression<String>? worldId,
+    Expression<String>? postId,
+    Expression<String>? authorActorId,
+    Expression<String>? authorDisplayName,
+    Expression<String>? authorHandle,
+    Expression<String>? authorActorType,
+    Expression<String>? content,
+    Expression<DateTime>? createdAtUtc,
+    Expression<String>? parentPostId,
+    Expression<int>? likeCount,
+    Expression<int>? replyCount,
+    Expression<String>? visibility,
+    Expression<String>? localState,
+    Expression<String>? clientPostId,
+    Expression<String>? idempotencyKey,
+    Expression<String>? failureMessage,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (userId != null) 'user_id': userId,
+      if (worldId != null) 'world_id': worldId,
+      if (postId != null) 'post_id': postId,
+      if (authorActorId != null) 'author_actor_id': authorActorId,
+      if (authorDisplayName != null) 'author_display_name': authorDisplayName,
+      if (authorHandle != null) 'author_handle': authorHandle,
+      if (authorActorType != null) 'author_actor_type': authorActorType,
+      if (content != null) 'content': content,
+      if (createdAtUtc != null) 'created_at_utc': createdAtUtc,
+      if (parentPostId != null) 'parent_post_id': parentPostId,
+      if (likeCount != null) 'like_count': likeCount,
+      if (replyCount != null) 'reply_count': replyCount,
+      if (visibility != null) 'visibility': visibility,
+      if (localState != null) 'local_state': localState,
+      if (clientPostId != null) 'client_post_id': clientPostId,
+      if (idempotencyKey != null) 'idempotency_key': idempotencyKey,
+      if (failureMessage != null) 'failure_message': failureMessage,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  CachedFeedPostsCompanion copyWith({
+    Value<String>? userId,
+    Value<String>? worldId,
+    Value<String>? postId,
+    Value<String>? authorActorId,
+    Value<String>? authorDisplayName,
+    Value<String>? authorHandle,
+    Value<String>? authorActorType,
+    Value<String>? content,
+    Value<DateTime>? createdAtUtc,
+    Value<String?>? parentPostId,
+    Value<int>? likeCount,
+    Value<int>? replyCount,
+    Value<String>? visibility,
+    Value<String>? localState,
+    Value<String?>? clientPostId,
+    Value<String?>? idempotencyKey,
+    Value<String?>? failureMessage,
+    Value<int>? rowid,
+  }) {
+    return CachedFeedPostsCompanion(
+      userId: userId ?? this.userId,
+      worldId: worldId ?? this.worldId,
+      postId: postId ?? this.postId,
+      authorActorId: authorActorId ?? this.authorActorId,
+      authorDisplayName: authorDisplayName ?? this.authorDisplayName,
+      authorHandle: authorHandle ?? this.authorHandle,
+      authorActorType: authorActorType ?? this.authorActorType,
+      content: content ?? this.content,
+      createdAtUtc: createdAtUtc ?? this.createdAtUtc,
+      parentPostId: parentPostId ?? this.parentPostId,
+      likeCount: likeCount ?? this.likeCount,
+      replyCount: replyCount ?? this.replyCount,
+      visibility: visibility ?? this.visibility,
+      localState: localState ?? this.localState,
+      clientPostId: clientPostId ?? this.clientPostId,
+      idempotencyKey: idempotencyKey ?? this.idempotencyKey,
+      failureMessage: failureMessage ?? this.failureMessage,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (userId.present) {
+      map['user_id'] = Variable<String>(userId.value);
+    }
+    if (worldId.present) {
+      map['world_id'] = Variable<String>(worldId.value);
+    }
+    if (postId.present) {
+      map['post_id'] = Variable<String>(postId.value);
+    }
+    if (authorActorId.present) {
+      map['author_actor_id'] = Variable<String>(authorActorId.value);
+    }
+    if (authorDisplayName.present) {
+      map['author_display_name'] = Variable<String>(authorDisplayName.value);
+    }
+    if (authorHandle.present) {
+      map['author_handle'] = Variable<String>(authorHandle.value);
+    }
+    if (authorActorType.present) {
+      map['author_actor_type'] = Variable<String>(authorActorType.value);
+    }
+    if (content.present) {
+      map['content'] = Variable<String>(content.value);
+    }
+    if (createdAtUtc.present) {
+      map['created_at_utc'] = Variable<DateTime>(createdAtUtc.value);
+    }
+    if (parentPostId.present) {
+      map['parent_post_id'] = Variable<String>(parentPostId.value);
+    }
+    if (likeCount.present) {
+      map['like_count'] = Variable<int>(likeCount.value);
+    }
+    if (replyCount.present) {
+      map['reply_count'] = Variable<int>(replyCount.value);
+    }
+    if (visibility.present) {
+      map['visibility'] = Variable<String>(visibility.value);
+    }
+    if (localState.present) {
+      map['local_state'] = Variable<String>(localState.value);
+    }
+    if (clientPostId.present) {
+      map['client_post_id'] = Variable<String>(clientPostId.value);
+    }
+    if (idempotencyKey.present) {
+      map['idempotency_key'] = Variable<String>(idempotencyKey.value);
+    }
+    if (failureMessage.present) {
+      map['failure_message'] = Variable<String>(failureMessage.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('CachedFeedPostsCompanion(')
+          ..write('userId: $userId, ')
+          ..write('worldId: $worldId, ')
+          ..write('postId: $postId, ')
+          ..write('authorActorId: $authorActorId, ')
+          ..write('authorDisplayName: $authorDisplayName, ')
+          ..write('authorHandle: $authorHandle, ')
+          ..write('authorActorType: $authorActorType, ')
+          ..write('content: $content, ')
+          ..write('createdAtUtc: $createdAtUtc, ')
+          ..write('parentPostId: $parentPostId, ')
+          ..write('likeCount: $likeCount, ')
+          ..write('replyCount: $replyCount, ')
+          ..write('visibility: $visibility, ')
+          ..write('localState: $localState, ')
+          ..write('clientPostId: $clientPostId, ')
+          ..write('idempotencyKey: $idempotencyKey, ')
+          ..write('failureMessage: $failureMessage, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -2239,6 +3627,11 @@ abstract class _$AppDatabase extends GeneratedDatabase {
       $CachedCharacterSummariesTable(this);
   late final $CachedCharacterDetailsTable cachedCharacterDetails =
       $CachedCharacterDetailsTable(this);
+  late final $CachedFeedMetadataTable cachedFeedMetadata =
+      $CachedFeedMetadataTable(this);
+  late final $CachedFeedPostsTable cachedFeedPosts = $CachedFeedPostsTable(
+    this,
+  );
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -2248,6 +3641,8 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     cachedCharacterCatalogues,
     cachedCharacterSummaries,
     cachedCharacterDetails,
+    cachedFeedMetadata,
+    cachedFeedPosts,
   ];
 }
 
@@ -3391,6 +4786,681 @@ typedef $$CachedCharacterDetailsTableProcessedTableManager =
       CachedCharacterDetail,
       PrefetchHooks Function()
     >;
+typedef $$CachedFeedMetadataTableCreateCompanionBuilder =
+    CachedFeedMetadataCompanion Function({
+      required String userId,
+      required String worldId,
+      required DateTime cachedAtUtc,
+      Value<String?> nextCursor,
+      required bool hasMore,
+      Value<int> rowid,
+    });
+typedef $$CachedFeedMetadataTableUpdateCompanionBuilder =
+    CachedFeedMetadataCompanion Function({
+      Value<String> userId,
+      Value<String> worldId,
+      Value<DateTime> cachedAtUtc,
+      Value<String?> nextCursor,
+      Value<bool> hasMore,
+      Value<int> rowid,
+    });
+
+class $$CachedFeedMetadataTableFilterComposer
+    extends Composer<_$AppDatabase, $CachedFeedMetadataTable> {
+  $$CachedFeedMetadataTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get userId => $composableBuilder(
+    column: $table.userId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get worldId => $composableBuilder(
+    column: $table.worldId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get cachedAtUtc => $composableBuilder(
+    column: $table.cachedAtUtc,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get nextCursor => $composableBuilder(
+    column: $table.nextCursor,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get hasMore => $composableBuilder(
+    column: $table.hasMore,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$CachedFeedMetadataTableOrderingComposer
+    extends Composer<_$AppDatabase, $CachedFeedMetadataTable> {
+  $$CachedFeedMetadataTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get userId => $composableBuilder(
+    column: $table.userId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get worldId => $composableBuilder(
+    column: $table.worldId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get cachedAtUtc => $composableBuilder(
+    column: $table.cachedAtUtc,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get nextCursor => $composableBuilder(
+    column: $table.nextCursor,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get hasMore => $composableBuilder(
+    column: $table.hasMore,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$CachedFeedMetadataTableAnnotationComposer
+    extends Composer<_$AppDatabase, $CachedFeedMetadataTable> {
+  $$CachedFeedMetadataTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get userId =>
+      $composableBuilder(column: $table.userId, builder: (column) => column);
+
+  GeneratedColumn<String> get worldId =>
+      $composableBuilder(column: $table.worldId, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get cachedAtUtc => $composableBuilder(
+    column: $table.cachedAtUtc,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get nextCursor => $composableBuilder(
+    column: $table.nextCursor,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<bool> get hasMore =>
+      $composableBuilder(column: $table.hasMore, builder: (column) => column);
+}
+
+class $$CachedFeedMetadataTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $CachedFeedMetadataTable,
+          CachedFeedMetadataData,
+          $$CachedFeedMetadataTableFilterComposer,
+          $$CachedFeedMetadataTableOrderingComposer,
+          $$CachedFeedMetadataTableAnnotationComposer,
+          $$CachedFeedMetadataTableCreateCompanionBuilder,
+          $$CachedFeedMetadataTableUpdateCompanionBuilder,
+          (
+            CachedFeedMetadataData,
+            BaseReferences<
+              _$AppDatabase,
+              $CachedFeedMetadataTable,
+              CachedFeedMetadataData
+            >,
+          ),
+          CachedFeedMetadataData,
+          PrefetchHooks Function()
+        > {
+  $$CachedFeedMetadataTableTableManager(
+    _$AppDatabase db,
+    $CachedFeedMetadataTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$CachedFeedMetadataTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$CachedFeedMetadataTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$CachedFeedMetadataTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> userId = const Value.absent(),
+                Value<String> worldId = const Value.absent(),
+                Value<DateTime> cachedAtUtc = const Value.absent(),
+                Value<String?> nextCursor = const Value.absent(),
+                Value<bool> hasMore = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => CachedFeedMetadataCompanion(
+                userId: userId,
+                worldId: worldId,
+                cachedAtUtc: cachedAtUtc,
+                nextCursor: nextCursor,
+                hasMore: hasMore,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String userId,
+                required String worldId,
+                required DateTime cachedAtUtc,
+                Value<String?> nextCursor = const Value.absent(),
+                required bool hasMore,
+                Value<int> rowid = const Value.absent(),
+              }) => CachedFeedMetadataCompanion.insert(
+                userId: userId,
+                worldId: worldId,
+                cachedAtUtc: cachedAtUtc,
+                nextCursor: nextCursor,
+                hasMore: hasMore,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$CachedFeedMetadataTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $CachedFeedMetadataTable,
+      CachedFeedMetadataData,
+      $$CachedFeedMetadataTableFilterComposer,
+      $$CachedFeedMetadataTableOrderingComposer,
+      $$CachedFeedMetadataTableAnnotationComposer,
+      $$CachedFeedMetadataTableCreateCompanionBuilder,
+      $$CachedFeedMetadataTableUpdateCompanionBuilder,
+      (
+        CachedFeedMetadataData,
+        BaseReferences<
+          _$AppDatabase,
+          $CachedFeedMetadataTable,
+          CachedFeedMetadataData
+        >,
+      ),
+      CachedFeedMetadataData,
+      PrefetchHooks Function()
+    >;
+typedef $$CachedFeedPostsTableCreateCompanionBuilder =
+    CachedFeedPostsCompanion Function({
+      required String userId,
+      required String worldId,
+      required String postId,
+      required String authorActorId,
+      required String authorDisplayName,
+      required String authorHandle,
+      required String authorActorType,
+      required String content,
+      required DateTime createdAtUtc,
+      Value<String?> parentPostId,
+      required int likeCount,
+      required int replyCount,
+      required String visibility,
+      required String localState,
+      Value<String?> clientPostId,
+      Value<String?> idempotencyKey,
+      Value<String?> failureMessage,
+      Value<int> rowid,
+    });
+typedef $$CachedFeedPostsTableUpdateCompanionBuilder =
+    CachedFeedPostsCompanion Function({
+      Value<String> userId,
+      Value<String> worldId,
+      Value<String> postId,
+      Value<String> authorActorId,
+      Value<String> authorDisplayName,
+      Value<String> authorHandle,
+      Value<String> authorActorType,
+      Value<String> content,
+      Value<DateTime> createdAtUtc,
+      Value<String?> parentPostId,
+      Value<int> likeCount,
+      Value<int> replyCount,
+      Value<String> visibility,
+      Value<String> localState,
+      Value<String?> clientPostId,
+      Value<String?> idempotencyKey,
+      Value<String?> failureMessage,
+      Value<int> rowid,
+    });
+
+class $$CachedFeedPostsTableFilterComposer
+    extends Composer<_$AppDatabase, $CachedFeedPostsTable> {
+  $$CachedFeedPostsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get userId => $composableBuilder(
+    column: $table.userId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get worldId => $composableBuilder(
+    column: $table.worldId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get postId => $composableBuilder(
+    column: $table.postId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get authorActorId => $composableBuilder(
+    column: $table.authorActorId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get authorDisplayName => $composableBuilder(
+    column: $table.authorDisplayName,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get authorHandle => $composableBuilder(
+    column: $table.authorHandle,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get authorActorType => $composableBuilder(
+    column: $table.authorActorType,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get content => $composableBuilder(
+    column: $table.content,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get createdAtUtc => $composableBuilder(
+    column: $table.createdAtUtc,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get parentPostId => $composableBuilder(
+    column: $table.parentPostId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get likeCount => $composableBuilder(
+    column: $table.likeCount,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get replyCount => $composableBuilder(
+    column: $table.replyCount,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get visibility => $composableBuilder(
+    column: $table.visibility,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get localState => $composableBuilder(
+    column: $table.localState,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get clientPostId => $composableBuilder(
+    column: $table.clientPostId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get idempotencyKey => $composableBuilder(
+    column: $table.idempotencyKey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get failureMessage => $composableBuilder(
+    column: $table.failureMessage,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$CachedFeedPostsTableOrderingComposer
+    extends Composer<_$AppDatabase, $CachedFeedPostsTable> {
+  $$CachedFeedPostsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get userId => $composableBuilder(
+    column: $table.userId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get worldId => $composableBuilder(
+    column: $table.worldId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get postId => $composableBuilder(
+    column: $table.postId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get authorActorId => $composableBuilder(
+    column: $table.authorActorId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get authorDisplayName => $composableBuilder(
+    column: $table.authorDisplayName,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get authorHandle => $composableBuilder(
+    column: $table.authorHandle,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get authorActorType => $composableBuilder(
+    column: $table.authorActorType,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get content => $composableBuilder(
+    column: $table.content,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get createdAtUtc => $composableBuilder(
+    column: $table.createdAtUtc,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get parentPostId => $composableBuilder(
+    column: $table.parentPostId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get likeCount => $composableBuilder(
+    column: $table.likeCount,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get replyCount => $composableBuilder(
+    column: $table.replyCount,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get visibility => $composableBuilder(
+    column: $table.visibility,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get localState => $composableBuilder(
+    column: $table.localState,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get clientPostId => $composableBuilder(
+    column: $table.clientPostId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get idempotencyKey => $composableBuilder(
+    column: $table.idempotencyKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get failureMessage => $composableBuilder(
+    column: $table.failureMessage,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$CachedFeedPostsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $CachedFeedPostsTable> {
+  $$CachedFeedPostsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get userId =>
+      $composableBuilder(column: $table.userId, builder: (column) => column);
+
+  GeneratedColumn<String> get worldId =>
+      $composableBuilder(column: $table.worldId, builder: (column) => column);
+
+  GeneratedColumn<String> get postId =>
+      $composableBuilder(column: $table.postId, builder: (column) => column);
+
+  GeneratedColumn<String> get authorActorId => $composableBuilder(
+    column: $table.authorActorId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get authorDisplayName => $composableBuilder(
+    column: $table.authorDisplayName,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get authorHandle => $composableBuilder(
+    column: $table.authorHandle,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get authorActorType => $composableBuilder(
+    column: $table.authorActorType,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get content =>
+      $composableBuilder(column: $table.content, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get createdAtUtc => $composableBuilder(
+    column: $table.createdAtUtc,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get parentPostId => $composableBuilder(
+    column: $table.parentPostId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get likeCount =>
+      $composableBuilder(column: $table.likeCount, builder: (column) => column);
+
+  GeneratedColumn<int> get replyCount => $composableBuilder(
+    column: $table.replyCount,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get visibility => $composableBuilder(
+    column: $table.visibility,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get localState => $composableBuilder(
+    column: $table.localState,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get clientPostId => $composableBuilder(
+    column: $table.clientPostId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get idempotencyKey => $composableBuilder(
+    column: $table.idempotencyKey,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get failureMessage => $composableBuilder(
+    column: $table.failureMessage,
+    builder: (column) => column,
+  );
+}
+
+class $$CachedFeedPostsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $CachedFeedPostsTable,
+          CachedFeedPost,
+          $$CachedFeedPostsTableFilterComposer,
+          $$CachedFeedPostsTableOrderingComposer,
+          $$CachedFeedPostsTableAnnotationComposer,
+          $$CachedFeedPostsTableCreateCompanionBuilder,
+          $$CachedFeedPostsTableUpdateCompanionBuilder,
+          (
+            CachedFeedPost,
+            BaseReferences<
+              _$AppDatabase,
+              $CachedFeedPostsTable,
+              CachedFeedPost
+            >,
+          ),
+          CachedFeedPost,
+          PrefetchHooks Function()
+        > {
+  $$CachedFeedPostsTableTableManager(
+    _$AppDatabase db,
+    $CachedFeedPostsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$CachedFeedPostsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$CachedFeedPostsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$CachedFeedPostsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> userId = const Value.absent(),
+                Value<String> worldId = const Value.absent(),
+                Value<String> postId = const Value.absent(),
+                Value<String> authorActorId = const Value.absent(),
+                Value<String> authorDisplayName = const Value.absent(),
+                Value<String> authorHandle = const Value.absent(),
+                Value<String> authorActorType = const Value.absent(),
+                Value<String> content = const Value.absent(),
+                Value<DateTime> createdAtUtc = const Value.absent(),
+                Value<String?> parentPostId = const Value.absent(),
+                Value<int> likeCount = const Value.absent(),
+                Value<int> replyCount = const Value.absent(),
+                Value<String> visibility = const Value.absent(),
+                Value<String> localState = const Value.absent(),
+                Value<String?> clientPostId = const Value.absent(),
+                Value<String?> idempotencyKey = const Value.absent(),
+                Value<String?> failureMessage = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => CachedFeedPostsCompanion(
+                userId: userId,
+                worldId: worldId,
+                postId: postId,
+                authorActorId: authorActorId,
+                authorDisplayName: authorDisplayName,
+                authorHandle: authorHandle,
+                authorActorType: authorActorType,
+                content: content,
+                createdAtUtc: createdAtUtc,
+                parentPostId: parentPostId,
+                likeCount: likeCount,
+                replyCount: replyCount,
+                visibility: visibility,
+                localState: localState,
+                clientPostId: clientPostId,
+                idempotencyKey: idempotencyKey,
+                failureMessage: failureMessage,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String userId,
+                required String worldId,
+                required String postId,
+                required String authorActorId,
+                required String authorDisplayName,
+                required String authorHandle,
+                required String authorActorType,
+                required String content,
+                required DateTime createdAtUtc,
+                Value<String?> parentPostId = const Value.absent(),
+                required int likeCount,
+                required int replyCount,
+                required String visibility,
+                required String localState,
+                Value<String?> clientPostId = const Value.absent(),
+                Value<String?> idempotencyKey = const Value.absent(),
+                Value<String?> failureMessage = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => CachedFeedPostsCompanion.insert(
+                userId: userId,
+                worldId: worldId,
+                postId: postId,
+                authorActorId: authorActorId,
+                authorDisplayName: authorDisplayName,
+                authorHandle: authorHandle,
+                authorActorType: authorActorType,
+                content: content,
+                createdAtUtc: createdAtUtc,
+                parentPostId: parentPostId,
+                likeCount: likeCount,
+                replyCount: replyCount,
+                visibility: visibility,
+                localState: localState,
+                clientPostId: clientPostId,
+                idempotencyKey: idempotencyKey,
+                failureMessage: failureMessage,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$CachedFeedPostsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $CachedFeedPostsTable,
+      CachedFeedPost,
+      $$CachedFeedPostsTableFilterComposer,
+      $$CachedFeedPostsTableOrderingComposer,
+      $$CachedFeedPostsTableAnnotationComposer,
+      $$CachedFeedPostsTableCreateCompanionBuilder,
+      $$CachedFeedPostsTableUpdateCompanionBuilder,
+      (
+        CachedFeedPost,
+        BaseReferences<_$AppDatabase, $CachedFeedPostsTable, CachedFeedPost>,
+      ),
+      CachedFeedPost,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -3412,4 +5482,8 @@ class $AppDatabaseManager {
         _db,
         _db.cachedCharacterDetails,
       );
+  $$CachedFeedMetadataTableTableManager get cachedFeedMetadata =>
+      $$CachedFeedMetadataTableTableManager(_db, _db.cachedFeedMetadata);
+  $$CachedFeedPostsTableTableManager get cachedFeedPosts =>
+      $$CachedFeedPostsTableTableManager(_db, _db.cachedFeedPosts);
 }

@@ -63,6 +63,7 @@ if (app.Environment.IsEnvironment("Testing"))
 app.MapAuthenticationEndpoints();
 app.MapWorldEndpoints();
 app.MapCharacterEndpoints();
+app.MapSocialFeedEndpoints();
 
 await app.RunAsync();
 

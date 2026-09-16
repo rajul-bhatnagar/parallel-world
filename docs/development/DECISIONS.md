@@ -176,6 +176,36 @@ The M06 API, PostgreSQL query/index, Flutter cache, and automated tests share on
 
 A later milestone has approved ranking signals such as relationships, interactions, recency weighting, simulation state, or engagement, and a separate decision defines the ranking, tie-breaks, cursor compatibility, and migration behavior.
 
+## ADR-016 — M07 parent-scoped reply thread reads
+
+**Date:** 2026-09-16
+**Status:** Accepted
+
+**Context**
+
+M07 requires a public thread-read contract and deterministic cursor tests. The existing API defined single-post reads and reply creation but did not define whether replies were embedded, recursively flattened, or exposed through a separate paginated collection.
+
+**Decision**
+
+- `GET /api/v1/worlds/{worldId}/posts/{postId}/replies` returns only the direct child replies of the specified post or reply. It uses the standard collection envelope and does not recursively nest or flatten the thread.
+- `GET /api/v1/worlds/{worldId}/posts/{postId}` remains the single Post/detail endpoint. It may expose approved aggregate metadata such as reply count, but it does not embed the paginated reply collection.
+- Direct replies use the total order `createdAtUtc ASC, id ASC`. The opaque cursor represents the last visible `(createdAtUtc, id)` tuple, is versioned and tamper-safe, and is bound to the authorized `worldId`, parent post/reply ID, and applicable filters.
+- The next page contains only replies for which `createdAtUtc > cursor.createdAtUtc`, or `createdAtUtc = cursor.createdAtUtc` and `id > cursor.id`. Invalid, tampered, foreign-world, or wrong-parent cursors fail through the standard ownership-safe cursor/error contract.
+- Thread traversal is explicit and parent-scoped: clients read the root Post separately, then request direct replies for any post/reply whose children they need. M07 does not preload or return a recursively flattened depth-two tree.
+- `MAX_REPLY_DEPTH = 2` means root post depth 0, reply to root depth 1, and reply to a depth-one reply depth 2. Creating depth 3 is rejected. Reading direct children of a depth-two reply succeeds with an empty collection.
+
+**Alternatives considered**
+
+Embedding every reply in the Post detail, recursively nested responses, flattened whole-thread pagination, and offset pagination were rejected because they make parent ownership, stable pagination, and bounded response behavior less explicit.
+
+**Consequences**
+
+Backend queries, Flutter state, and tests share one parent-scoped ordering and cursor contract. Each parent collection paginates independently, and clients fetch deeper branches only when needed.
+
+**Revisit when**
+
+A later approved product requirement needs whole-thread search, a different nesting/depth model, or a compatible bulk thread-loading contract.
+
 ## New ADR template
 
 ### ADR-XXX — Title

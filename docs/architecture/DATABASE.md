@@ -229,7 +229,7 @@ Indexes:
 
 - Feed cursor: `(WorldId, CreatedAt DESC, Id DESC) WHERE DeletedAt IS NULL`.
 - Author history: `(WorldId, AuthorActorId, CreatedAt DESC, Id DESC) WHERE DeletedAt IS NULL`.
-- Reply cursor: `(WorldId, ParentPostId, CreatedAt ASC, Id ASC) WHERE ParentPostId IS NOT NULL AND DeletedAt IS NULL`.
+- Direct-child reply cursor: `(WorldId, ParentPostId, CreatedAt ASC, Id ASC) WHERE ParentPostId IS NOT NULL AND DeletedAt IS NULL`. Each query is scoped to one parent post/reply; no recursive or flattened thread query is part of M07.
 - Quote lookup: `(WorldId, QuotePostId) WHERE QuotePostId IS NOT NULL`.
 
 ### PostReactions

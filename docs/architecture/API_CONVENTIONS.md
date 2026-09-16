@@ -266,6 +266,7 @@ If ETags are approved, `ETag` and `If-Match` use an encoded opaque value, never 
 | Collection | Default | Maximum | Server order |
 |---|---:|---:|---|
 | Feed | 20 | 50 | `createdAtUtc DESC, id DESC` |
+| Replies | 20 | 50 | `createdAtUtc ASC, id ASC`; direct children of one parent only |
 | Messages | 30 | 100 | `createdAtUtc DESC, id DESC`; Flutter may reverse for display |
 | Notifications | 30 | 100 | `createdAtUtc DESC, id DESC` |
 | Relationship history | 25 | 100 | `occurredAtUtc DESC, id DESC` |
@@ -274,6 +275,8 @@ If ETags are approved, `ETag` and `If-Match` use an encoded opaque value, never 
 Cursor encoding and expiry remain open implementation decisions; clients must never decode cursors.
 
 For the M06 feed, the opaque cursor represents the last visible `(createdAtUtc, id)` tuple. The next page seeks strictly after that tuple in descending order: `createdAtUtc < cursor.createdAtUtc`, or equal `createdAtUtc` with `id < cursor.id`. The cursor is bound to the authorized world and applicable filters. This prevents adjacent pages from duplicating previously returned items when newer posts arrive; it does not create a snapshot-isolated feed session.
+
+For M07 direct replies, the opaque cursor represents the last visible `(createdAtUtc, id)` tuple in `createdAtUtc ASC, id ASC` order. The next page seeks replies where `createdAtUtc > cursor.createdAtUtc`, or equal `createdAtUtc` with `id > cursor.id`. The cursor is bound to the authorized world, parent post/reply ID, and applicable filters; a mismatched or tampered cursor returns `400 invalid_cursor` without disclosing a foreign resource.
 
 ## 17. Filtering and sorting
 
@@ -502,10 +505,13 @@ GET    /api/v1/worlds/{worldId}/feed
 POST   /api/v1/worlds/{worldId}/posts
 GET    /api/v1/worlds/{worldId}/posts/{postId}
 DELETE /api/v1/worlds/{worldId}/posts/{postId}
+GET    /api/v1/worlds/{worldId}/posts/{postId}/replies
 POST   /api/v1/worlds/{worldId}/posts/{postId}/replies
 ```
 
 Post editing is open and not in MVP. Delete performs approved logical removal. Author is always the authenticated player; the client cannot post as an AI actor. Feed origin/provider diagnostics remain internal. M06 exposes one feed mode: strict chronological `createdAtUtc DESC, id DESC` ordering with an opaque `(createdAtUtc, id)` cursor. It uses the standard `{ "items": [], "nextCursor": null, "hasMore": false }` collection envelope. Ranked/personalized feed modes are deferred and are not accepted query options.
+
+The M07 replies GET endpoint returns only direct children of the specified post/reply in `createdAtUtc ASC, id ASC` order using the standard collection envelope. It does not return a recursively nested or flattened thread. Clients traverse a branch explicitly by requesting replies for a returned reply ID. `GET /posts/{postId}` remains a single Post/detail response and does not embed the paginated reply items. The replies endpoint is ownership-safe: the route world and parent must be accessible, and the cursor must match both. `MAX_REPLY_DEPTH = 2` means root depth 0, direct reply depth 1, and reply-to-reply depth 2; depth-3 creation is rejected, while reading a depth-2 reply returns an empty direct-child collection.
 
 **Example 4 — feed page**
 
@@ -863,6 +869,7 @@ Response also includes `Retry-After: 30`.
 | POST | `/worlds/{worldId}/posts` | Player post | Yes | Yes | No | MVP | 201 |
 | GET | `/worlds/{worldId}/posts/{postId}` | Read post | Yes | No | No | MVP | 200 |
 | DELETE | `/worlds/{worldId}/posts/{postId}` | Logically delete player post | Yes | Natural | No | MVP | 204 |
+| GET | `/worlds/{worldId}/posts/{postId}/replies` | Read direct child replies | Yes | No | Yes | MVP | 200 |
 | POST | `/worlds/{worldId}/posts/{postId}/replies` | Player reply | Yes | Yes | No | MVP | 201 |
 | PUT | `/worlds/{worldId}/posts/{postId}/reaction` | Set like | Yes | Natural | No | MVP | 200 |
 | DELETE | `/worlds/{worldId}/posts/{postId}/reaction` | Remove like | Yes | Natural | No | MVP | 204 |

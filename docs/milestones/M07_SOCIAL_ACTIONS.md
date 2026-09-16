@@ -10,7 +10,7 @@ Player replies, likes/unlikes, and follows/unfollows AI characters.
 M06.
 
 ## Scope
-- **Backend:** Player replies, MVP Like, follow edges, idempotent/natural PUT-DELETE behavior, count projections, same-world/self/actor checks.
+- **Backend:** Player replies, parent-scoped direct-child reply reads, MVP Like, follow edges, idempotent/natural PUT-DELETE behavior, count projections, same-world/self/actor checks.
 - **Database:** PostReactions and Follows plus reply use of Posts; unique active edges/actions, composite FKs, migration.
 - **Flutter:** Reply flow/thread where required, like/follow optimistic state, rollback, pending/failure states.
 - **Infrastructure:** None.
@@ -19,7 +19,7 @@ M06.
 Reposts/quotes/bookmarks/hashtags/mentions, AI autonomous action, rich notifications.
 
 ## Test scope
-Duplicate/natural idempotency, self-follow, wrong actor/world, reply depth/cursor, counts, rollback/reconcile, widgets.
+Duplicate/natural idempotency, self-follow, wrong actor/world, reply depth/cursor, counts, rollback/reconcile, widgets. Reply reads return direct children only in `createdAtUtc ASC, id ASC` order; tests cover equal timestamps, deterministic repetition, continuation without duplicates, invalid/tampered/wrong-world/wrong-parent cursors, depths 0-2, depth-3 rejection, an empty depth-2 child collection, and absence of embedded reply collections from root Post detail.
 
 ## Security and ownership considerations
 Server-derived actor, uniqueness, cached counts, optimistic rollback. Repository-wide ownership, privacy, and secret-handling rules remain mandatory where applicable.

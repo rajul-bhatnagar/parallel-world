@@ -6,6 +6,7 @@ class FeedAuthor {
     required this.displayName,
     required this.handle,
     required this.actorType,
+    this.isFollowed = false,
   });
 
   factory FeedAuthor.fromJson(Map<String, Object?> json) => FeedAuthor(
@@ -13,12 +14,22 @@ class FeedAuthor {
     displayName: _requiredString(json, 'displayName'),
     handle: _requiredString(json, 'handle'),
     actorType: _requiredString(json, 'actorType'),
+    isFollowed: _requiredBool(json, 'isFollowed'),
   );
 
   final String actorId;
   final String displayName;
   final String handle;
   final String actorType;
+  final bool isFollowed;
+
+  FeedAuthor copyWith({bool? isFollowed}) => FeedAuthor(
+    actorId: actorId,
+    displayName: displayName,
+    handle: handle,
+    actorType: actorType,
+    isFollowed: isFollowed ?? this.isFollowed,
+  );
 }
 
 class FeedCounts {
@@ -42,6 +53,7 @@ class FeedPost {
     required this.createdAtUtc,
     required this.counts,
     required this.visibility,
+    this.currentPlayerReaction,
     this.parentPostId,
     this.localState = FeedPostLocalState.synced,
     this.clientPostId,
@@ -67,6 +79,7 @@ class FeedPost {
           ? null
           : _requiredString(_jsonObject(parent), 'id'),
       counts: FeedCounts.fromJson(_jsonObject(counts)),
+      currentPlayerReaction: json['currentPlayerReaction'] as String?,
       visibility: _requiredString(json, 'visibility'),
     );
   }
@@ -79,29 +92,78 @@ class FeedPost {
   final String? parentPostId;
   final FeedCounts counts;
   final String visibility;
+  final String? currentPlayerReaction;
   final FeedPostLocalState localState;
   final String? clientPostId;
   final String? idempotencyKey;
   final String? failureMessage;
 
   FeedPost copyWith({
+    FeedAuthor? author,
+    FeedCounts? counts,
+    Object? currentPlayerReaction = _unchanged,
     FeedPostLocalState? localState,
     String? failureMessage,
     bool clearFailure = false,
   }) => FeedPost(
     id: id,
     worldId: worldId,
-    author: author,
+    author: author ?? this.author,
     content: content,
     createdAtUtc: createdAtUtc,
     parentPostId: parentPostId,
-    counts: counts,
+    counts: counts ?? this.counts,
+    currentPlayerReaction: identical(currentPlayerReaction, _unchanged)
+        ? this.currentPlayerReaction
+        : currentPlayerReaction as String?,
     visibility: visibility,
     localState: localState ?? this.localState,
     clientPostId: clientPostId,
     idempotencyKey: idempotencyKey,
     failureMessage: clearFailure ? null : failureMessage ?? this.failureMessage,
   );
+}
+
+const Object _unchanged = Object();
+
+class ReactionState {
+  const ReactionState({
+    required this.postId,
+    required this.type,
+    required this.active,
+    required this.likeCount,
+  });
+
+  factory ReactionState.fromJson(Map<String, Object?> json) => ReactionState(
+    postId: _requiredString(json, 'postId'),
+    type: _requiredString(json, 'type'),
+    active: _requiredBool(json, 'active'),
+    likeCount: _requiredInt(json, 'likeCount'),
+  );
+
+  final String postId;
+  final String type;
+  final bool active;
+  final int likeCount;
+}
+
+class FollowState {
+  const FollowState({
+    required this.actorId,
+    required this.isFollowing,
+    required this.followedAtUtc,
+  });
+
+  factory FollowState.fromJson(Map<String, Object?> json) => FollowState(
+    actorId: _requiredString(json, 'actorId'),
+    isFollowing: _requiredBool(json, 'isFollowing'),
+    followedAtUtc: DateTime.parse(_requiredString(json, 'followedAtUtc'))
+        .toUtc(),
+  );
+
+  final String actorId;
+  final bool isFollowing;
+  final DateTime followedAtUtc;
 }
 
 class FeedPage {

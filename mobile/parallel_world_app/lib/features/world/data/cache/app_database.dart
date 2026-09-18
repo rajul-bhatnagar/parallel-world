@@ -88,11 +88,14 @@ class CachedFeedPosts extends Table {
   TextColumn get authorDisplayName => text()();
   TextColumn get authorHandle => text()();
   TextColumn get authorActorType => text()();
+  BoolColumn get authorIsFollowed =>
+      boolean().withDefault(const Constant(false))();
   TextColumn get content => text().withLength(min: 1, max: 500)();
   DateTimeColumn get createdAtUtc => dateTime()();
   TextColumn get parentPostId => text().nullable()();
   IntColumn get likeCount => integer()();
   IntColumn get replyCount => integer()();
+  TextColumn get currentPlayerReaction => text().nullable()();
   TextColumn get visibility => text()();
   TextColumn get localState => text()();
   TextColumn get clientPostId => text().nullable()();
@@ -118,7 +121,7 @@ class AppDatabase extends _$AppDatabase {
     : super(executor ?? driftDatabase(name: 'parallel_world_cache'));
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -132,6 +135,16 @@ class AppDatabase extends _$AppDatabase {
       if (from < 3) {
         await migrator.createTable(cachedFeedMetadata);
         await migrator.createTable(cachedFeedPosts);
+      }
+      if (from >= 3 && from < 4) {
+        await migrator.addColumn(
+          cachedFeedPosts,
+          cachedFeedPosts.authorIsFollowed,
+        );
+        await migrator.addColumn(
+          cachedFeedPosts,
+          cachedFeedPosts.currentPlayerReaction,
+        );
       }
     },
   );

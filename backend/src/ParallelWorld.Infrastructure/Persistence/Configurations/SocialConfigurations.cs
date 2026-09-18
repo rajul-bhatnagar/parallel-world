@@ -174,3 +174,119 @@ public sealed class IdempotencyRecordConfiguration : IEntityTypeConfiguration<Id
             .HasConstraintName("fk_idempotency_records_game_worlds_user_world");
     }
 }
+
+public sealed class PostReactionConfiguration : IEntityTypeConfiguration<PostReaction>
+{
+    public void Configure(EntityTypeBuilder<PostReaction> builder)
+    {
+        builder.ToTable("post_reactions", table => table.HasCheckConstraint(
+            "ck_post_reactions_type",
+            "reaction_type = 'like'"));
+        builder.HasKey(entity => entity.Id).HasName("pk_post_reactions");
+        builder.Property(entity => entity.Id).HasColumnName("id");
+        builder.Property(entity => entity.WorldId).HasColumnName("world_id");
+        builder.Property(entity => entity.PostId).HasColumnName("post_id");
+        builder.Property(entity => entity.ActorId).HasColumnName("actor_id");
+        builder.Property(entity => entity.ReactionType)
+            .HasColumnName("reaction_type")
+            .HasConversion(value => value.ToString().ToLowerInvariant(), value => Enum.Parse<ReactionType>(value, true))
+            .HasMaxLength(20);
+        builder.Property(entity => entity.GameplayEventId).HasColumnName("gameplay_event_id");
+        builder.Property(entity => entity.CreatedAt).HasColumnName("created_at");
+        builder.HasIndex(entity => new { entity.WorldId, entity.PostId, entity.ActorId, entity.ReactionType })
+            .IsUnique()
+            .HasDatabaseName("ux_post_reactions_world_post_actor_type");
+        builder.HasIndex(entity => new
+        {
+            entity.WorldId,
+            entity.PostId,
+            entity.ReactionType,
+            entity.CreatedAt,
+            entity.Id,
+        }).HasDatabaseName("ix_post_reactions_world_post_type_created_id");
+        builder.HasIndex(entity => new { entity.WorldId, entity.ActorId })
+            .HasDatabaseName("ix_post_reactions_world_actor");
+        builder.HasIndex(entity => new { entity.WorldId, entity.GameplayEventId })
+            .HasDatabaseName("ix_post_reactions_world_gameplay_event");
+        builder.HasOne<GameWorld>()
+            .WithMany()
+            .HasForeignKey(entity => entity.WorldId)
+            .OnDelete(DeleteBehavior.Restrict)
+            .HasConstraintName("fk_post_reactions_game_worlds_world_id");
+        builder.HasOne<Post>()
+            .WithMany()
+            .HasForeignKey(entity => new { entity.WorldId, entity.PostId })
+            .HasPrincipalKey(entity => new { entity.WorldId, entity.Id })
+            .OnDelete(DeleteBehavior.Restrict)
+            .HasConstraintName("fk_post_reactions_posts_world_post");
+        builder.HasOne<Actor>()
+            .WithMany()
+            .HasForeignKey(entity => new { entity.WorldId, entity.ActorId })
+            .HasPrincipalKey(entity => new { entity.WorldId, entity.Id })
+            .OnDelete(DeleteBehavior.Restrict)
+            .HasConstraintName("fk_post_reactions_actors_world_actor");
+        builder.HasOne<GameplayEvent>()
+            .WithMany()
+            .HasForeignKey(entity => new { entity.WorldId, entity.GameplayEventId })
+            .HasPrincipalKey(entity => new { entity.WorldId, entity.Id })
+            .OnDelete(DeleteBehavior.Restrict)
+            .HasConstraintName("fk_post_reactions_gameplay_events_world_event");
+    }
+}
+
+public sealed class FollowConfiguration : IEntityTypeConfiguration<Follow>
+{
+    public void Configure(EntityTypeBuilder<Follow> builder)
+    {
+        builder.ToTable("follows", table =>
+        {
+            table.HasCheckConstraint("ck_follows_distinct_actors", "follower_actor_id <> followed_actor_id");
+            table.HasCheckConstraint("ck_follows_time", "ended_at IS NULL OR ended_at >= started_at");
+        });
+        builder.HasKey(entity => entity.Id).HasName("pk_follows");
+        builder.Property(entity => entity.Id).HasColumnName("id");
+        builder.Property(entity => entity.WorldId).HasColumnName("world_id");
+        builder.Property(entity => entity.FollowerActorId).HasColumnName("follower_actor_id");
+        builder.Property(entity => entity.FollowedActorId).HasColumnName("followed_actor_id");
+        builder.Property(entity => entity.StartedAt).HasColumnName("started_at");
+        builder.Property(entity => entity.EndedAt).HasColumnName("ended_at");
+        builder.Property(entity => entity.GameplayEventId).HasColumnName("gameplay_event_id");
+        builder.Property(entity => entity.IdempotencyKey).HasColumnName("idempotency_key").HasMaxLength(200);
+        builder.HasIndex(entity => new { entity.WorldId, entity.FollowerActorId, entity.FollowedActorId })
+            .IsUnique()
+            .HasFilter("ended_at IS NULL")
+            .HasDatabaseName("ux_follows_world_follower_followed_active");
+        builder.HasIndex(entity => new { entity.WorldId, entity.IdempotencyKey })
+            .IsUnique()
+            .HasDatabaseName("ux_follows_world_idempotency_key");
+        builder.HasIndex(entity => new { entity.WorldId, entity.FollowedActorId, entity.EndedAt })
+            .HasDatabaseName("ix_follows_world_followed_ended");
+        builder.HasIndex(entity => new { entity.WorldId, entity.FollowerActorId, entity.EndedAt })
+            .HasDatabaseName("ix_follows_world_follower_ended");
+        builder.HasIndex(entity => new { entity.WorldId, entity.GameplayEventId })
+            .HasDatabaseName("ix_follows_world_gameplay_event");
+        builder.HasOne<GameWorld>()
+            .WithMany()
+            .HasForeignKey(entity => entity.WorldId)
+            .OnDelete(DeleteBehavior.Restrict)
+            .HasConstraintName("fk_follows_game_worlds_world_id");
+        builder.HasOne<Actor>()
+            .WithMany()
+            .HasForeignKey(entity => new { entity.WorldId, entity.FollowerActorId })
+            .HasPrincipalKey(entity => new { entity.WorldId, entity.Id })
+            .OnDelete(DeleteBehavior.Restrict)
+            .HasConstraintName("fk_follows_actors_world_follower");
+        builder.HasOne<Actor>()
+            .WithMany()
+            .HasForeignKey(entity => new { entity.WorldId, entity.FollowedActorId })
+            .HasPrincipalKey(entity => new { entity.WorldId, entity.Id })
+            .OnDelete(DeleteBehavior.Restrict)
+            .HasConstraintName("fk_follows_actors_world_followed");
+        builder.HasOne<GameplayEvent>()
+            .WithMany()
+            .HasForeignKey(entity => new { entity.WorldId, entity.GameplayEventId })
+            .HasPrincipalKey(entity => new { entity.WorldId, entity.Id })
+            .OnDelete(DeleteBehavior.Restrict)
+            .HasConstraintName("fk_follows_gameplay_events_world_event");
+    }
+}

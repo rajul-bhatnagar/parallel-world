@@ -132,6 +132,12 @@ class DriftFeedCache implements contracts.FeedCache {
         );
   }
 
+  @override
+  Future<void> putServerPost(String userId, String worldId, FeedPost post) =>
+      _database
+          .into(_database.cachedFeedPosts)
+          .insertOnConflictUpdate(_companion(userId, worldId, post));
+
   Future<void> _writePosts(
     String userId,
     String worldId,
@@ -169,11 +175,13 @@ class DriftFeedCache implements contracts.FeedCache {
     authorDisplayName: post.author.displayName,
     authorHandle: post.author.handle,
     authorActorType: post.author.actorType,
+    authorIsFollowed: Value(post.author.isFollowed),
     content: post.content,
     createdAtUtc: post.createdAtUtc,
     parentPostId: Value(post.parentPostId),
     likeCount: post.counts.likes,
     replyCount: post.counts.replies,
+    currentPlayerReaction: Value(post.currentPlayerReaction),
     visibility: post.visibility,
     localState: post.localState.name,
     clientPostId: Value(post.clientPostId),
@@ -189,11 +197,13 @@ class DriftFeedCache implements contracts.FeedCache {
       displayName: row.authorDisplayName,
       handle: row.authorHandle,
       actorType: row.authorActorType,
+      isFollowed: row.authorIsFollowed,
     ),
     content: row.content,
     createdAtUtc: row.createdAtUtc.toUtc(),
     parentPostId: row.parentPostId,
     counts: FeedCounts(likes: row.likeCount, replies: row.replyCount),
+    currentPlayerReaction: row.currentPlayerReaction,
     visibility: row.visibility,
     localState: FeedPostLocalState.values.byName(row.localState),
     clientPostId: row.clientPostId,

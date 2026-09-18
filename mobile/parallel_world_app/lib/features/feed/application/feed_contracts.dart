@@ -19,6 +19,37 @@ abstract interface class FeedGateway {
     required String clientPostId,
     required String idempotencyKey,
   });
+
+  Future<FeedPost> getPost({required String worldId, required String postId});
+
+  Future<FeedPage> getReplies({
+    required String worldId,
+    required String parentPostId,
+    int limit = 20,
+    String? cursor,
+  });
+
+  Future<FeedPost> createReply({
+    required String worldId,
+    required String parentPostId,
+    required String content,
+    required String clientPostId,
+    required String idempotencyKey,
+  });
+
+  Future<ReactionState> setLike({
+    required String worldId,
+    required String postId,
+  });
+
+  Future<void> removeLike({required String worldId, required String postId});
+
+  Future<FollowState> follow({
+    required String worldId,
+    required String actorId,
+  });
+
+  Future<void> unfollow({required String worldId, required String actorId});
 }
 
 class CachedFeed {
@@ -57,6 +88,8 @@ abstract interface class FeedCache {
     String clientPostId,
     String message,
   );
+
+  Future<void> putServerPost(String userId, String worldId, FeedPost post);
 }
 
 abstract interface class FeedRepository {
@@ -75,5 +108,36 @@ abstract interface class FeedRepository {
     required String worldId,
     required FeedPost pendingPost,
     required FeedOperationIsCurrent isCurrent,
+  });
+
+  Future<FeedPost> getPost({required String worldId, required String postId});
+
+  Future<FeedPage> getReplies({
+    required String worldId,
+    required String parentPostId,
+    int limit = 20,
+    String? cursor,
+  });
+
+  Future<FeedPost> createReply({
+    required String worldId,
+    required String parentPostId,
+    required String content,
+    required String clientPostId,
+    required String idempotencyKey,
+  });
+
+  Future<ReactionState> setLike({
+    required String userId,
+    required String worldId,
+    required FeedPost post,
+    required bool active,
+    required FeedOperationIsCurrent isCurrent,
+  });
+
+  Future<void> setFollow({
+    required String worldId,
+    required String actorId,
+    required bool active,
   });
 }

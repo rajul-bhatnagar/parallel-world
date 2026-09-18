@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:parallel_world_app/app/theme.dart';
 import 'package:parallel_world_app/features/feed/application/feed_controller.dart';
 import 'package:parallel_world_app/features/feed/domain/feed_models.dart';
+import 'package:parallel_world_app/features/session/application/session_controller.dart';
 
 class FeedScreen extends ConsumerStatefulWidget {
   const FeedScreen({super.key});
@@ -200,63 +202,117 @@ class _PostCard extends ConsumerWidget {
   final FeedPost post;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) => Padding(
-    padding: const EdgeInsets.only(bottom: AppSpacing.small),
-    child: Card(
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.medium),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                CircleAvatar(
-                  child: Text(
-                    post.author.displayName.characters.first.toUpperCase(),
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(feedControllerProvider);
+    final playerActorId = ref.watch(
+      sessionControllerProvider.select(
+        (session) => session.world?.playerActorId,
+      ),
+    );
+    final reactionPending = state.pendingReactionPostIds.contains(post.id);
+    final followPending = state.pendingFollowActorIds.contains(
+      post.author.actorId,
+    );
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.small),
+      child: Card(
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.medium),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  CircleAvatar(
+                    child: Text(
+                      post.author.displayName.characters.first.toUpperCase(),
+                    ),
                   ),
-                ),
-                const SizedBox(width: AppSpacing.small),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        post.author.displayName,
-                        style: const TextStyle(fontWeight: FontWeight.w600),
+                  const SizedBox(width: AppSpacing.small),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          post.author.displayName,
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                        Text('@${post.author.handle}'),
+                      ],
+                    ),
+                  ),
+                  if (post.localState == FeedPostLocalState.pending)
+                    const Text('Sending…')
+                  else if (post.localState == FeedPostLocalState.failed)
+                    const Text('Not sent')
+                  else if (post.author.actorType == 'character')
+                    TextButton(
+                      onPressed: followPending
+                          ? null
+                          : () => ref
+                                .read(feedControllerProvider.notifier)
+                                .toggleFollow(post.author.actorId),
+                      child: Text(
+                        post.author.isFollowed ? 'Following' : 'Follow',
                       ),
-                      Text('@${post.author.handle}'),
-                    ],
-                  ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.medium),
+              Text(post.content),
+              if (post.localState == FeedPostLocalState.synced) ...[
+                const SizedBox(height: AppSpacing.small),
+                Row(
+                  children: [
+                    IconButton(
+                      tooltip: post.currentPlayerReaction == 'like'
+                          ? 'Unlike post'
+                          : 'Like post',
+                      onPressed:
+                          reactionPending ||
+                              post.author.actorId == playerActorId
+                          ? null
+                          : () => ref
+                                .read(feedControllerProvider.notifier)
+                                .toggleLike(post.id),
+                      icon: Icon(
+                        post.currentPlayerReaction == 'like'
+                            ? Icons.favorite
+                            : Icons.favorite_border,
+                      ),
+                    ),
+                    Text('${post.counts.likes}'),
+                    const SizedBox(width: AppSpacing.medium),
+                    TextButton.icon(
+                      onPressed: () => context.push('/posts/${post.id}'),
+                      icon: const Icon(Icons.chat_bubble_outline),
+                      label: Text('${post.counts.replies} Replies'),
+                    ),
+                  ],
                 ),
-                if (post.localState == FeedPostLocalState.pending)
-                  const Text('Sending…')
-                else if (post.localState == FeedPostLocalState.failed)
-                  const Text('Not sent'),
               ],
-            ),
-            const SizedBox(height: AppSpacing.medium),
-            Text(post.content),
-            if (post.localState == FeedPostLocalState.failed) ...[
-              const SizedBox(height: AppSpacing.small),
-              Text(
-                post.failureMessage ?? 'This post could not be sent.',
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
-              ),
-              TextButton.icon(
-                onPressed: post.clientPostId == null
-                    ? null
-                    : () => ref
-                          .read(feedControllerProvider.notifier)
-                          .retry(post.clientPostId!),
-                icon: const Icon(Icons.refresh),
-                label: const Text('Retry post'),
-              ),
+              if (post.localState == FeedPostLocalState.failed) ...[
+                const SizedBox(height: AppSpacing.small),
+                Text(
+                  post.failureMessage ?? 'This post could not be sent.',
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+                TextButton.icon(
+                  onPressed: post.clientPostId == null
+                      ? null
+                      : () => ref
+                            .read(feedControllerProvider.notifier)
+                            .retry(post.clientPostId!),
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Retry post'),
+                ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 class _ScrollableMessage extends StatelessWidget {

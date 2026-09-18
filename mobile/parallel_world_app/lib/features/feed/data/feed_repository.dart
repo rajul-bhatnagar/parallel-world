@@ -82,4 +82,90 @@ class ApiCachedFeedRepository implements FeedRepository {
       rethrow;
     }
   }
+
+  @override
+  Future<FeedPost> getPost({required String worldId, required String postId}) =>
+      _gateway.getPost(worldId: worldId, postId: postId);
+
+  @override
+  Future<FeedPage> getReplies({
+    required String worldId,
+    required String parentPostId,
+    int limit = 20,
+    String? cursor,
+  }) => _gateway.getReplies(
+    worldId: worldId,
+    parentPostId: parentPostId,
+    limit: limit,
+    cursor: cursor,
+  );
+
+  @override
+  Future<FeedPost> createReply({
+    required String worldId,
+    required String parentPostId,
+    required String content,
+    required String clientPostId,
+    required String idempotencyKey,
+  }) => _gateway.createReply(
+    worldId: worldId,
+    parentPostId: parentPostId,
+    content: content,
+    clientPostId: clientPostId,
+    idempotencyKey: idempotencyKey,
+  );
+
+  @override
+  Future<ReactionState> setLike({
+    required String userId,
+    required String worldId,
+    required FeedPost post,
+    required bool active,
+    required FeedOperationIsCurrent isCurrent,
+  }) async {
+    if (!isCurrent()) {
+      throw const FeedOperationCancelled();
+    }
+    final ReactionState state;
+    final FeedPost serverPost;
+    if (active) {
+      state = await _gateway.setLike(worldId: worldId, postId: post.id);
+      serverPost = post.copyWith(
+        counts: FeedCounts(
+          likes: state.likeCount,
+          replies: post.counts.replies,
+        ),
+        currentPlayerReaction: state.active ? 'like' : null,
+      );
+    } else {
+      await _gateway.removeLike(worldId: worldId, postId: post.id);
+      if (!isCurrent()) {
+        throw const FeedOperationCancelled();
+      }
+      serverPost = await _gateway.getPost(worldId: worldId, postId: post.id);
+      state = ReactionState(
+        postId: post.id,
+        type: 'like',
+        active: serverPost.currentPlayerReaction == 'like',
+        likeCount: serverPost.counts.likes,
+      );
+    }
+    if (isCurrent()) {
+      await _cache.putServerPost(userId, worldId, serverPost);
+    }
+    return state;
+  }
+
+  @override
+  Future<void> setFollow({
+    required String worldId,
+    required String actorId,
+    required bool active,
+  }) async {
+    if (active) {
+      await _gateway.follow(worldId: worldId, actorId: actorId);
+    } else {
+      await _gateway.unfollow(worldId: worldId, actorId: actorId);
+    }
+  }
 }

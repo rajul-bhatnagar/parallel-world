@@ -100,6 +100,30 @@ void main() {
     expect(await cache.read('user-a', testWorld.id), isNull);
   });
 
+  test('cache preserves M07 reaction and follow projections', () async {
+    final socialPost = FeedPost(
+      id: testFeedPost.id,
+      worldId: testFeedPost.worldId,
+      author: testFeedAuthor.copyWith(isFollowed: true),
+      content: testFeedPost.content,
+      createdAtUtc: testFeedPost.createdAtUtc,
+      counts: const FeedCounts(likes: 1, replies: 0),
+      currentPlayerReaction: 'like',
+      visibility: testFeedPost.visibility,
+    );
+
+    await cache.replaceFirstPage(
+      'user-a',
+      testWorld.id,
+      FeedPage(items: [socialPost], nextCursor: null, hasMore: false),
+    );
+
+    final cached = (await cache.read('user-a', testWorld.id))!.items.single;
+    expect(cached.author.isFollowed, isTrue);
+    expect(cached.currentPlayerReaction, 'like');
+    expect(cached.counts.likes, 1);
+  });
+
   test('schema version two upgrades with M06 feed cache tables', () async {
     await database.close();
     final directory = await Directory.systemTemp.createTemp('m06_drift_');
@@ -119,6 +143,37 @@ void main() {
         .get();
     final names = rows.map((row) => row.read<String>('name')).toSet();
     expect(names, containsAll({'cached_feed_metadata', 'cached_feed_posts'}));
+    await database.close();
+    await directory.delete(recursive: true);
+    database = AppDatabase(NativeDatabase.memory());
+  });
+
+  test('schema version three upgrades with M07 social columns', () async {
+    await database.close();
+    final directory = await Directory.systemTemp.createTemp('m07_drift_');
+    final file = File('${directory.path}/cache.sqlite');
+    database = AppDatabase(NativeDatabase(file));
+    await database.initialize();
+    await database.customStatement(
+      'ALTER TABLE cached_feed_posts DROP COLUMN author_is_followed',
+    );
+    await database.customStatement(
+      'ALTER TABLE cached_feed_posts DROP COLUMN current_player_reaction',
+    );
+    await database.customStatement('PRAGMA user_version = 3');
+    await database.close();
+    database = AppDatabase(NativeDatabase(file));
+
+    await database.initialize();
+
+    final rows = await database
+        .customSelect('PRAGMA table_info(cached_feed_posts)')
+        .get();
+    final columns = rows.map((row) => row.read<String>('name')).toSet();
+    expect(
+      columns,
+      containsAll({'author_is_followed', 'current_player_reaction'}),
+    );
     await database.close();
     await directory.delete(recursive: true);
     database = AppDatabase(NativeDatabase.memory());

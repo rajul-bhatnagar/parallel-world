@@ -128,4 +128,20 @@ void main() {
       expect(repository.lastCursor, 'opaque-next');
     },
   );
+
+  testWidgets('feed exposes like, reply, and follow actions', (tester) async {
+    final repository = FakeFeedRepository();
+    await tester.pumpWidget(_app(repository));
+    await tester.pumpAndSettle();
+
+    expect(find.byTooltip('Like post'), findsOneWidget);
+    expect(find.text('Follow'), findsOneWidget);
+    expect(find.text('0 Replies'), findsOneWidget);
+    await tester.tap(find.byTooltip('Like post'));
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('Unlike post'), findsOneWidget);
+    await tester.tap(find.text('Follow'));
+    await tester.pumpAndSettle();
+    expect(find.text('Following'), findsOneWidget);
+  });
 }

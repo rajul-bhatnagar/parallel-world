@@ -13,7 +13,12 @@ public sealed record CharacterPostAuthor(Guid ActorId, string DisplayName, strin
 
 public sealed record PlayerPostAuthor(Guid ActorId, string DisplayName, string Handle, int RuleVersion);
 
-public sealed record FeedAuthor(Guid ActorId, string DisplayName, string Handle, string ActorType);
+public sealed record FeedAuthor(
+    Guid ActorId,
+    string DisplayName,
+    string Handle,
+    string ActorType,
+    bool IsFollowed);
 
 public sealed record FeedCounts(int Likes, int Replies);
 
@@ -25,6 +30,7 @@ public sealed record FeedPost(
     DateTimeOffset CreatedAtUtc,
     Guid? ParentPostId,
     FeedCounts Counts,
+    string? CurrentPlayerReaction,
     string Visibility);
 
 public sealed record FeedPage(IReadOnlyList<FeedPost> Items, string? NextCursor, bool HasMore);
@@ -32,6 +38,10 @@ public sealed record FeedPage(IReadOnlyList<FeedPost> Items, string? NextCursor,
 public sealed record FeedCursorValue(DateTimeOffset CreatedAtUtc, Guid Id);
 
 public readonly record struct FeedCursorDecodeResult(bool IsValid, FeedCursorValue? Value);
+
+public sealed record ReplyCursorValue(DateTimeOffset CreatedAtUtc, Guid Id);
+
+public readonly record struct ReplyCursorDecodeResult(bool IsValid, ReplyCursorValue? Value);
 
 public sealed record CreatePostCommand(
     Guid UserId,
@@ -41,6 +51,20 @@ public sealed record CreatePostCommand(
     string IdempotencyKey);
 
 public sealed record CreatedPost(FeedPost Post, bool IsIdempotencyReplay);
+
+public sealed record CreateReplyCommand(
+    Guid UserId,
+    Guid WorldId,
+    Guid ParentPostId,
+    string Content,
+    Guid ClientPostId,
+    string IdempotencyKey);
+
+public sealed record ReactionState(Guid PostId, string Type, bool Active, int LikeCount);
+
+public sealed record FollowState(Guid ActorId, bool IsFollowing, DateTimeOffset FollowedAtUtc);
+
+public sealed record PostActionTarget(Post Post, int Depth);
 
 public sealed record SocialResult<T>(T? Value, ServiceFailure? Failure)
 {
@@ -60,6 +84,13 @@ public interface IFeedCursorCodec
     string Encode(Guid worldId, FeedCursorValue value);
 
     FeedCursorDecodeResult Decode(string? cursor, Guid worldId);
+}
+
+public interface IReplyCursorCodec
+{
+    string Encode(Guid worldId, Guid parentPostId, ReplyCursorValue value);
+
+    ReplyCursorDecodeResult Decode(string? cursor, Guid worldId, Guid parentPostId);
 }
 
 public interface ISocialRepository
@@ -90,13 +121,56 @@ public interface ISocialRepository
 
     Task<IReadOnlyList<FeedPost>> ListFeedAsync(
         Guid worldId,
+        Guid playerActorId,
         FeedCursorValue? after,
         int take,
+        CancellationToken cancellationToken);
+
+    Task<FeedPost?> FindPostAsync(
+        Guid worldId,
+        Guid postId,
+        Guid playerActorId,
+        CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<FeedPost>> ListRepliesAsync(
+        Guid worldId,
+        Guid parentPostId,
+        Guid playerActorId,
+        ReplyCursorValue? after,
+        int take,
+        CancellationToken cancellationToken);
+
+    Task<PostActionTarget?> FindPostForUpdateAsync(
+        Guid worldId,
+        Guid postId,
+        CancellationToken cancellationToken);
+
+    Task<PostReaction?> FindReactionAsync(
+        Guid worldId,
+        Guid postId,
+        Guid actorId,
+        CancellationToken cancellationToken);
+
+    Task<bool> LockCharacterActorAsync(
+        Guid worldId,
+        Guid actorId,
+        CancellationToken cancellationToken);
+
+    Task<Follow?> FindActiveFollowAsync(
+        Guid worldId,
+        Guid followerActorId,
+        Guid followedActorId,
         CancellationToken cancellationToken);
 
     void AddSeedPosts(SeedPostSet seedPosts);
 
     void AddPlayerPost(GameplayEvent gameplayEvent, Post post, IdempotencyRecord idempotencyRecord);
+
+    void AddReaction(GameplayEvent gameplayEvent, PostReaction reaction);
+
+    void RemoveReaction(PostReaction reaction);
+
+    void AddFollow(GameplayEvent gameplayEvent, Follow follow);
 }
 
 public interface ISocialFeedService
@@ -110,5 +184,48 @@ public interface ISocialFeedService
 
     Task<SocialResult<CreatedPost>> CreatePostAsync(
         CreatePostCommand command,
+        CancellationToken cancellationToken);
+
+    Task<SocialResult<FeedPost>> GetPostAsync(
+        Guid userId,
+        Guid worldId,
+        Guid postId,
+        CancellationToken cancellationToken);
+
+    Task<SocialResult<FeedPage>> GetRepliesAsync(
+        Guid userId,
+        Guid worldId,
+        Guid parentPostId,
+        int limit,
+        string? cursor,
+        CancellationToken cancellationToken);
+
+    Task<SocialResult<CreatedPost>> CreateReplyAsync(
+        CreateReplyCommand command,
+        CancellationToken cancellationToken);
+
+    Task<SocialResult<ReactionState>> SetReactionAsync(
+        Guid userId,
+        Guid worldId,
+        Guid postId,
+        ReactionType reactionType,
+        CancellationToken cancellationToken);
+
+    Task<SocialResult<ReactionState>> RemoveReactionAsync(
+        Guid userId,
+        Guid worldId,
+        Guid postId,
+        CancellationToken cancellationToken);
+
+    Task<SocialResult<FollowState>> FollowAsync(
+        Guid userId,
+        Guid worldId,
+        Guid actorId,
+        CancellationToken cancellationToken);
+
+    Task<SocialResult<bool>> UnfollowAsync(
+        Guid userId,
+        Guid worldId,
+        Guid actorId,
         CancellationToken cancellationToken);
 }

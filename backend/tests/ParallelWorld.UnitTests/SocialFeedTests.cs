@@ -56,6 +56,41 @@ public sealed class SocialFeedTests
         });
     }
 
+    [Fact]
+    public void Post_CountersAndFollowHistoryEnforceDomainInvariants()
+    {
+        var post = CreatePost(Guid.NewGuid(), "Counters");
+        post.AddLike();
+        post.AddReply();
+
+        Assert.Equal(1, post.LikeCount);
+        Assert.Equal(1, post.ReplyCount);
+        post.RemoveLike();
+        Assert.Equal(0, post.LikeCount);
+        Assert.Throws<InvalidOperationException>(post.RemoveLike);
+
+        var actorId = Guid.NewGuid();
+        Assert.Throws<ArgumentException>(() => new Follow(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            actorId,
+            actorId,
+            CreatedAt,
+            Guid.NewGuid(),
+            "operation"));
+        var follow = new Follow(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            CreatedAt,
+            Guid.NewGuid(),
+            "operation");
+        follow.End(CreatedAt.AddMinutes(1));
+        follow.End(CreatedAt.AddMinutes(2));
+        Assert.Equal(CreatedAt.AddMinutes(1), follow.EndedAt);
+    }
+
     private static Post CreatePost(Guid id, string content) => new(
         id,
         Guid.NewGuid(),

@@ -95,22 +95,127 @@ internal sealed class SocialRepository(ParallelWorldDbContext dbContext) : ISoci
             return null;
         }
 
-        var post = await PostRows(worldId, record.ResponseResourceId)
+        var playerActorId = await dbContext.Actors.AsNoTracking()
+            .Where(actor => actor.WorldId == worldId && actor.ActorType == ActorType.Player)
+            .Select(actor => actor.Id)
+            .SingleAsync(cancellationToken);
+        var post = await PostRows(worldId, playerActorId, record.ResponseResourceId)
             .SingleAsync(cancellationToken);
         return (record.RequestHash, ToFeedPost(post));
     }
 
     public async Task<IReadOnlyList<FeedPost>> ListFeedAsync(
         Guid worldId,
+        Guid playerActorId,
         FeedCursorValue? after,
         int take,
         CancellationToken cancellationToken)
     {
-        var rows = await PostRows(worldId, after: after)
+        var rows = await PostRows(worldId, playerActorId)
+            .Where(post => after == null
+                || post.CreatedAt < after.CreatedAtUtc
+                || (post.CreatedAt == after.CreatedAtUtc && post.Id.CompareTo(after.Id) < 0))
+            .OrderByDescending(post => post.CreatedAt)
+            .ThenByDescending(post => post.Id)
             .Take(take)
             .ToListAsync(cancellationToken);
         return rows.Select(ToFeedPost).ToArray();
     }
+
+    public async Task<FeedPost?> FindPostAsync(
+        Guid worldId,
+        Guid postId,
+        Guid playerActorId,
+        CancellationToken cancellationToken)
+    {
+        var row = await PostRows(worldId, playerActorId, postId)
+            .SingleOrDefaultAsync(cancellationToken);
+        return row is null ? null : ToFeedPost(row);
+    }
+
+    public async Task<IReadOnlyList<FeedPost>> ListRepliesAsync(
+        Guid worldId,
+        Guid parentPostId,
+        Guid playerActorId,
+        ReplyCursorValue? after,
+        int take,
+        CancellationToken cancellationToken)
+    {
+        var rows = await PostRows(worldId, playerActorId)
+            .Where(post => post.ParentPostId == parentPostId
+                && (after == null
+                    || post.CreatedAt > after.CreatedAtUtc
+                    || (post.CreatedAt == after.CreatedAtUtc && post.Id.CompareTo(after.Id) > 0)))
+            .OrderBy(post => post.CreatedAt)
+            .ThenBy(post => post.Id)
+            .Take(take)
+            .ToListAsync(cancellationToken);
+        return rows.Select(ToFeedPost).ToArray();
+    }
+
+    public async Task<PostActionTarget?> FindPostForUpdateAsync(
+        Guid worldId,
+        Guid postId,
+        CancellationToken cancellationToken)
+    {
+        var post = await dbContext.Posts.FromSqlInterpolated(
+                $"SELECT * FROM posts WHERE world_id = {worldId} AND id = {postId} AND deleted_at IS NULL FOR UPDATE")
+            .SingleOrDefaultAsync(cancellationToken);
+        if (post is null)
+        {
+            return null;
+        }
+
+        var depth = 0;
+        var parentId = post.ParentPostId;
+        while (parentId is Guid currentParentId)
+        {
+            depth++;
+            if (depth > 2)
+            {
+                break;
+            }
+
+            parentId = await dbContext.Posts.AsNoTracking()
+                .Where(parent => parent.WorldId == worldId && parent.Id == currentParentId)
+                .Select(parent => parent.ParentPostId)
+                .SingleOrDefaultAsync(cancellationToken);
+        }
+
+        return new(post, depth);
+    }
+
+    public Task<PostReaction?> FindReactionAsync(
+        Guid worldId,
+        Guid postId,
+        Guid actorId,
+        CancellationToken cancellationToken) =>
+        dbContext.PostReactions.SingleOrDefaultAsync(reaction =>
+            reaction.WorldId == worldId
+            && reaction.PostId == postId
+            && reaction.ActorId == actorId
+            && reaction.ReactionType == ReactionType.Like,
+            cancellationToken);
+
+    public async Task<bool> LockCharacterActorAsync(
+        Guid worldId,
+        Guid actorId,
+        CancellationToken cancellationToken) =>
+        await dbContext.Actors.FromSqlInterpolated(
+                $"SELECT * FROM actors WHERE world_id = {worldId} AND id = {actorId} AND actor_type = 'character' AND status = 'active' FOR UPDATE")
+            .AnyAsync(cancellationToken);
+
+    public Task<Follow?> FindActiveFollowAsync(
+        Guid worldId,
+        Guid followerActorId,
+        Guid followedActorId,
+        CancellationToken cancellationToken) =>
+        dbContext.Follows.SingleOrDefaultAsync(follow =>
+            follow.WorldId == worldId
+            && follow.FollowerActorId == followerActorId
+            && follow.FollowedActorId == followedActorId
+            && follow.EndedAt == null,
+            cancellationToken);
 
     public void AddSeedPosts(SeedPostSet seedPosts)
     {
@@ -128,18 +233,29 @@ internal sealed class SocialRepository(ParallelWorldDbContext dbContext) : ISoci
         dbContext.IdempotencyRecords.Add(idempotencyRecord);
     }
 
+    public void AddReaction(GameplayEvent gameplayEvent, PostReaction reaction)
+    {
+        dbContext.GameplayEvents.Add(gameplayEvent);
+        dbContext.PostReactions.Add(reaction);
+    }
+
+    public void RemoveReaction(PostReaction reaction) => dbContext.PostReactions.Remove(reaction);
+
+    public void AddFollow(GameplayEvent gameplayEvent, Follow follow)
+    {
+        dbContext.GameplayEvents.Add(gameplayEvent);
+        dbContext.Follows.Add(follow);
+    }
+
     private IQueryable<FeedPostRow> PostRows(
         Guid worldId,
-        Guid? postId = null,
-        FeedCursorValue? after = null)
+        Guid playerActorId,
+        Guid? postId = null)
     {
         var posts = dbContext.Posts.AsNoTracking().Where(post =>
             post.WorldId == worldId
             && post.DeletedAt == null
-            && (postId == null || post.Id == postId)
-            && (after == null
-                || post.CreatedAt < after.CreatedAtUtc
-                || (post.CreatedAt == after.CreatedAtUtc && post.Id.CompareTo(after.Id) < 0)));
+            && (postId == null || post.Id == postId));
 
         return
         from post in posts
@@ -156,29 +272,40 @@ internal sealed class SocialRepository(ParallelWorldDbContext dbContext) : ISoci
             equals new { character.WorldId, CharacterId = (Guid?)character.Id }
             into characters
         from character in characters.DefaultIfEmpty()
-        orderby post.CreatedAt descending, post.Id descending
-        select new FeedPostRow(
-            post.Id,
-            post.WorldId,
-            actor.Id,
-            actor.ActorType,
-            actor.ActorType == ActorType.Player
+        select new FeedPostRow
+        {
+            Id = post.Id,
+            WorldId = post.WorldId,
+            ActorId = actor.Id,
+            ActorType = actor.ActorType,
+            DisplayName = actor.ActorType == ActorType.Player
                 ? playerProfile!.DisplayName
                 : actor.ActorType == ActorType.Character
                     ? character!.DisplayName
                     : "Parallel World",
-            actor.ActorType == ActorType.Player
+            Handle = actor.ActorType == ActorType.Player
                 ? playerProfile!.Handle
                 : actor.ActorType == ActorType.Character
                     ? character!.Handle
                     : "system",
-            post.Content,
-            post.CreatedAt,
-            post.ParentPostId,
-            post.LikeCount,
-            post.ReplyCount,
-            post.Visibility,
-            post.DeletedAt);
+            Content = post.Content,
+            CreatedAt = post.CreatedAt,
+            ParentPostId = post.ParentPostId,
+            LikeCount = post.LikeCount,
+            ReplyCount = post.ReplyCount,
+            IsLiked = dbContext.PostReactions.Any(reaction =>
+                reaction.WorldId == post.WorldId
+                && reaction.PostId == post.Id
+                && reaction.ActorId == playerActorId
+                && reaction.ReactionType == ReactionType.Like),
+            IsFollowed = actor.ActorType == ActorType.Character && dbContext.Follows.Any(follow =>
+                follow.WorldId == post.WorldId
+                && follow.FollowerActorId == playerActorId
+                && follow.FollowedActorId == actor.Id
+                && follow.EndedAt == null),
+            Visibility = post.Visibility,
+            DeletedAt = post.DeletedAt,
+        };
     }
 
     private static FeedPost ToFeedPost(FeedPostRow row) => new(
@@ -188,25 +315,45 @@ internal sealed class SocialRepository(ParallelWorldDbContext dbContext) : ISoci
             row.ActorId,
             row.DisplayName,
             row.Handle,
-            row.ActorType.ToString().ToLowerInvariant()),
+            row.ActorType.ToString().ToLowerInvariant(),
+            row.IsFollowed),
         row.Content,
         row.CreatedAt,
         row.ParentPostId,
         new FeedCounts(row.LikeCount, row.ReplyCount),
+        row.IsLiked ? "like" : null,
         row.Visibility.ToString().ToLowerInvariant());
 
-    private sealed record FeedPostRow(
-        Guid Id,
-        Guid WorldId,
-        Guid ActorId,
-        ActorType ActorType,
-        string DisplayName,
-        string Handle,
-        string Content,
-        DateTimeOffset CreatedAt,
-        Guid? ParentPostId,
-        int LikeCount,
-        int ReplyCount,
-        PostVisibility Visibility,
-        DateTimeOffset? DeletedAt);
+    private sealed class FeedPostRow
+    {
+        public Guid Id { get; init; }
+
+        public Guid WorldId { get; init; }
+
+        public Guid ActorId { get; init; }
+
+        public ActorType ActorType { get; init; }
+
+        public required string DisplayName { get; init; }
+
+        public required string Handle { get; init; }
+
+        public required string Content { get; init; }
+
+        public DateTimeOffset CreatedAt { get; init; }
+
+        public Guid? ParentPostId { get; init; }
+
+        public int LikeCount { get; init; }
+
+        public int ReplyCount { get; init; }
+
+        public bool IsLiked { get; init; }
+
+        public bool IsFollowed { get; init; }
+
+        public PostVisibility Visibility { get; init; }
+
+        public DateTimeOffset? DeletedAt { get; init; }
+    }
 }

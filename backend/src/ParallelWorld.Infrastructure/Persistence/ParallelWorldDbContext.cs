@@ -44,6 +44,10 @@ public sealed class ParallelWorldDbContext(DbContextOptions<ParallelWorldDbConte
 
     public DbSet<Post> Posts => Set<Post>();
 
+    public DbSet<PostReaction> PostReactions => Set<PostReaction>();
+
+    public DbSet<Follow> Follows => Set<Follow>();
+
     public DbSet<IdempotencyRecord> IdempotencyRecords => Set<IdempotencyRecord>();
 
     public async Task<IApplicationTransaction> BeginTransactionAsync(

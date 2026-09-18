@@ -62,6 +62,47 @@ class _DelayedFeedGateway implements FeedGateway {
     postRequests.add(request);
     return request.future;
   }
+
+  @override
+  Future<FeedPost> getPost({required String worldId, required String postId}) =>
+      throw UnimplementedError();
+
+  @override
+  Future<FeedPage> getReplies({
+    required String worldId,
+    required String parentPostId,
+    int limit = 20,
+    String? cursor,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<FeedPost> createReply({
+    required String worldId,
+    required String parentPostId,
+    required String content,
+    required String clientPostId,
+    required String idempotencyKey,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<ReactionState> setLike({
+    required String worldId,
+    required String postId,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<void> removeLike({required String worldId, required String postId}) =>
+      throw UnimplementedError();
+
+  @override
+  Future<FollowState> follow({
+    required String worldId,
+    required String actorId,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<void> unfollow({required String worldId, required String actorId}) =>
+      throw UnimplementedError();
 }
 
 class _DatabaseWorldCache implements WorldCache {

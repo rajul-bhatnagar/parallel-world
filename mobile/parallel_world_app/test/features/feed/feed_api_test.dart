@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:parallel_world_app/features/feed/data/feed_api.dart';
+import 'package:parallel_world_app/features/feed/domain/feed_models.dart';
 
 import '../../support/fakes.dart';
 
@@ -64,6 +65,69 @@ void main() {
     expect(requestBody, isNot(contains('actorId')));
     expect(requestBody, isNot(contains('userId')));
   });
+
+  test('maps reply, reaction, and follow contracts', () async {
+    final requests = <RequestOptions>[];
+    final dio = Dio(BaseOptions(baseUrl: 'https://api.example.test'))
+      ..httpClientAdapter = TestHttpClientAdapter((options, body) {
+        requests.add(options);
+        if (options.path.endsWith('/replies') && options.method == 'GET') {
+          return _jsonResponse({
+            'items': [_postJson],
+            'nextCursor': null,
+            'hasMore': false,
+          });
+        }
+        if (options.path.endsWith('/reaction')) {
+          return _jsonResponse({
+            'postId': _postJson['id'],
+            'type': 'like',
+            'active': true,
+            'likeCount': 1,
+          });
+        }
+        if (options.path.endsWith('/follow')) {
+          return _jsonResponse({
+            'actorId': (_postJson['author']! as Map)['actorId'],
+            'isFollowing': true,
+            'followedAtUtc': '2026-09-16T12:00:00Z',
+          });
+        }
+        return _jsonResponse(_postJson, statusCode: 201);
+      });
+    final api = FeedApi(dio);
+
+    final replies = await api.getReplies(
+      worldId: testWorld.id,
+      parentPostId: _postJson['id']! as String,
+      cursor: 'reply-cursor',
+    );
+    final reply = await api.createReply(
+      worldId: testWorld.id,
+      parentPostId: _postJson['id']! as String,
+      content: 'Reply',
+      clientPostId: 'reply-client-id',
+      idempotencyKey: 'reply-key',
+    );
+    final reaction = await api.setLike(worldId: testWorld.id, postId: reply.id);
+    final follow = await api.follow(
+      worldId: testWorld.id,
+      actorId: reply.author.actorId,
+    );
+    await api.removeLike(worldId: testWorld.id, postId: reply.id);
+    await api.unfollow(worldId: testWorld.id, actorId: reply.author.actorId);
+
+    expect(replies.items.single.id, reply.id);
+    expect(requests[0].queryParameters['cursor'], 'reply-cursor');
+    expect(requests[1].headers['Idempotency-Key'], 'reply-key');
+    expect(reaction, isA<ReactionState>());
+    expect(reaction.likeCount, 1);
+    expect(follow.isFollowing, isTrue);
+    expect(
+      requests.map((request) => request.method),
+      containsAll(['DELETE', 'DELETE']),
+    );
+  });
 }
 
 const _postJson = {
@@ -74,11 +138,13 @@ const _postJson = {
     'displayName': 'Maya Chen',
     'handle': 'maya',
     'actorType': 'character',
+    'isFollowed': false,
   },
   'content': 'A quiet start, and plenty to notice.',
   'createdAtUtc': '2026-09-02T12:00:00Z',
   'parent': null,
   'counts': {'likes': 0, 'replies': 0},
+  'currentPlayerReaction': null,
   'visibility': 'world',
 };
 

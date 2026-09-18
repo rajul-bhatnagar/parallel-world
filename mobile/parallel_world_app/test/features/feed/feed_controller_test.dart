@@ -127,4 +127,35 @@ void main() {
     expect(repository.fetchCalls, 0);
     expect(container.read(feedControllerProvider).message, contains('world'));
   });
+
+  test(
+    'like and follow optimistically reconcile and roll back failures',
+    () async {
+      final repository = FakeFeedRepository();
+      final container = _container(repository);
+      addTearDown(container.dispose);
+      final controller = container.read(feedControllerProvider.notifier);
+      await controller.load();
+
+      await controller.toggleLike(testFeedPost.id);
+      var post = container.read(feedControllerProvider).items.single;
+      expect(post.currentPlayerReaction, 'like');
+      expect(post.counts.likes, 1);
+      expect(repository.lastLikeActive, isTrue);
+
+      repository.reactionError = const ServerFailure();
+      await controller.toggleLike(testFeedPost.id);
+      post = container.read(feedControllerProvider).items.single;
+      expect(post.currentPlayerReaction, 'like');
+      expect(post.counts.likes, 1);
+
+      await controller.toggleFollow(testFeedAuthor.actorId);
+      post = container.read(feedControllerProvider).items.single;
+      expect(post.author.isFollowed, isTrue);
+      repository.followError = const ServerFailure();
+      await controller.toggleFollow(testFeedAuthor.actorId);
+      post = container.read(feedControllerProvider).items.single;
+      expect(post.author.isFollowed, isTrue);
+    },
+  );
 }

@@ -2688,6 +2688,21 @@ class $CachedFeedPostsTable extends CachedFeedPosts
     type: DriftSqlType.string,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _authorIsFollowedMeta = const VerificationMeta(
+    'authorIsFollowed',
+  );
+  @override
+  late final GeneratedColumn<bool> authorIsFollowed = GeneratedColumn<bool>(
+    'author_is_followed',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("author_is_followed" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
   static const VerificationMeta _contentMeta = const VerificationMeta(
     'content',
   );
@@ -2747,6 +2762,17 @@ class $CachedFeedPostsTable extends CachedFeedPosts
     type: DriftSqlType.int,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _currentPlayerReactionMeta =
+      const VerificationMeta('currentPlayerReaction');
+  @override
+  late final GeneratedColumn<String> currentPlayerReaction =
+      GeneratedColumn<String>(
+        'current_player_reaction',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      );
   static const VerificationMeta _visibilityMeta = const VerificationMeta(
     'visibility',
   );
@@ -2811,11 +2837,13 @@ class $CachedFeedPostsTable extends CachedFeedPosts
     authorDisplayName,
     authorHandle,
     authorActorType,
+    authorIsFollowed,
     content,
     createdAtUtc,
     parentPostId,
     likeCount,
     replyCount,
+    currentPlayerReaction,
     visibility,
     localState,
     clientPostId,
@@ -2902,6 +2930,15 @@ class $CachedFeedPostsTable extends CachedFeedPosts
     } else if (isInserting) {
       context.missing(_authorActorTypeMeta);
     }
+    if (data.containsKey('author_is_followed')) {
+      context.handle(
+        _authorIsFollowedMeta,
+        authorIsFollowed.isAcceptableOrUnknown(
+          data['author_is_followed']!,
+          _authorIsFollowedMeta,
+        ),
+      );
+    }
     if (data.containsKey('content')) {
       context.handle(
         _contentMeta,
@@ -2945,6 +2982,15 @@ class $CachedFeedPostsTable extends CachedFeedPosts
       );
     } else if (isInserting) {
       context.missing(_replyCountMeta);
+    }
+    if (data.containsKey('current_player_reaction')) {
+      context.handle(
+        _currentPlayerReactionMeta,
+        currentPlayerReaction.isAcceptableOrUnknown(
+          data['current_player_reaction']!,
+          _currentPlayerReactionMeta,
+        ),
+      );
     }
     if (data.containsKey('visibility')) {
       context.handle(
@@ -3026,6 +3072,10 @@ class $CachedFeedPostsTable extends CachedFeedPosts
         DriftSqlType.string,
         data['${effectivePrefix}author_actor_type'],
       )!,
+      authorIsFollowed: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}author_is_followed'],
+      )!,
       content: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}content'],
@@ -3046,6 +3096,10 @@ class $CachedFeedPostsTable extends CachedFeedPosts
         DriftSqlType.int,
         data['${effectivePrefix}reply_count'],
       )!,
+      currentPlayerReaction: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}current_player_reaction'],
+      ),
       visibility: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}visibility'],
@@ -3083,11 +3137,13 @@ class CachedFeedPost extends DataClass implements Insertable<CachedFeedPost> {
   final String authorDisplayName;
   final String authorHandle;
   final String authorActorType;
+  final bool authorIsFollowed;
   final String content;
   final DateTime createdAtUtc;
   final String? parentPostId;
   final int likeCount;
   final int replyCount;
+  final String? currentPlayerReaction;
   final String visibility;
   final String localState;
   final String? clientPostId;
@@ -3101,11 +3157,13 @@ class CachedFeedPost extends DataClass implements Insertable<CachedFeedPost> {
     required this.authorDisplayName,
     required this.authorHandle,
     required this.authorActorType,
+    required this.authorIsFollowed,
     required this.content,
     required this.createdAtUtc,
     this.parentPostId,
     required this.likeCount,
     required this.replyCount,
+    this.currentPlayerReaction,
     required this.visibility,
     required this.localState,
     this.clientPostId,
@@ -3122,6 +3180,7 @@ class CachedFeedPost extends DataClass implements Insertable<CachedFeedPost> {
     map['author_display_name'] = Variable<String>(authorDisplayName);
     map['author_handle'] = Variable<String>(authorHandle);
     map['author_actor_type'] = Variable<String>(authorActorType);
+    map['author_is_followed'] = Variable<bool>(authorIsFollowed);
     map['content'] = Variable<String>(content);
     map['created_at_utc'] = Variable<DateTime>(createdAtUtc);
     if (!nullToAbsent || parentPostId != null) {
@@ -3129,6 +3188,9 @@ class CachedFeedPost extends DataClass implements Insertable<CachedFeedPost> {
     }
     map['like_count'] = Variable<int>(likeCount);
     map['reply_count'] = Variable<int>(replyCount);
+    if (!nullToAbsent || currentPlayerReaction != null) {
+      map['current_player_reaction'] = Variable<String>(currentPlayerReaction);
+    }
     map['visibility'] = Variable<String>(visibility);
     map['local_state'] = Variable<String>(localState);
     if (!nullToAbsent || clientPostId != null) {
@@ -3152,6 +3214,7 @@ class CachedFeedPost extends DataClass implements Insertable<CachedFeedPost> {
       authorDisplayName: Value(authorDisplayName),
       authorHandle: Value(authorHandle),
       authorActorType: Value(authorActorType),
+      authorIsFollowed: Value(authorIsFollowed),
       content: Value(content),
       createdAtUtc: Value(createdAtUtc),
       parentPostId: parentPostId == null && nullToAbsent
@@ -3159,6 +3222,9 @@ class CachedFeedPost extends DataClass implements Insertable<CachedFeedPost> {
           : Value(parentPostId),
       likeCount: Value(likeCount),
       replyCount: Value(replyCount),
+      currentPlayerReaction: currentPlayerReaction == null && nullToAbsent
+          ? const Value.absent()
+          : Value(currentPlayerReaction),
       visibility: Value(visibility),
       localState: Value(localState),
       clientPostId: clientPostId == null && nullToAbsent
@@ -3186,11 +3252,15 @@ class CachedFeedPost extends DataClass implements Insertable<CachedFeedPost> {
       authorDisplayName: serializer.fromJson<String>(json['authorDisplayName']),
       authorHandle: serializer.fromJson<String>(json['authorHandle']),
       authorActorType: serializer.fromJson<String>(json['authorActorType']),
+      authorIsFollowed: serializer.fromJson<bool>(json['authorIsFollowed']),
       content: serializer.fromJson<String>(json['content']),
       createdAtUtc: serializer.fromJson<DateTime>(json['createdAtUtc']),
       parentPostId: serializer.fromJson<String?>(json['parentPostId']),
       likeCount: serializer.fromJson<int>(json['likeCount']),
       replyCount: serializer.fromJson<int>(json['replyCount']),
+      currentPlayerReaction: serializer.fromJson<String?>(
+        json['currentPlayerReaction'],
+      ),
       visibility: serializer.fromJson<String>(json['visibility']),
       localState: serializer.fromJson<String>(json['localState']),
       clientPostId: serializer.fromJson<String?>(json['clientPostId']),
@@ -3209,11 +3279,15 @@ class CachedFeedPost extends DataClass implements Insertable<CachedFeedPost> {
       'authorDisplayName': serializer.toJson<String>(authorDisplayName),
       'authorHandle': serializer.toJson<String>(authorHandle),
       'authorActorType': serializer.toJson<String>(authorActorType),
+      'authorIsFollowed': serializer.toJson<bool>(authorIsFollowed),
       'content': serializer.toJson<String>(content),
       'createdAtUtc': serializer.toJson<DateTime>(createdAtUtc),
       'parentPostId': serializer.toJson<String?>(parentPostId),
       'likeCount': serializer.toJson<int>(likeCount),
       'replyCount': serializer.toJson<int>(replyCount),
+      'currentPlayerReaction': serializer.toJson<String?>(
+        currentPlayerReaction,
+      ),
       'visibility': serializer.toJson<String>(visibility),
       'localState': serializer.toJson<String>(localState),
       'clientPostId': serializer.toJson<String?>(clientPostId),
@@ -3230,11 +3304,13 @@ class CachedFeedPost extends DataClass implements Insertable<CachedFeedPost> {
     String? authorDisplayName,
     String? authorHandle,
     String? authorActorType,
+    bool? authorIsFollowed,
     String? content,
     DateTime? createdAtUtc,
     Value<String?> parentPostId = const Value.absent(),
     int? likeCount,
     int? replyCount,
+    Value<String?> currentPlayerReaction = const Value.absent(),
     String? visibility,
     String? localState,
     Value<String?> clientPostId = const Value.absent(),
@@ -3248,11 +3324,15 @@ class CachedFeedPost extends DataClass implements Insertable<CachedFeedPost> {
     authorDisplayName: authorDisplayName ?? this.authorDisplayName,
     authorHandle: authorHandle ?? this.authorHandle,
     authorActorType: authorActorType ?? this.authorActorType,
+    authorIsFollowed: authorIsFollowed ?? this.authorIsFollowed,
     content: content ?? this.content,
     createdAtUtc: createdAtUtc ?? this.createdAtUtc,
     parentPostId: parentPostId.present ? parentPostId.value : this.parentPostId,
     likeCount: likeCount ?? this.likeCount,
     replyCount: replyCount ?? this.replyCount,
+    currentPlayerReaction: currentPlayerReaction.present
+        ? currentPlayerReaction.value
+        : this.currentPlayerReaction,
     visibility: visibility ?? this.visibility,
     localState: localState ?? this.localState,
     clientPostId: clientPostId.present ? clientPostId.value : this.clientPostId,
@@ -3280,6 +3360,9 @@ class CachedFeedPost extends DataClass implements Insertable<CachedFeedPost> {
       authorActorType: data.authorActorType.present
           ? data.authorActorType.value
           : this.authorActorType,
+      authorIsFollowed: data.authorIsFollowed.present
+          ? data.authorIsFollowed.value
+          : this.authorIsFollowed,
       content: data.content.present ? data.content.value : this.content,
       createdAtUtc: data.createdAtUtc.present
           ? data.createdAtUtc.value
@@ -3291,6 +3374,9 @@ class CachedFeedPost extends DataClass implements Insertable<CachedFeedPost> {
       replyCount: data.replyCount.present
           ? data.replyCount.value
           : this.replyCount,
+      currentPlayerReaction: data.currentPlayerReaction.present
+          ? data.currentPlayerReaction.value
+          : this.currentPlayerReaction,
       visibility: data.visibility.present
           ? data.visibility.value
           : this.visibility,
@@ -3319,11 +3405,13 @@ class CachedFeedPost extends DataClass implements Insertable<CachedFeedPost> {
           ..write('authorDisplayName: $authorDisplayName, ')
           ..write('authorHandle: $authorHandle, ')
           ..write('authorActorType: $authorActorType, ')
+          ..write('authorIsFollowed: $authorIsFollowed, ')
           ..write('content: $content, ')
           ..write('createdAtUtc: $createdAtUtc, ')
           ..write('parentPostId: $parentPostId, ')
           ..write('likeCount: $likeCount, ')
           ..write('replyCount: $replyCount, ')
+          ..write('currentPlayerReaction: $currentPlayerReaction, ')
           ..write('visibility: $visibility, ')
           ..write('localState: $localState, ')
           ..write('clientPostId: $clientPostId, ')
@@ -3342,11 +3430,13 @@ class CachedFeedPost extends DataClass implements Insertable<CachedFeedPost> {
     authorDisplayName,
     authorHandle,
     authorActorType,
+    authorIsFollowed,
     content,
     createdAtUtc,
     parentPostId,
     likeCount,
     replyCount,
+    currentPlayerReaction,
     visibility,
     localState,
     clientPostId,
@@ -3364,11 +3454,13 @@ class CachedFeedPost extends DataClass implements Insertable<CachedFeedPost> {
           other.authorDisplayName == this.authorDisplayName &&
           other.authorHandle == this.authorHandle &&
           other.authorActorType == this.authorActorType &&
+          other.authorIsFollowed == this.authorIsFollowed &&
           other.content == this.content &&
           other.createdAtUtc == this.createdAtUtc &&
           other.parentPostId == this.parentPostId &&
           other.likeCount == this.likeCount &&
           other.replyCount == this.replyCount &&
+          other.currentPlayerReaction == this.currentPlayerReaction &&
           other.visibility == this.visibility &&
           other.localState == this.localState &&
           other.clientPostId == this.clientPostId &&
@@ -3384,11 +3476,13 @@ class CachedFeedPostsCompanion extends UpdateCompanion<CachedFeedPost> {
   final Value<String> authorDisplayName;
   final Value<String> authorHandle;
   final Value<String> authorActorType;
+  final Value<bool> authorIsFollowed;
   final Value<String> content;
   final Value<DateTime> createdAtUtc;
   final Value<String?> parentPostId;
   final Value<int> likeCount;
   final Value<int> replyCount;
+  final Value<String?> currentPlayerReaction;
   final Value<String> visibility;
   final Value<String> localState;
   final Value<String?> clientPostId;
@@ -3403,11 +3497,13 @@ class CachedFeedPostsCompanion extends UpdateCompanion<CachedFeedPost> {
     this.authorDisplayName = const Value.absent(),
     this.authorHandle = const Value.absent(),
     this.authorActorType = const Value.absent(),
+    this.authorIsFollowed = const Value.absent(),
     this.content = const Value.absent(),
     this.createdAtUtc = const Value.absent(),
     this.parentPostId = const Value.absent(),
     this.likeCount = const Value.absent(),
     this.replyCount = const Value.absent(),
+    this.currentPlayerReaction = const Value.absent(),
     this.visibility = const Value.absent(),
     this.localState = const Value.absent(),
     this.clientPostId = const Value.absent(),
@@ -3423,11 +3519,13 @@ class CachedFeedPostsCompanion extends UpdateCompanion<CachedFeedPost> {
     required String authorDisplayName,
     required String authorHandle,
     required String authorActorType,
+    this.authorIsFollowed = const Value.absent(),
     required String content,
     required DateTime createdAtUtc,
     this.parentPostId = const Value.absent(),
     required int likeCount,
     required int replyCount,
+    this.currentPlayerReaction = const Value.absent(),
     required String visibility,
     required String localState,
     this.clientPostId = const Value.absent(),
@@ -3455,11 +3553,13 @@ class CachedFeedPostsCompanion extends UpdateCompanion<CachedFeedPost> {
     Expression<String>? authorDisplayName,
     Expression<String>? authorHandle,
     Expression<String>? authorActorType,
+    Expression<bool>? authorIsFollowed,
     Expression<String>? content,
     Expression<DateTime>? createdAtUtc,
     Expression<String>? parentPostId,
     Expression<int>? likeCount,
     Expression<int>? replyCount,
+    Expression<String>? currentPlayerReaction,
     Expression<String>? visibility,
     Expression<String>? localState,
     Expression<String>? clientPostId,
@@ -3475,11 +3575,14 @@ class CachedFeedPostsCompanion extends UpdateCompanion<CachedFeedPost> {
       if (authorDisplayName != null) 'author_display_name': authorDisplayName,
       if (authorHandle != null) 'author_handle': authorHandle,
       if (authorActorType != null) 'author_actor_type': authorActorType,
+      if (authorIsFollowed != null) 'author_is_followed': authorIsFollowed,
       if (content != null) 'content': content,
       if (createdAtUtc != null) 'created_at_utc': createdAtUtc,
       if (parentPostId != null) 'parent_post_id': parentPostId,
       if (likeCount != null) 'like_count': likeCount,
       if (replyCount != null) 'reply_count': replyCount,
+      if (currentPlayerReaction != null)
+        'current_player_reaction': currentPlayerReaction,
       if (visibility != null) 'visibility': visibility,
       if (localState != null) 'local_state': localState,
       if (clientPostId != null) 'client_post_id': clientPostId,
@@ -3497,11 +3600,13 @@ class CachedFeedPostsCompanion extends UpdateCompanion<CachedFeedPost> {
     Value<String>? authorDisplayName,
     Value<String>? authorHandle,
     Value<String>? authorActorType,
+    Value<bool>? authorIsFollowed,
     Value<String>? content,
     Value<DateTime>? createdAtUtc,
     Value<String?>? parentPostId,
     Value<int>? likeCount,
     Value<int>? replyCount,
+    Value<String?>? currentPlayerReaction,
     Value<String>? visibility,
     Value<String>? localState,
     Value<String?>? clientPostId,
@@ -3517,11 +3622,14 @@ class CachedFeedPostsCompanion extends UpdateCompanion<CachedFeedPost> {
       authorDisplayName: authorDisplayName ?? this.authorDisplayName,
       authorHandle: authorHandle ?? this.authorHandle,
       authorActorType: authorActorType ?? this.authorActorType,
+      authorIsFollowed: authorIsFollowed ?? this.authorIsFollowed,
       content: content ?? this.content,
       createdAtUtc: createdAtUtc ?? this.createdAtUtc,
       parentPostId: parentPostId ?? this.parentPostId,
       likeCount: likeCount ?? this.likeCount,
       replyCount: replyCount ?? this.replyCount,
+      currentPlayerReaction:
+          currentPlayerReaction ?? this.currentPlayerReaction,
       visibility: visibility ?? this.visibility,
       localState: localState ?? this.localState,
       clientPostId: clientPostId ?? this.clientPostId,
@@ -3555,6 +3663,9 @@ class CachedFeedPostsCompanion extends UpdateCompanion<CachedFeedPost> {
     if (authorActorType.present) {
       map['author_actor_type'] = Variable<String>(authorActorType.value);
     }
+    if (authorIsFollowed.present) {
+      map['author_is_followed'] = Variable<bool>(authorIsFollowed.value);
+    }
     if (content.present) {
       map['content'] = Variable<String>(content.value);
     }
@@ -3569,6 +3680,11 @@ class CachedFeedPostsCompanion extends UpdateCompanion<CachedFeedPost> {
     }
     if (replyCount.present) {
       map['reply_count'] = Variable<int>(replyCount.value);
+    }
+    if (currentPlayerReaction.present) {
+      map['current_player_reaction'] = Variable<String>(
+        currentPlayerReaction.value,
+      );
     }
     if (visibility.present) {
       map['visibility'] = Variable<String>(visibility.value);
@@ -3601,11 +3717,13 @@ class CachedFeedPostsCompanion extends UpdateCompanion<CachedFeedPost> {
           ..write('authorDisplayName: $authorDisplayName, ')
           ..write('authorHandle: $authorHandle, ')
           ..write('authorActorType: $authorActorType, ')
+          ..write('authorIsFollowed: $authorIsFollowed, ')
           ..write('content: $content, ')
           ..write('createdAtUtc: $createdAtUtc, ')
           ..write('parentPostId: $parentPostId, ')
           ..write('likeCount: $likeCount, ')
           ..write('replyCount: $replyCount, ')
+          ..write('currentPlayerReaction: $currentPlayerReaction, ')
           ..write('visibility: $visibility, ')
           ..write('localState: $localState, ')
           ..write('clientPostId: $clientPostId, ')
@@ -5012,11 +5130,13 @@ typedef $$CachedFeedPostsTableCreateCompanionBuilder =
       required String authorDisplayName,
       required String authorHandle,
       required String authorActorType,
+      Value<bool> authorIsFollowed,
       required String content,
       required DateTime createdAtUtc,
       Value<String?> parentPostId,
       required int likeCount,
       required int replyCount,
+      Value<String?> currentPlayerReaction,
       required String visibility,
       required String localState,
       Value<String?> clientPostId,
@@ -5033,11 +5153,13 @@ typedef $$CachedFeedPostsTableUpdateCompanionBuilder =
       Value<String> authorDisplayName,
       Value<String> authorHandle,
       Value<String> authorActorType,
+      Value<bool> authorIsFollowed,
       Value<String> content,
       Value<DateTime> createdAtUtc,
       Value<String?> parentPostId,
       Value<int> likeCount,
       Value<int> replyCount,
+      Value<String?> currentPlayerReaction,
       Value<String> visibility,
       Value<String> localState,
       Value<String?> clientPostId,
@@ -5090,6 +5212,11 @@ class $$CachedFeedPostsTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<bool> get authorIsFollowed => $composableBuilder(
+    column: $table.authorIsFollowed,
+    builder: (column) => ColumnFilters(column),
+  );
+
   ColumnFilters<String> get content => $composableBuilder(
     column: $table.content,
     builder: (column) => ColumnFilters(column),
@@ -5112,6 +5239,11 @@ class $$CachedFeedPostsTableFilterComposer
 
   ColumnFilters<int> get replyCount => $composableBuilder(
     column: $table.replyCount,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get currentPlayerReaction => $composableBuilder(
+    column: $table.currentPlayerReaction,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -5185,6 +5317,11 @@ class $$CachedFeedPostsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<bool> get authorIsFollowed => $composableBuilder(
+    column: $table.authorIsFollowed,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get content => $composableBuilder(
     column: $table.content,
     builder: (column) => ColumnOrderings(column),
@@ -5207,6 +5344,11 @@ class $$CachedFeedPostsTableOrderingComposer
 
   ColumnOrderings<int> get replyCount => $composableBuilder(
     column: $table.replyCount,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get currentPlayerReaction => $composableBuilder(
+    column: $table.currentPlayerReaction,
     builder: (column) => ColumnOrderings(column),
   );
 
@@ -5274,6 +5416,11 @@ class $$CachedFeedPostsTableAnnotationComposer
     builder: (column) => column,
   );
 
+  GeneratedColumn<bool> get authorIsFollowed => $composableBuilder(
+    column: $table.authorIsFollowed,
+    builder: (column) => column,
+  );
+
   GeneratedColumn<String> get content =>
       $composableBuilder(column: $table.content, builder: (column) => column);
 
@@ -5292,6 +5439,11 @@ class $$CachedFeedPostsTableAnnotationComposer
 
   GeneratedColumn<int> get replyCount => $composableBuilder(
     column: $table.replyCount,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get currentPlayerReaction => $composableBuilder(
+    column: $table.currentPlayerReaction,
     builder: (column) => column,
   );
 
@@ -5365,11 +5517,13 @@ class $$CachedFeedPostsTableTableManager
                 Value<String> authorDisplayName = const Value.absent(),
                 Value<String> authorHandle = const Value.absent(),
                 Value<String> authorActorType = const Value.absent(),
+                Value<bool> authorIsFollowed = const Value.absent(),
                 Value<String> content = const Value.absent(),
                 Value<DateTime> createdAtUtc = const Value.absent(),
                 Value<String?> parentPostId = const Value.absent(),
                 Value<int> likeCount = const Value.absent(),
                 Value<int> replyCount = const Value.absent(),
+                Value<String?> currentPlayerReaction = const Value.absent(),
                 Value<String> visibility = const Value.absent(),
                 Value<String> localState = const Value.absent(),
                 Value<String?> clientPostId = const Value.absent(),
@@ -5384,11 +5538,13 @@ class $$CachedFeedPostsTableTableManager
                 authorDisplayName: authorDisplayName,
                 authorHandle: authorHandle,
                 authorActorType: authorActorType,
+                authorIsFollowed: authorIsFollowed,
                 content: content,
                 createdAtUtc: createdAtUtc,
                 parentPostId: parentPostId,
                 likeCount: likeCount,
                 replyCount: replyCount,
+                currentPlayerReaction: currentPlayerReaction,
                 visibility: visibility,
                 localState: localState,
                 clientPostId: clientPostId,
@@ -5405,11 +5561,13 @@ class $$CachedFeedPostsTableTableManager
                 required String authorDisplayName,
                 required String authorHandle,
                 required String authorActorType,
+                Value<bool> authorIsFollowed = const Value.absent(),
                 required String content,
                 required DateTime createdAtUtc,
                 Value<String?> parentPostId = const Value.absent(),
                 required int likeCount,
                 required int replyCount,
+                Value<String?> currentPlayerReaction = const Value.absent(),
                 required String visibility,
                 required String localState,
                 Value<String?> clientPostId = const Value.absent(),
@@ -5424,11 +5582,13 @@ class $$CachedFeedPostsTableTableManager
                 authorDisplayName: authorDisplayName,
                 authorHandle: authorHandle,
                 authorActorType: authorActorType,
+                authorIsFollowed: authorIsFollowed,
                 content: content,
                 createdAtUtc: createdAtUtc,
                 parentPostId: parentPostId,
                 likeCount: likeCount,
                 replyCount: replyCount,
+                currentPlayerReaction: currentPlayerReaction,
                 visibility: visibility,
                 localState: localState,
                 clientPostId: clientPostId,

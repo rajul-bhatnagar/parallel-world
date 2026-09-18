@@ -79,6 +79,7 @@ public static class DependencyInjection
         services.AddScoped<ICharacterRepository, CharacterRepository>();
         services.AddScoped<ICharacterCatalogueService, CharacterCatalogueService>();
         services.AddSingleton<IFeedCursorCodec, FeedCursorCodec>();
+        services.AddSingleton<IReplyCursorCodec, ReplyCursorCodec>();
         services.AddScoped<ISocialRepository, SocialRepository>();
         services.AddScoped<ISocialFeedService, SocialFeedService>();
         services.AddSingleton<IConfigureOptions<JwtBearerOptions>, JwtBearerOptionsConfiguration>();

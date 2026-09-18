@@ -54,4 +54,18 @@ public sealed class Post
     public DateTimeOffset CreatedAt { get; private set; }
     public DateTimeOffset? DeletedAt { get; private set; }
     public long Version { get; private set; }
+
+    public void AddLike() => LikeCount = checked(LikeCount + 1);
+
+    public void RemoveLike()
+    {
+        if (LikeCount <= 0)
+        {
+            throw new InvalidOperationException("The like count cannot become negative.");
+        }
+
+        LikeCount--;
+    }
+
+    public void AddReply() => ReplyCount = checked(ReplyCount + 1);
 }

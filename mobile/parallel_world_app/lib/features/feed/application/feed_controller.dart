@@ -22,6 +22,8 @@ class FeedState {
     this.isLoadingNextPage = false,
     this.isOffline = false,
     this.isSubmitting = false,
+    this.pendingReactionPostIds = const {},
+    this.pendingFollowActorIds = const {},
     this.message,
   });
 
@@ -33,6 +35,8 @@ class FeedState {
   final bool isLoadingNextPage;
   final bool isOffline;
   final bool isSubmitting;
+  final Set<String> pendingReactionPostIds;
+  final Set<String> pendingFollowActorIds;
   final String? message;
 
   FeedState copyWith({
@@ -44,6 +48,8 @@ class FeedState {
     bool? isLoadingNextPage,
     bool? isOffline,
     bool? isSubmitting,
+    Set<String>? pendingReactionPostIds,
+    Set<String>? pendingFollowActorIds,
     String? message,
     bool clearCursor = false,
     bool clearMessage = false,
@@ -56,6 +62,9 @@ class FeedState {
     isLoadingNextPage: isLoadingNextPage ?? this.isLoadingNextPage,
     isOffline: isOffline ?? this.isOffline,
     isSubmitting: isSubmitting ?? this.isSubmitting,
+    pendingReactionPostIds:
+        pendingReactionPostIds ?? this.pendingReactionPostIds,
+    pendingFollowActorIds: pendingFollowActorIds ?? this.pendingFollowActorIds,
     message: clearMessage ? null : message ?? this.message,
   );
 }
@@ -206,6 +215,120 @@ class FeedController extends Notifier<FeedState> {
       clearMessage: true,
     );
     await _sendPending(operation, pending);
+  }
+
+  Future<void> toggleLike(String postId) async {
+    final operation = _operation();
+    final index = state.items.indexWhere((post) => post.id == postId);
+    if (operation == null ||
+        index < 0 ||
+        state.pendingReactionPostIds.contains(postId)) {
+      return;
+    }
+    final original = state.items[index];
+    if (original.author.actorId == operation.scope.playerActorId) {
+      return;
+    }
+    final active = original.currentPlayerReaction != 'like';
+    final optimistic = original.copyWith(
+      counts: FeedCounts(
+        likes: active
+            ? original.counts.likes + 1
+            : original.counts.likes > 0
+            ? original.counts.likes - 1
+            : 0,
+        replies: original.counts.replies,
+      ),
+      currentPlayerReaction: active ? 'like' : null,
+    );
+    state = state.copyWith(
+      items: _replacePost(state.items, optimistic),
+      pendingReactionPostIds: {...state.pendingReactionPostIds, postId},
+      clearMessage: true,
+    );
+    try {
+      final result = await ref
+          .read(feedRepositoryProvider)
+          .setLike(
+            userId: operation.scope.userId,
+            worldId: operation.scope.worldId,
+            post: original,
+            active: active,
+            isCurrent: () => _isCurrent(operation),
+          );
+      if (!_isCurrent(operation)) {
+        return;
+      }
+      final authoritative = optimistic.copyWith(
+        counts: FeedCounts(
+          likes: result.likeCount,
+          replies: optimistic.counts.replies,
+        ),
+        currentPlayerReaction: result.active ? 'like' : null,
+      );
+      state = state.copyWith(
+        items: _replacePost(state.items, authoritative),
+        pendingReactionPostIds: {...state.pendingReactionPostIds}
+          ..remove(postId),
+      );
+    } on FeedOperationCancelled {
+      return;
+    } on AppFailure catch (failure) {
+      if (!_isCurrent(operation)) {
+        return;
+      }
+      state = state.copyWith(
+        items: _replacePost(state.items, original),
+        pendingReactionPostIds: {...state.pendingReactionPostIds}
+          ..remove(postId),
+        message: failure.message,
+      );
+    }
+  }
+
+  Future<void> toggleFollow(String actorId) async {
+    final operation = _operation();
+    if (operation == null || state.pendingFollowActorIds.contains(actorId)) {
+      return;
+    }
+    final matching = state.items.where(
+      (post) => post.author.actorId == actorId,
+    );
+    if (matching.isEmpty || matching.first.author.actorType != 'character') {
+      return;
+    }
+    final active = !matching.first.author.isFollowed;
+    state = state.copyWith(
+      items: _setActorFollowed(state.items, actorId, active),
+      pendingFollowActorIds: {...state.pendingFollowActorIds, actorId},
+      clearMessage: true,
+    );
+    try {
+      await ref
+          .read(feedRepositoryProvider)
+          .setFollow(
+            worldId: operation.scope.worldId,
+            actorId: actorId,
+            active: active,
+          );
+      if (!_isCurrent(operation)) {
+        return;
+      }
+      state = state.copyWith(
+        pendingFollowActorIds: {...state.pendingFollowActorIds}
+          ..remove(actorId),
+      );
+    } on AppFailure catch (failure) {
+      if (!_isCurrent(operation)) {
+        return;
+      }
+      state = state.copyWith(
+        items: _setActorFollowed(state.items, actorId, !active),
+        pendingFollowActorIds: {...state.pendingFollowActorIds}
+          ..remove(actorId),
+        message: failure.message,
+      );
+    }
   }
 
   Future<void> _sendPending(_FeedOperation operation, FeedPost pending) async {
@@ -401,6 +524,27 @@ class FeedController extends Notifier<FeedState> {
             ? post.copyWith(
                 localState: FeedPostLocalState.failed,
                 failureMessage: message,
+              )
+            : post,
+      )
+      .toList(growable: false);
+
+  static List<FeedPost> _replacePost(
+    List<FeedPost> items,
+    FeedPost replacement,
+  ) => items
+      .map((post) => post.id == replacement.id ? replacement : post)
+      .toList(growable: false);
+
+  static List<FeedPost> _setActorFollowed(
+    List<FeedPost> items,
+    String actorId,
+    bool isFollowed,
+  ) => items
+      .map(
+        (post) => post.author.actorId == actorId
+            ? post.copyWith(
+                author: post.author.copyWith(isFollowed: isFollowed),
               )
             : post,
       )

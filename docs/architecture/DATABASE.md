@@ -138,7 +138,9 @@ MVP one-world exposure is enforced by the application/idempotent creation use ca
 
 ### WorldSettings
 
-- `Id`, `WorldId`, `TimeScale`, action-limit values, AI budget settings, content settings, `RuleVersion`, `CreatedAt`, `UpdatedAt`, `Version`
+- `Id`, `WorldId`, `TimeScale`, `DisplayTimeZoneId`, action-limit values, AI budget settings, content settings, `RuleVersion`, `CreatedAt`, `UpdatedAt`, `Version`
+- `DisplayTimeZoneId` maps to required column `display_time_zone_id`, stores an IANA timezone identifier, and defaults to `UTC` for new worlds. The M08 migration backfills every existing row to `UTC` before enforcing non-nullability.
+- Application validation requires a supported IANA timezone identifier. An explicitly supplied invalid non-empty value is rejected through the standard validation contract and is never silently replaced with `UTC`. Windows timezone IDs are not persisted domain values.
 - Unique `WorldId`.
 - FK `WorldId -> GameWorlds.Id ON DELETE RESTRICT`.
 - Checks require positive time scale and non-negative limits/budgets.

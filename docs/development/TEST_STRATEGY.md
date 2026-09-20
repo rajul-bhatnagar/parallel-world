@@ -361,7 +361,7 @@ Each fixture declares release, rule version, UTC clock, world seed, safe aliases
 
 The stable catalogue begins with seeds 1001-1012 in section 8. Random/property-style tests report and replay their seed. Canonical snapshots compare mechanics independent of row enumeration, worker count, or provider result.
 
-All time tests use a fake clock and cover UTC/day rollover, cooldowns, token expiry, message delay when released, offline intervals, event/notification expiry, daylight-saving projection, and half-open boundaries. Rule code must not hide direct system-time calls.
+All time tests use a fake clock and cover UTC/day rollover, cooldowns, token expiry, message delay when released, offline intervals, event/notification expiry, daylight-saving projection, and half-open boundaries. M08 additionally verifies `UTC` defaults for existing/new worlds, UTC and non-UTC IANA schedule evaluation, quiet-hour boundaries after conversion, differing local eligibility for the same UTC instant in different zones, deterministic repetition, host-timezone independence, timezone-database DST conversion from a UTC instant, invalid-zone rejection, and absence of per-character timezone state. Rule code must not hide direct system-time calls or infer a timezone from the host.
 
 ## 35. Mocking and test doubles
 
@@ -499,7 +499,7 @@ A feature is complete only when acceptance criteria are met; sources/existing co
 | M05 Characters | Seed/profile/traits, cursor, cross-world denial, screen states |
 | M06 Feed | Create, order/cursor/tie, pending reconciliation, isolation |
 | M07 Social actions | Replies/likes/follows, uniqueness, counts, nested ownership |
-| M08 Simulation | Seed reproducibility, ordering/reasons, interval idempotency/checkpoint |
+| M08 Simulation | Seed reproducibility, ordering/reasons, interval idempotency/checkpoint, world IANA timezone defaults/projection/DST/validation/host independence |
 | M09 AI | Success/failure/fallback, minimized context, no mechanics, safe diagnostics |
 | M10 Relationships | Dimensions/caps/asymmetry/history/labels |
 | M11 Messages | Conversation uniqueness, send/idempotency/cursor, eligibility/privacy |

@@ -133,7 +133,7 @@ Every important rule below supplies: **Purpose, Inputs, Preconditions, Decision,
 
 World states are `Paused`, `Active`, and `Archived`. Paused worlds accumulate no eligible game time. Resuming sets the real-time anchor to the resume UTC time and continues from persisted game time; paused real time is not caught up. Archived behaviour beyond read-only retention is deferred.
 
-Character-local display time derives from persisted UTC plus a configured IANA/Windows-compatible display zone. Schedules use that local projection; persisted timestamps remain UTC. Daylight-saving ambiguity is resolved by UTC ordering, never by duplicate local intervals.
+For M08, character-local display time means the projection of the relevant UTC simulation instant through the world-configured IANA display timezone. `WorldSettings.DisplayTimeZoneId` stores that identifier and defaults existing and new worlds to `UTC`; M08 has no per-character timezone. Schedules and quiet hours use the derived local date and wall-clock time, while all canonical simulation, event, and action timestamps remain UTC. Timezone database rules determine daylight-saving transitions; `UTC` has no DST. Because evaluation begins with a UTC instant and converts to local time, ambiguous or invalid local wall-clock timestamps are never rule inputs. Rules must not infer a timezone from the host, device, locale, IP address, or operating-system settings.
 
 ## 6. Character state
 
@@ -218,7 +218,7 @@ MVP activates at most `MAX_ACTIVE_GOALS`. Goal conflict is resolved by highest p
 - **Example:** An active sociable character with a relevant goal scores 72; roll 31 permits action. A second action adds fatigue, reducing later likelihood.
 - **Status:** MVP.
 
-Quiet hours use character-local time. Profession/schedule marks `Sleeping`, `Working`, `Available`, or `Busy`; important events may create an override. High-activity characters cannot exceed caps, and fairness credit raises opportunities for recently quiet characters.
+Quiet hours use the local time derived from the simulation UTC instant and the world-configured IANA display timezone. Profession/schedule marks `Sleeping`, `Working`, `Available`, or `Busy`; important events may create an override. High-activity characters cannot exceed caps, and fairness credit raises opportunities for recently quiet characters.
 
 ## 8. Social feed rules
 

@@ -14,12 +14,21 @@ Autonomous follow phase boundary:
 - Existing M07 Player follow/unfollow behavior remains operational and unchanged.
 - M10 activates autonomous FOLLOW-01 eligibility using real relationship state; do not implement or design that state in M08.
 
+World display timezone contract:
+- Add required `WorldSettings.DisplayTimeZoneId`, persisted as `display_time_zone_id`, containing an IANA timezone identifier.
+- The migration and new-world creation default to the exact identifier `UTC`; backfill existing worlds to `UTC` before enforcing non-nullability.
+- Persist canonical simulation/event/action timestamps in UTC. Convert the relevant simulation UTC instant through the world timezone only to derive schedule and quiet-hour local date/time.
+- Use timezone database DST rules. Do not accept an ambiguous/invalid local timestamp as engine input, because evaluation starts from UTC.
+- Do not infer the timezone from the server, device, locale, IP address, or operating system. Do not add per-character timezone state.
+- Reject an explicitly supplied invalid/non-IANA timezone using the standard validation/ProblemDetails contract; do not silently fall back to UTC.
+
 Explicit exclusions:
 - No external AI, messaging, memory, romance, catch-up, or deferred events/trends.
 
 Tests:
 - Test deterministic seeds/order, interval uniqueness, idempotency, concurrency, transaction boundaries, fallback wording, and cross-world rejection.
 - Verify autonomous follow ineligibility without relationship state, no autonomous follow rows, unaffected M07 Player follows, no temporary relationship persistence, deterministic repeated follow eligibility results, and no M10 tables/entities/fields.
+- Verify existing/new-world `UTC` defaults, UTC and non-UTC IANA schedule evaluation, quiet-hour conversion boundaries, different-zone eligibility for one UTC instant, deterministic repeat behavior, host-timezone independence, DST conversion from UTC, invalid timezone rejection, and no per-character timezone state.
 
 Before editing:
 1. List relevant existing files.

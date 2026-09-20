@@ -235,6 +235,37 @@ M08 autonomously creates posts, replies, and likes, but not follows. Its follow 
 
 Only if the ownership or inputs of `FOLLOW-01` are changed through an accepted gameplay and architecture decision.
 
+## ADR-018 — M08 world display timezone contract
+
+**Date:** 2026-09-20
+**Status:** Accepted
+
+**Context**
+
+M08 evaluates `ACT-01` quiet hours, character schedules, and other local activity windows. Those rules require a stable local-time projection, but the existing world model does not identify a timezone or define a deterministic default. Using the server, device, locale, IP address, or operating-system timezone would make outcomes host-dependent.
+
+**Decision**
+
+- `WorldSettings` stores one required IANA timezone identifier as `DisplayTimeZoneId`, persisted in PostgreSQL as `display_time_zone_id`.
+- Existing and newly created worlds default to the exact identifier `UTC`. The M08 migration adds a non-null column and backfills existing rows to `UTC`.
+- Canonical simulation, event, action, and persistence timestamps remain UTC instants. M08 converts the applicable UTC simulation instant through the configured IANA timezone only to derive the local date and wall-clock time used by schedule and quiet-hour rules.
+- M08 uses the world timezone for every Character in that world. It introduces no per-character timezone state.
+- Timezone database rules provide offsets and daylight-saving transitions. Because conversion starts from a UTC instant, ambiguous or invalid local wall-clock timestamps are never engine inputs. `UTC` has no daylight-saving transition.
+- The server never infers this value from its local timezone, a client device, user locale, IP address, or operating-system settings.
+- A non-empty supplied timezone identifier must resolve as a supported IANA timezone or fail through the standard validation/ProblemDetails contract. Explicit invalid values never silently fall back to `UTC`.
+
+**Alternatives considered**
+
+Server-local time, device-local inference, Windows timezone IDs in domain state, manual offsets/DST rules, silent invalid-value fallback, and per-character timezones in M08 were rejected because they weaken determinism, portability, or milestone scope.
+
+**Consequences**
+
+M08 adds the world-settings field and migration, defaults and backfills it to `UTC`, and tests UTC/non-UTC/DST projections independently of host configuration. A later configurable API may expose the setting using standard validation, but M08 does not need a timezone-selection UI. Per-character timezones require a separate accepted decision and migration.
+
+**Revisit when**
+
+A later approved product requirement introduces player-configurable or per-character timezones.
+
 ## New ADR template
 
 ### ADR-XXX — Title

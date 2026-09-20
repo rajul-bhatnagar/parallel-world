@@ -41,7 +41,7 @@ No real-user discovery, messaging, feed, relationship, or shared-world path exis
 - PostgreSQL is authoritative for ownership, game state, world time, relationships, memories, actions, and history.
 - Drift is a cache and pending-local-action store only. It never runs authoritative simulation or resolves mechanical conflicts.
 - Deterministic rules decide actors, targets, actions, values, time, and outcomes. AI generates wording for a persisted decision only.
-- All persistent timestamps use UTC. Character-local time is a projection for display and schedules.
+- All persistent timestamps use UTC. In M08, Character-local schedule and quiet-hour time is derived from the authoritative simulation UTC instant through the world-level IANA `DisplayTimeZoneId`, which defaults to `UTC`; no server/device timezone inference or per-character timezone state is used.
 - Simulation and background work are idempotent and safe to retry.
 
 ## 4. Technology stack
@@ -329,6 +329,8 @@ flowchart TD
 Decision creation and execution are separable. A planned action contains actor, target, action type, topic/stance/tone/intent, seed, rule version, reason components, and idempotency key. Mechanical application follows GAME_RULES.md and commits before or with a durable text-work record. Generated wording is attached only after validation; template fallback completes text-required actions when AI fails.
 
 Simulation intervals are half-open and uniquely owned by a world/rule-version interval key. A retry loads the existing run/action state and resumes; it never rerolls. Long catch-up work commits at safe bucket/action boundaries rather than holding one large transaction.
+
+Local-time rule evaluation remains a pure projection: the persisted simulation UTC instant plus the persisted world IANA timezone produces the local date/time supplied to schedules and quiet hours. Timezone database rules handle DST from that UTC instant, so the engine never accepts an ambiguous or invalid local timestamp as authoritative input.
 
 ## 15. Catch-up simulation lifecycle
 

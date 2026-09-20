@@ -129,6 +129,8 @@ Indexes and constraints:
 ### GameWorlds
 
 - `Id`, `OwnerUserId`, `Name`, `Seed`, `CurrentWorldTime`, `LastSimulatedAt`, `Status`, `CreatedAt`, `UpdatedAt`, `Version`
+- `CurrentWorldTime` is the accumulated UTC in-world clock. It initializes to `CreatedAt` and advances only by the exact scaled delta of a committed simulation interval; it never jumps to request or processing time.
+- The existing non-null `LastSimulatedAt` initializes to `CreatedAt` for compatibility. While `WorldSimulationState.LastCompletedIntervalEnd` is null, that bootstrap value does not claim a completed interval. After every committed interval it equals the authoritative `LastCompletedIntervalEnd` and is never an independent chronology source.
 - FK `OwnerUserId -> Users.Id ON DELETE RESTRICT`.
 - Alternate key `UNIQUE (OwnerUserId, Id)` supports database-enforced owner/world references.
 - Index `(OwnerUserId, CreatedAt DESC, Id DESC)`.
@@ -139,6 +141,7 @@ MVP one-world exposure is enforced by the application/idempotent creation use ca
 ### WorldSettings
 
 - `Id`, `WorldId`, `TimeScale`, `DisplayTimeZoneId`, action-limit values, AI budget settings, content settings, `RuleVersion`, `CreatedAt`, `UpdatedAt`, `Version`
+- `TimeScale` is C# `decimal` and PostgreSQL `numeric(8,4)`, defaults to `1.0000`, and must be in the representable positive persisted range `0.0001` through `9999.9999`. It scales accumulated in-world time only; it does not alter canonical UTC interval duration or eligibility.
 - `DisplayTimeZoneId` maps to required column `display_time_zone_id`, stores an IANA timezone identifier, and defaults to `UTC` for new worlds. The M08 migration backfills every existing row to `UTC` before enforcing non-nullability.
 - Application validation requires a supported IANA timezone identifier. An explicitly supplied invalid non-empty value is rejected through the standard validation contract and is never silently replaced with `UTC`. Windows timezone IDs are not persisted domain values.
 - Unique `WorldId`.
@@ -151,7 +154,10 @@ MVP one-world exposure is enforced by the application/idempotent creation use ca
 - Unique `WorldId`.
 - PostgreSQL table `world_simulation_states`; conceptual C# entity `WorldSimulationState`.
 - FK `WorldId -> GameWorlds.Id ON DELETE RESTRICT`.
-- The row is locked briefly when claiming an interval; a run must start exactly at the persisted cursor.
+- A never-simulated world's authoritative cursor begins at `GameWorld.CreatedAtUtc`; `LastCompletedIntervalEnd` remains null and `NextDueAt` is `CreatedAtUtc + 15 minutes`. The M08 migration normalizes existing never-simulated rows whose earlier initialization used `NextDueAt = CreatedAtUtc`.
+- After `[S,E)` commits, `LastCompletedIntervalEnd=E` and `NextDueAt=E+15 minutes`. `NextDueAt` is a scheduling projection; cursor-derived chronology is authoritative, and a mismatch fails safely rather than deriving a different interval from request time.
+- The row is locked briefly when claiming an interval; a run must start exactly at the authoritative cursor.
+- The same interval transaction sets `GameWorld.LastSimulatedAt=E` and advances `GameWorld.CurrentWorldTime` by the run's exact scaled delta. Rollback leaves both GameWorld fields and both WorldSimulationState cursor fields unchanged.
 
 ## 5. Actors, player profile, and characters
 
@@ -373,13 +379,17 @@ Indexes:
 
 ### SimulationRuns
 
-- `Id`, `WorldId`, `RunType` (`ActiveTick` or `CatchUp`), `IntervalStart`, `IntervalEnd`, `ProcessedThrough`, `Seed`, `RuleVersion`, `Status` (`Pending`, `Running`, `Partial`, `Completed`, `FailedRetryable`, `FailedTerminal`), `StartedAt`, `CompletedAt` nullable, `IdempotencyKey`, safe `ErrorCode` nullable, `Version`
+- `Id`, `WorldId`, `RunType` (`ActiveTick` or `CatchUp`), `IntervalStart`, `IntervalEnd`, `ProcessedThrough`, `EffectiveTimeScale` (`numeric(8,4)`), `Seed`, `RuleVersion`, `Status` (`Pending`, `Running`, `Partial`, `Completed`, `FailedRetryable`, `FailedTerminal`), `StartedAt`, `CompletedAt` nullable, `IdempotencyKey`, safe `ErrorCode` nullable, `Version`
 - Unique `(WorldId, Id)` and `(WorldId, IdempotencyKey)`.
 - Unique `(WorldId, RuleVersion, IntervalStart, IntervalEnd)`.
 - Check interval end > start.
+- Check `EffectiveTimeScale > 0`; it is copied from the world setting when the interval is claimed and remains the reproducible scale for that run.
+- For `RunType = ActiveTick`, M08 application validation and PostgreSQL constraints require `IntervalEnd = IntervalStart + 15 minutes`.
 - Index `(WorldId, Status, IntervalStart)` and `(WorldId, CompletedAt DESC)`.
 
-Catch-up reuses `SimulationRuns`; `RunType = CatchUp` identifies it without redundant run infrastructure. `IntervalStart`/`IntervalEnd` are the requested processed interval, `ProcessedThrough` is the last committed checkpoint boundary, and `IntervalEnd - ProcessedThrough` is the remaining interval. A Partial or FailedRetryable run resumes from `ProcessedThrough` with the same seed, rule version, and run identity. Overlap prevention does not rely on the caller's idempotency key: the run transaction locks the world's WorldSimulationState row, requires `IntervalStart = LastCompletedIntervalEnd`, rejects an existing Running interval, inserts the exact-interval unique row, and advances the world cursor only to a committed boundary. These constraints plus the lock prevent differently keyed overlapping processing without requiring a PostgreSQL extension.
+For M08 `ActiveTick`, `IntervalStart` is `GameWorld.CreatedAtUtc` when `LastCompletedIntervalEnd` is null and otherwise is `LastCompletedIntervalEnd`; `IntervalEnd` is exactly 15 minutes later. The run captures the current persisted decimal TimeScale as `EffectiveTimeScale`; `CurrentWorldTime` advances by `15 minutes × EffectiveTimeScale`, while `LastSimulatedAt` advances to `IntervalEnd`. A later TimeScale change affects only a future unprocessed run. A normal trigger creates at most the single oldest due run. Catch-up reuses `SimulationRuns`; `RunType = CatchUp` identifies M15 work without redundant run infrastructure. M15 owns multiple-overdue-interval batching, compression, caps, prioritization, and yielding; its accumulated world-time advancement remains the sum of each logical interval's captured scaled delta. For catch-up, `IntervalStart`/`IntervalEnd` are the requested processed interval, `ProcessedThrough` is the last committed checkpoint boundary, and `IntervalEnd - ProcessedThrough` is the remaining interval. A Partial or FailedRetryable run resumes from `ProcessedThrough` with the same effective scale, seed, rule version, and run identity. Overlap prevention does not rely on the caller's idempotency key: the run transaction locks the world's WorldSimulationState row, requires `IntervalStart` to equal the authoritative cursor, rejects an existing Running interval, inserts the exact-interval unique row, and advances the world cursor and world-time projections only to a committed boundary. These constraints plus the lock prevent differently keyed overlapping processing without requiring a PostgreSQL extension.
+
+`ErrorCode` is null for a successfully completed run even when rules are unavailable or ineligible. It is reserved for actual run, transaction, or infrastructure failure and is not a rule-evaluation diagnostic.
 
 ### SimulationRunCheckpoints
 
@@ -387,6 +397,19 @@ Catch-up reuses `SimulationRuns`; `RunType = CatchUp` identifies it without redu
 - Composite FK to SimulationRun; unique `(WorldId, SimulationRunId, StableOrdinal)`, `(WorldId, SimulationRunId, BucketStart, BucketEnd)`, and `(WorldId, IdempotencyKey)`.
 - Index `(WorldId, SimulationRunId, BucketStart)` supports ordered retry/resume.
 - A checkpoint is written atomically with every mechanic/event/action it claims committed. A retry loads completed checkpoints and never rerolls them.
+
+### SimulationRuleEvaluations
+
+- `Id`, `WorldId`, `SimulationRunId`, `RuleCode`, `Outcome`, `ReasonCode`, `RuleVersion`, `EvaluatedAtUtc`
+- `Outcome` is exactly `Unavailable`, `Ineligible`, `Eligible`, or `Executed`; stored values follow repository enum naming conventions.
+- `ReasonCode` is a bounded stable machine-readable code, not generated/localized prose. Initial vocabulary is `relationship_state_unavailable`, `goal_relevance_unavailable`, `mood_activation_unavailable`, `event_relevance_unavailable`, `topic_inputs_unavailable`, `quiet_hours`, and `schedule_ineligible`.
+- `Id` is a deterministic UUID derived from `WorldId`, `SimulationRunId`, and `RuleCode` through the approved stable hash/UUID mechanism.
+- Primary key `Id`; alternate key `UNIQUE (WorldId, Id)`.
+- Unique `(SimulationRunId, RuleCode)` enforces exactly one summary per run/rule across replay/concurrency.
+- Composite FK `(WorldId, SimulationRunId) -> SimulationRuns(WorldId, Id) ON DELETE RESTRICT` enforces same-world ownership. Explicit lifecycle deletion removes evaluations before their run; M08 adds no cleanup worker.
+- Index `(WorldId, SimulationRunId, RuleCode)` supports ordered audit retrieval.
+- No ActorId, target, action, random draw, score component, free-form text, or action FK is stored in M08. Candidate-level diagnostics remain transient.
+- The required evaluations commit atomically with their run checkpoint and cursor advancement. A rollback leaves no evaluation row claiming completion; a retry observes/reuses or deterministically reproduces the same rows.
 
 ### CatchUpSummaries and CatchUpSummaryItems
 

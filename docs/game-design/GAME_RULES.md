@@ -27,6 +27,7 @@ This file is the single authoritative source of gameplay behaviour. Product scop
 | Player actor | The one human-controlled actor in a world. Rules apply consequences to player actions, but the simulator does not invent player-authored actions. |
 | AI character actor | A rule-controlled character eligible for autonomous actions. |
 | Action | A mechanical intent with actor, target, type, inputs, selected parameters, scheduled time, and idempotency key. |
+| Rule evaluation | One run-level summary for a registered rule, with a stable `Unavailable`, `Ineligible`, `Eligible`, or `Executed` outcome and machine-readable primary reason. It is not an action or gameplay event. |
 | Event | An immutable record that an action or state transition occurred or was rejected for a recorded reason. |
 | Memory | A character-owned structured recollection derived from an eligible event. |
 | Relationship event | An event applying bounded directional changes between two actors and optionally a romantic-status transition. |
@@ -114,26 +115,29 @@ The decision, mechanical event, relationship deltas, memories, notification inte
 
 Every important rule below supplies: **Purpose, Inputs, Preconditions, Decision, Randomness, Limits, Cooldown, State changes, Persistence, Idempotency, Example, Status**. All formulas round half away from zero and clamp bounded outputs.
 
+M08 persists one `SimulationRuleEvaluation` per registered rule and run. Mandatory-input validation occurs first. A missing mandatory input produces `Unavailable`; complete inputs that fail deterministic conditions produce `Ineligible`; successful eligibility may produce `Eligible`; a committed approved effect produces `Executed`. Unavailable/ineligible outcomes use stable machine-readable primary reasons, never create a `SimulationAction` or `GameplayEvent`, and do not fail the run.
+
 ## 5. World time and simulation run
 
 ### Rule SIM-01: advance an active world
 
 - **Purpose:** Advance one world without duplicate intervals.
-- **Inputs:** World status, persisted game time, last simulated UTC time, current UTC time, rule version, world seed.
-- **Preconditions:** World is `Active`; interval start equals persisted cursor; no completed run owns the interval.
-- **Decision:** Eligible game-time delta is `floor(real elapsed minutes * GAME_TIME_SCALE)`. Process complete active ticks only. Runs use half-open intervals `[start,end)`.
+- **Inputs:** World status, `GameWorld.CreatedAtUtc`, `CurrentWorldTime`, compatibility `LastSimulatedAt`, persisted simulation cursor and `NextDueAt`, positive decimal `TimeScale`, current UTC time, rule version, world seed.
+- **Preconditions:** World is `Active`; interval start equals the authoritative persisted cursor; `currentUtc >= NextDueAt`; no completed run owns the interval. A never-simulated world's initial cursor is `GameWorld.CreatedAtUtc` and its first due time is `CreatedAtUtc + 15 minutes`.
+- **Decision:** M08 uses fixed 15-minute half-open intervals `[start,end)`. For a never-simulated world, start is `CreatedAtUtc`; otherwise start is `LastCompletedIntervalEnd`. End and the expected due projection are start plus 15 minutes. `NextDueAt` is a scheduling projection of cursor chronology, not an alternate chronology source; a mismatch fails safely. One normal trigger evaluates at most the single oldest due interval. The interval's in-world delta is exactly `15 minutes × EffectiveTimeScale` using decimal/tick arithmetic.
 - **Randomness:** Run seed and substreams defined above; time advancement itself has no roll.
-- **Limits:** Active request work is bounded by configured run/action limits.
+- **Limits:** One `SimulationRun` owns exactly one interval and one normal M08 trigger creates at most one successful run. M08 does not drain or span backlog; M15 owns bounded multi-interval batching/catch-up.
 - **Cooldown:** `ACTIVE_TICK_MINUTES` between active evaluations.
-- **State changes:** Advance simulation cursor only after all mechanical actions for the interval commit.
-- **Persistence:** SimulationRun with interval, seed, rule version, status, action counts, cursor, and error reason.
+- **State changes:** After `[S,E)` commits, set `LastCompletedIntervalEnd=E`, `NextDueAt=E+15 minutes`, `LastSimulatedAt=E`, and `CurrentWorldTime=previous CurrentWorldTime + (15 minutes × EffectiveTimeScale)`. Advance none unless all run, evaluation, checkpoint, and mechanical state for the interval commits. Existing worlds initialize `CurrentWorldTime` and non-null compatibility `LastSimulatedAt` to `CreatedAtUtc`; `LastCompletedIntervalEnd == null` alone identifies never-simulated state.
+- **Persistence:** SimulationRun with interval, effective decimal TimeScale, seed, rule version, status, action counts, cursor, and error reason.
 - **Idempotency:** One run key per world/rule/interval; overlapping completed intervals are rejected.
-- **Example:** With 31 elapsed real minutes and scale 1.0, two 15-minute ticks are eligible; one minute remains unprocessed.
+- **Example:** At `T+31 minutes` for a world created at `T`, scale `2`, and initial world time `W`, the first trigger processes only `[T,T+15)`, sets the completed cursor and `LastSimulatedAt` to `T+15`, sets `NextDueAt=T+30`, and advances world time to `W+30 minutes`; the world remains due. A second trigger may process `[T+15,T+30)`, set the cursor and `LastSimulatedAt` to `T+30`, set `NextDueAt=T+45`, and advance world time to `W+60 minutes`. No trigger batches both intervals, and the remaining minute is partial and ineligible.
+- **Timezone:** Interval identity and cursor fields are canonical UTC. Schedule and quiet-hour rules project the interval's resulting `CurrentWorldTime` through the world IANA timezone; timezone conversion does not change interval chronology.
 - **Status:** MVP.
 
 World states are `Paused`, `Active`, and `Archived`. Paused worlds accumulate no eligible game time. Resuming sets the real-time anchor to the resume UTC time and continues from persisted game time; paused real time is not caught up. Archived behaviour beyond read-only retention is deferred.
 
-For M08, character-local display time means the projection of the relevant UTC simulation instant through the world-configured IANA display timezone. `WorldSettings.DisplayTimeZoneId` stores that identifier and defaults existing and new worlds to `UTC`; M08 has no per-character timezone. Schedules and quiet hours use the derived local date and wall-clock time, while all canonical simulation, event, and action timestamps remain UTC. Timezone database rules determine daylight-saving transitions; `UTC` has no DST. Because evaluation begins with a UTC instant and converts to local time, ambiguous or invalid local wall-clock timestamps are never rule inputs. Rules must not infer a timezone from the host, device, locale, IP address, or operating-system settings.
+For M08, character-local display time means the projection of the interval's deterministic resulting `CurrentWorldTime` through the world-configured IANA display timezone. `WorldSettings.DisplayTimeZoneId` stores that identifier and defaults existing and new worlds to `UTC`; M08 has no per-character timezone. Schedules and quiet hours use the derived local date and wall-clock time, while canonical interval, event, and action timestamps remain UTC. Timezone database rules determine daylight-saving transitions; `UTC` has no DST. Because evaluation begins with a persisted UTC world-time instant and converts to local time, ambiguous or invalid local wall-clock timestamps are never rule inputs. Rules must not infer a timezone from the host, device, locale, IP address, or operating-system settings.
 
 ## 6. Character state
 
@@ -216,9 +220,9 @@ MVP activates at most `MAX_ACTIVE_GOALS`. Goal conflict is resolved by highest p
 - **Persistence:** Planned SimulationAction with score components, roll, seed, and rejection reason when diagnostically retained.
 - **Idempotency:** Actor/interval/action ordinal key; duplicate family/target/topic checks occur before commit.
 - **Example:** An active sociable character with a relevant goal scores 72; roll 31 permits action. A second action adds fatigue, reducing later likelihood.
-- **Status:** MVP.
+- **Status:** MVP rule contract. During M08 it is deterministically unavailable/ineligible because GoalRelevance, numeric MoodActivation, and EventRelevance do not yet have complete approved persisted sources and semantics. Availability is checked before actor/family probability rolls. Missing terms are not assigned zero, inferred, bypassed, or renormalized; no autonomous action/event/effect is created. Future activation requires approved real inputs and their storage, range/default, formula, and migration/versioning contracts.
 
-Quiet hours use the local time derived from the simulation UTC instant and the world-configured IANA display timezone. Profession/schedule marks `Sleeping`, `Working`, `Available`, or `Busy`; important events may create an override. High-activity characters cannot exceed caps, and fairness credit raises opportunities for recently quiet characters.
+Quiet hours use the local time derived from the interval's resulting `CurrentWorldTime` and the world-configured IANA display timezone. Profession/schedule marks `Sleeping`, `Working`, `Available`, or `Busy`; important events may create an override. High-activity characters cannot exceed caps, and fairness credit raises opportunities for recently quiet characters.
 
 ## 8. Social feed rules
 
@@ -235,7 +239,7 @@ Quiet hours use the local time derived from the simulation UTC instant and the w
 - **Persistence:** Post action, decided topic/stance/tone/intent, source IDs, seed, AI request, and final/fallback text.
 - **Idempotency:** Actor/topic/interval ordinal; identical retry returns the same post record.
 - **Example:** A technology-interested Inspired character selects an active fictional technology topic; rules persist an optimistic stance before wording.
-- **Status:** MVP. Hashtag enrichment is deferred.
+- **Status:** MVP rule contract; hashtag enrichment is deferred. During M08 it is deterministically unavailable/ineligible because GoalRelevance, EventRelevance, numeric MoodActivation, and the goal/event topic-weight categories do not yet have complete approved persisted sources and semantics. Availability is checked before post/topic probability rolls. Missing components are not zeroed, inferred, dropped, redistributed, or renormalized; no autonomous SimulationAction, Post, GameplayEvent, or feed mutation is created. Future activation requires approved real inputs.
 
 AI receives actor voice attributes, decided topic, stance, tone, intent, maximum length, and up to the allowed memories. If generation fails or violates the contract, a deterministic template expresses the decision. AI cannot add a new target, claim an unrecorded event, or change stance.
 
@@ -252,7 +256,7 @@ AI receives actor voice attributes, decided topic, stance, tone, intent, maximum
 - **Persistence:** Notice decision, reply decision, stance, tone, impact, target post, seed, text intent.
 - **Idempotency:** Actor/post/intent key.
 - **Example:** A direct mention guarantees notice, but a Tired actor may still decline a non-urgent reply when the reply roll fails.
-- **Status:** MVP.
+- **Status:** MVP. M07 Player replies are active outside this autonomous rule. Autonomous Character evaluation remains deterministically unavailable/ineligible during M08 because Familiarity and RelationshipRelevance are not implemented until M10. Missing relationship state creates no autonomous reply action, Post, event, or reply-count mutation and consumes no rule-specific random roll. M10 activates autonomous evaluation with real relationship state; zero/default/proxy substitutes and alternate pre-M10 formulas are prohibited.
 
 ### Rule REACT-01: react, repost, quote, bookmark, or ignore
 
@@ -267,7 +271,7 @@ AI receives actor voice attributes, decided topic, stance, tone, intent, maximum
 - **Persistence:** Reaction/action or ignored-decision diagnostic with components.
 - **Idempotency:** Actor/post/action-type unique key.
 - **Example:** High interest and agreement yield score 78; roll 22 creates one Like. Retry returns it.
-- **Status:** Like/Ignore MVP; repost, quote, bookmark deferred.
+- **Status:** Like/Ignore MVP; repost, quote, bookmark deferred. M07 Player likes/unlikes are active outside this autonomous rule. Autonomous Character evaluation remains deterministically unavailable/ineligible during M08 because Affection is not implemented until M10. Missing relationship state creates no autonomous reaction action, PostReaction, event, or like-count mutation and consumes no rule-specific random roll. M10 activates autonomous evaluation with real relationship state; zero/default/proxy substitutes and alternate pre-M10 formulas are prohibited.
 
 ### Rule FOLLOW-01: follow or unfollow
 
@@ -637,7 +641,7 @@ Deferred: character-initiated/delayed messages; reposts, quotes, bookmarks, hash
 
 These values or policies require playtesting or an accepted product decision. Implementations must use the listed initial constants while keeping them configurable by rule version; they must not silently choose new values.
 
-1. Confirm or change `GAME_TIME_SCALE`, active tick length, catch-up detailed horizon, and 30-day per-run cap.
+1. Confirm or change `GAME_TIME_SCALE`, catch-up detailed horizon, and 30-day per-run cap. M08's active interval is fixed at 15 UTC minutes by ADR-022.
 2. Decide how the UI handles more than one partial catch-up run and very long absences.
 3. Tune character/day and world/day action limits for a cast of approximately 10.
 4. Tune activity, post, reply, reaction, follow, opinion, mood, and goal formula weights.

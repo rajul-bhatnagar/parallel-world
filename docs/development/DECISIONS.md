@@ -266,6 +266,171 @@ M08 adds the world-settings field and migration, defaults and backfills it to `U
 
 A later approved product requirement introduces player-configurable or per-character timezones.
 
+## ADR-019 — M08 relationship-gated autonomous social rules
+
+**Date:** 2026-09-20
+**Status:** Accepted; supplements ADR-017 and supersedes its M08 replies/likes consequence
+
+**Context**
+
+ADR-017 established that M08 cannot evaluate autonomous `FOLLOW-01` without M10-owned relationship state. The same dependency also exists in `REPLY-01`, which requires Familiarity and RelationshipRelevance, and `REACT-01`, which requires Affection. Treating those inputs as zero, using new-actor defaults as hidden stand-ins, deriving proxies, weakening thresholds, or introducing alternate formulas would create the same forbidden temporary relationship model.
+
+**Decision**
+
+- During M08, autonomous Character evaluation of `FOLLOW-01`, `REPLY-01`, and `REACT-01` deterministically returns unavailable/ineligible when M10 relationship state is absent.
+- An unavailable rule creates no `SimulationAction`, social row, `GameplayEvent`, or aggregate-count mutation. Eligibility is resolved before a rule-specific random roll, so no fallback randomness is consumed.
+- M08 does not synthesize, substitute, infer, or persist Familiarity, RelationshipRelevance, Affection, Trust, or Rivalry and does not add M10 entities, fields, or tables.
+- M07 Player replies, likes/unlikes, and follows/unfollows remain fully operational and unchanged. The gate applies only to autonomous Character simulation.
+- M08 still implements discoverable/evaluable rule eligibility paths, deterministic ordering and priority, tick processing, replay/idempotency, and provenance without fabricating an eligible action.
+- M10 activates autonomous `FOLLOW-01`, `REPLY-01`, and `REACT-01` eligibility using the real directional relationship state it introduces and the existing rule formulas.
+
+**Alternatives considered**
+
+Zero substitution, new-actor defaults, interest/topic/trait/reputation proxies, weaker thresholds, alternate pre-M10 formulas, and early relationship persistence were rejected because they invent gameplay behavior or violate milestone ownership.
+
+**Consequences**
+
+M08 autonomously creates character posts only. Reply, reaction, and follow rules remain auditable deterministic unavailable outcomes until M10, with no persisted action or effect. M08 tests protect unchanged M07 Player behavior, unchanged counters, absence of relationship substitutes, and repeatable no-action results.
+
+**Revisit when**
+
+Only if the ownership or required inputs of these rules change through a later accepted gameplay decision.
+
+## ADR-020 — M08 unavailable mandatory simulation inputs
+
+**Date:** 2026-09-20
+**Status:** Accepted; supplements ADR-017, ADR-018, and ADR-019 and supersedes ADR-019's M08 autonomous-post consequence
+
+**Context**
+
+M08 has no complete approved persisted source for mandatory numeric `ACT-01` and `POST-01` inputs including GoalRelevance, MoodActivation, and EventRelevance. `CurrentMoodType` is categorical rather than a numeric activation value, CharacterGoals are not assigned to M08, full world/gameplay-event relevance is deferred or undefined, and the post topic weights require unavailable goal/event categories. Substituting zero, inferring values, or redistributing weights would silently change the formulas.
+
+**Decision**
+
+- Every rule first classifies each mandatory input as available or unavailable. Available means approved persisted/domain state exists and its semantics and numeric interpretation are defined. Missing data, undefined numeric mapping, later-milestone ownership, or only a partial categorical value means unavailable.
+- A rule with any unavailable mandatory input deterministically returns `Unavailable`/`Ineligible` before probability evaluation. It consumes no rule-specific random draw and creates no `SimulationAction`, `GameplayEvent`, social row, aggregate-count change, or other autonomous side effect.
+- In M08, `ACT-01` is unavailable because GoalRelevance, numeric MoodActivation, and EventRelevance lack complete approved sources. Consequently it selects no actor or action family.
+- In M08, `POST-01` is unavailable because those numeric inputs and the mandatory goal/event topic-weight categories lack approved sources. Missing components are not set to zero, dropped, redistributed, or renormalized.
+- `CurrentMoodType` remains valid categorical M05 state but is not converted into numeric MoodActivation. M08 adds no temporary mood-intensity mapping or storage.
+- M08 adds no CharacterGoals and does not use interests as goal proxies. Goal storage, numeric range/default behavior, formula semantics, and versioning must be assigned by a future accepted decision before dependent rules activate.
+- Existing technical/provenance `GameplayEvent` rows do not imply EventRelevance. Full world events belong to later scope, and an accepted decision must define any numeric relevance mapping before dependent rules activate.
+- M06/M07 Player posts, replies, reactions, and follows remain unchanged. The unavailable result applies only to autonomous simulation.
+- M08 still implements meaningful deterministic infrastructure: world ticks/time, ADR-018 timezone projection, rule registration and ordered evaluation, unavailable reasons, deterministic seed/ID facilities, rule-version handling, transactions, interval claims, checkpoints, idempotency/replay, same-world concurrency control, and different-world independence.
+
+**Alternatives considered**
+
+Zero defaults, categorical mood-to-number mappings, interest/reputation proxies, temporary goals or mood tables, GameplayEvent-derived relevance, skipped terms, and redistributed/renormalized post-topic weights were rejected because they invent mechanics or move later scope into M08.
+
+**Consequences**
+
+M08 persists deterministic simulation progress and auditable rule-unavailability results but creates no autonomous social action or effect with the current inputs. Rule evaluation order is mandatory-input validation, availability/eligibility, then probability/random evaluation only for an independently eligible rule. Future activation requires approved real inputs and explicit storage, range/default, formula, and migration/versioning contracts.
+
+**Revisit when**
+
+Accepted source-of-truth decisions assign complete GoalRelevance, numeric MoodActivation, EventRelevance, and post topic-source semantics to implemented persisted state.
+
+## ADR-021 — M08 rule-evaluation persistence
+
+**Date:** 2026-09-20
+**Status:** Accepted; supplements ADR-017 through ADR-020
+
+**Context**
+
+M08 must persist auditable successful-but-unavailable rule outcomes without fabricating a `SimulationAction` or `GameplayEvent` and without overloading `SimulationRun.ErrorCode`, which represents actual run failure. Candidate-level diagnostics would be excessive and could accidentally make enumeration order part of persisted behavior.
+
+**Decision**
+
+- Add `SimulationRuleEvaluation`, persisted as `simulation_rule_evaluations`, for deterministic rule-level audit state. It is not a gameplay effect, action, gameplay event, or error log.
+- Persist exactly one summary row for each `(SimulationRunId, RuleCode)`. M08 does not persist actor candidates, target candidates, random draws, rejected candidates, or scoring terms.
+- Required fields are deterministic `Id`, `WorldId`, `SimulationRunId`, `RuleCode`, `Outcome`, `ReasonCode`, `RuleVersion`, and `EvaluatedAtUtc`. The ID derives from a stable hash namespace containing `WorldId`, run identity, and `RuleCode`; it never uses random/time/runtime hashing.
+- Outcomes are `Unavailable`, `Ineligible`, `Eligible`, and `Executed`. `Unavailable` means a mandatory approved input or semantic is absent; `Ineligible` means inputs exist but deterministic conditions reject execution; `Eligible` means eligibility succeeded before a committed effect; `Executed` means the approved action/effect committed.
+- Reason codes are stable lowercase machine-readable values, never prose: `relationship_state_unavailable`, `goal_relevance_unavailable`, `mood_activation_unavailable`, `event_relevance_unavailable`, `topic_inputs_unavailable`, `quiet_hours`, and `schedule_ineligible`. New codes require the relevant rule contract; no localized or generated explanation is persisted.
+- Primary missing-reason precedence is rule-specific and stable. `REPLY-01`, `REACT-01`, and `FOLLOW-01` check `relationship_state_unavailable` first, followed by their remaining mandatory inputs in rule-definition order. `ACT-01` and `POST-01` use `goal_relevance_unavailable`, then `mood_activation_unavailable`, then `event_relevance_unavailable`; `POST-01` then uses `topic_inputs_unavailable`. M08 therefore records relationship-state as the primary reason for the three relationship-gated rules and goal relevance for ACT/POST under current state.
+- An unavailable or ineligible evaluation never creates a `SimulationAction` or `GameplayEvent` and never marks its `SimulationRun` failed. `SimulationRun.ErrorCode` remains null for a successful run and is reserved for actual run/transaction/infrastructure failure.
+- The database enforces one row per run/rule and same-world run integrity. Replay reuses the row or deterministically reproduces the identical row; same-world interval locking plus uniqueness prevents concurrent duplicates. Different worlds and different runs remain independent.
+- For each M08 tick, the run, required rule evaluations, checkpoint, and world/simulation cursor advancement commit atomically. Rollback leaves none of those records claiming completion. Evaluation rows follow their run's lifecycle; M08 adds no cleanup worker.
+
+**Alternatives considered**
+
+Using `SimulationRun.ErrorCode`, skipped `SimulationAction` rows, synthetic `GameplayEvent` rows, free-form diagnostic prose, candidate-level tables, nondeterministic IDs, and logs alone were rejected because they conflate semantics, fabricate effects, weaken replay, or provide insufficient durable auditability.
+
+**Consequences**
+
+M08 can complete a successful tick with five deterministic `Unavailable` evaluation rows and no autonomous action/effect. Tests can assert exact outcomes, primary reasons, world isolation, replay uniqueness, atomicity, and unchanged Player behavior without treating expected rule unavailability as failure.
+
+**Revisit when**
+
+Candidate-level diagnostics, additional outcomes, retention independent from SimulationRun, or a public diagnostic projection is explicitly approved.
+
+## ADR-022 — M08 fixed tick bootstrap and run granularity
+
+**Date:** 2026-09-20
+**Status:** Accepted; supplements ADR-017 through ADR-021
+
+**Context**
+
+M08 had no exact contract for a never-simulated world's first cursor, whether `NextDueAt` or request time owns chronology, or whether one trigger may drain multiple complete ticks. Those choices change interval identity, run counts, cursor advancement, replay, and same-world concurrency behavior. Multi-interval catch-up belongs to M15 rather than the foundational active-tick implementation.
+
+**Decision**
+
+- M08 uses fixed 15-minute half-open UTC intervals. One `SimulationRun` represents exactly one interval `[IntervalStartUtc, IntervalEndUtc)` where `IntervalEndUtc = IntervalStartUtc + 15 minutes`.
+- A normal M08 trigger processes at most the single oldest due interval. It creates at most one successful run and never drains or spans an overdue backlog. M15 owns future multi-interval batching/catch-up behavior.
+- For a never-simulated world, the authoritative first cursor is `GameWorld.CreatedAtUtc`: first interval `[CreatedAtUtc, CreatedAtUtc + 15 minutes)`. It is eligible exactly when request/current UTC is greater than or equal to its end.
+- `WorldSimulationState.NextDueAt` is a persisted scheduling projection, not an independent chronology source. Never-simulated worlds use `CreatedAtUtc + 15 minutes`. After committing an interval ending at `E`, set `LastCompletedIntervalEnd = E` and `NextDueAt = E + 15 minutes`.
+- Existing never-simulated rows whose old initialization has `NextDueAt = GameWorld.CreatedAtUtc` are normalized/backfilled to `CreatedAtUtc + 15 minutes` by the M08 migration. World creation adopts the same new default.
+- For a previously simulated world, the next interval start is `LastCompletedIntervalEnd`, and its end/due projection is start plus 15 minutes. Cursor-derived chronology is authoritative. A persisted `NextDueAt` mismatch fails safely through existing validation/failure conventions; request time never defines an alternate interval.
+- `currentUtc < NextDueAt` creates no run. `currentUtc == NextDueAt` is due. Partial intervals are never processed.
+- Run identity and database uniqueness distinguish `WorldId`, interval start/end, and rule version. There cannot be two successful logical runs for that tuple.
+- A completed interval replay performs no second advancement or evaluation/effect set. A transactionally failed attempt leaves the same interval due. Cursor fields advance only in the atomic run/evaluation/checkpoint transaction.
+- Same-world concurrent triggers contend for the same oldest due interval. One may commit it; the losing invocation returns/reuses the resulting state and must not loop forward into the next overdue interval. Different worlds remain independently lockable.
+- Interval boundaries and cursor fields are UTC. ADR-018 timezone projection affects only schedule/quiet-hour rule evaluation and never changes interval identity.
+
+**Alternatives considered**
+
+Immediate creation-time ticks, request-now-derived intervals, one run spanning multiple ticks, multiple runs per M08 trigger, treating `NextDueAt` as independent chronology, and allowing a concurrency loser to consume the next backlog interval were rejected because they weaken replay, blur the M08/M15 boundary, or make invocation timing change interval identity.
+
+**Consequences**
+
+At 31 elapsed minutes, two intervals are eligible but the first M08 trigger creates only `[T,T+15)`, advances the completed cursor to `T+15`, and sets `NextDueAt=T+30`; the world remains due. A second trigger may create `[T+15,T+30)`, advance the cursor to `T+30`, and set `NextDueAt=T+45`. M08 tests assert this exact progression and the migration normalization.
+
+**Revisit when**
+
+M15 defines bounded multi-interval catch-up, batching limits, prioritization, yielding, and long-offline recovery policy.
+
+## ADR-023 — M08 world-time advancement and cursor projections
+
+**Date:** 2026-09-20
+**Status:** Accepted; supplements ADR-017 through ADR-022
+
+**Context**
+
+ADR-022 defines the canonical 15-minute UTC interval cursor but does not fully relate it to the existing `GameWorld.CurrentWorldTime`, `GameWorld.LastSimulatedAt`, and `WorldSettings.TimeScale` fields. Without one authority model, delayed processing, replay, or a scale change could make wall-clock chronology and accumulated in-world time diverge nondeterministically.
+
+**Decision**
+
+- `WorldSimulationState.LastCompletedIntervalEnd` is the authoritative persisted cursor for completed canonical UTC intervals. `NextDueAt` remains its derived scheduling projection and never becomes an independent chronology source.
+- `GameWorld.LastSimulatedAt` is a compatibility projection of the most recently committed canonical interval end. After `[S,E)` commits, both `LastCompletedIntervalEnd` and `LastSimulatedAt` equal `E`; request arrival, transaction completion time, server local time, and worker delay never set it.
+- The existing schema keeps `LastSimulatedAt` non-null and initializes it to `GameWorld.CreatedAtUtc`. For a never-simulated world, `LastCompletedIntervalEnd == null` is the authoritative state; the creation-time `LastSimulatedAt` value is only the legacy-compatible bootstrap representation and does not claim a completed interval.
+- `GameWorld.CurrentWorldTime` is the accumulated in-world clock. It continues to initialize to `GameWorld.CreatedAtUtc` and advances only when an interval commits.
+- For one M08 interval, `worldTimeDelta = 15 minutes × EffectiveTimeScale`, and `new CurrentWorldTime = previous CurrentWorldTime + worldTimeDelta`. Arithmetic uses the existing exact decimal scale and timestamp/tick representation, not binary floating point, processing delay, backlog age, or wall-clock `now`.
+- `WorldSettings.TimeScale` remains a positive `decimal`/PostgreSQL `numeric(8,4)` value with representable persisted range `0.0001` through `9999.9999` and default `1.0000`. It changes only in-world advancement. It does not change the fixed UTC interval duration, due check, `NextDueAt`, `LastCompletedIntervalEnd`, or SimulationRun interval identity.
+- Each SimulationRun persists the positive `EffectiveTimeScale` claimed for that interval using the same `numeric(8,4)` representation. A later setting change affects future unprocessed intervals only and never retroactively changes a completed run or replay.
+- Schedule and quiet-hour rules use the interval's resulting `CurrentWorldTime` as their canonical world-time instant and convert it through `WorldSettings.DisplayTimeZoneId`. Timezone projection never changes canonical UTC interval identity or cursor fields.
+- One M08 trigger advances one interval only. With backlog, each committed interval adds exactly its own scaled delta. M15 may later process several logical intervals in one catch-up invocation, but accumulated world-time advancement remains the deterministic sum of those per-interval deltas.
+- The SimulationRun, required SimulationRuleEvaluations, approved effects, checkpoint/claim state, `LastCompletedIntervalEnd`, `NextDueAt`, `LastSimulatedAt`, and `CurrentWorldTime` commit atomically. Failure advances none of them. Replay and same-world concurrency produce at most one world-time advancement for one logical interval; a losing M08 trigger does not consume the next backlog interval.
+
+**Alternatives considered**
+
+Using request or commit time for `LastSimulatedAt`, jumping `CurrentWorldTime` to wall-clock now, applying the entire backlog delta in one M08 run, allowing TimeScale to alter due chronology, reading the current setting again during replay, binary floating-point arithmetic, and leaving the effective scale unaudited were rejected because they break deterministic interval ownership and replay.
+
+**Consequences**
+
+At scale `2.0000`, each committed 15-minute interval advances `CurrentWorldTime` by exactly 30 minutes while the UTC cursor still advances by 15 minutes. At scale `0.5000`, it advances by exactly 7 minutes 30 seconds. Existing new-world values remain compatible, while `LastCompletedIntervalEnd` unambiguously distinguishes never-simulated state.
+
+**Revisit when**
+
+M15 defines multi-interval catch-up execution details or a future approved feature introduces historical TimeScale editing beyond per-run auditability.
+
 ## New ADR template
 
 ### ADR-XXX — Title

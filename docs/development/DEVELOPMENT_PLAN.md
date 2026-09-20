@@ -491,23 +491,23 @@ Every listed schema change includes an EF migration, clean/previous-schema Postg
 
 ## 21. M08 Rule-based simulation
 
-- **Goal:** Advance autonomous character activity deterministically without external AI.
-- **User-visible result:** The private world gains reproducible character posts/replies/likes expressed by deterministic templates. Autonomous Character follows remain deterministically ineligible until M10; M07 Player follows remain operational.
+- **Goal:** Establish deterministic, replay-safe world simulation and explicit rule availability without external AI or fabricated mechanics.
+- **User-visible result:** The private world gains reproducible simulation progress and auditable unavailable/ineligible rule outcomes. Current M08 inputs produce no autonomous social effect; M06/M07 Player posts/replies/likes/follows remain operational.
 - **Dependencies:** M05-M07.
-- **Backend scope:** Injected clock/PRNG, UTC world time, deterministic projection through the world-level IANA display timezone for schedules/quiet hours, SimulationRun/Action, ACT/POST/REPLY/REACT rules, deterministic `FOLLOW-01` unavailable/ineligible evaluation while M10 relationship state is absent, stable ordering, reasons/statuses, idempotent half-open intervals, template fallback, checkpoint-safe execution.
-- **Database scope:** Runs/actions/idempotency/work records, exact interval uniqueness, cursor locking, composite target FKs, and required world `display_time_zone_id`; the migration defaults/backfills `UTC`.
+- **Backend scope:** Injected clock/PRNG, canonical UTC interval cursor, accumulated `CurrentWorldTime`, exact decimal TimeScale advancement, deterministic projection of resulting world time through the world-level IANA display timezone for schedules/quiet hours, SimulationRun/Action provenance model, ordered rule registration/evaluation, one deterministic rule-evaluation summary per run/rule, deterministic unavailable/ineligible paths for `ACT-01`/`POST-01` while mandatory numeric/topic inputs are undefined and `REPLY-01`/`REACT-01`/`FOLLOW-01` while relationship state is absent, stable outcomes/reasons, fixed 15-minute half-open intervals, at most the single oldest due interval per normal trigger, template fallback component, checkpoint-safe execution.
+- **Database scope:** Runs/actions/rule evaluations/idempotency/work records, per-run effective TimeScale, unique run/rule diagnostics, exact interval uniqueness, cursor locking, atomic world-time/`LastSimulatedAt` projections, cursor-derived `NextDueAt`, normalization of existing never-simulated due times to creation plus 15 minutes, composite target FKs, and required world `display_time_zone_id`; the migration defaults/backfills `UTC`.
 - **Flutter scope:** Development-only trigger only if securely gated; status and authoritative refresh.
 - **Infrastructure scope:** BackgroundService may process durable PostgreSQL work; in-memory queue is not authority.
 - **Seed data:** Stable scenarios 1001-1004 and deterministic rule version.
-- **Test scope:** Same-state/interval/version/seed equality, candidate-order independence, caps/cooldowns/reasons, duplicate/overlap, rollback/partial resume, cross-world targets; existing/new-world `UTC` timezone defaults; UTC/non-UTC schedule and quiet-hour projection; cross-zone, host-independent, DST, invalid-zone, and no-per-character-timezone cases; no autonomous follow action/row without relationship state, unaffected M07 Player follows, no temporary relationship persistence, deterministic repeated follow ineligibility without fallback randomness, and no M10 schema/model leakage.
+- **Test scope:** Same-state/interval/version/seed equality, candidate-order independence, priority/reasons, duplicate/overlap, rollback/partial resume, cross-world isolation; first-tick bootstrap, not-due/exact-due boundaries, legacy due-time normalization, one run per trigger, exact 31-minute two-trigger progression, no M08 backlog batching, world-time initialization, exact scale `1`/`2`/fractional advancement, per-run effective-scale audit, scale changes between intervals, `LastSimulatedAt` mirroring, completed replay, failed-transaction retry, same-world concurrency loser behavior, and atomic cursor/world-time updates; timezone defaults and schedule/quiet-hour projection from resulting world time, DST/validation/host independence; one evaluation per run/rule, stable primary-reason precedence, run/rule uniqueness, replay/concurrency/rollback atomicity, and run-error separation; ACT-01 unavailability for missing goal/mood/event inputs before random evaluation; POST-01 unavailability without zeroing, redistribution, or renormalization; no autonomous social actions/effects/counter mutations; unchanged M06/M07 Player behavior; stable retry/rule version/PRNG sequencing; and no temporary or later-milestone state leakage.
 - **Documentation updates:** Rule/architecture docs only if an approved behavior decision changes; otherwise operational notes.
-- **Explicit exclusions:** External AI, catch-up compression, relationships/memory/dating, real-time delivery, temporary/proxy relationship inputs, and autonomous follow activation before M10.
-- **Acceptance criteria:** Same inputs give identical mechanics; duplicate interval gives no duplicate effect; no provider is required. With no M10 relationship state, simulation creates no autonomous follow action or effect, and M07 Player follow/unfollow remains unchanged.
+- **Explicit exclusions:** External AI, catch-up compression, relationships/memory/dating, real-time delivery, temporary/proxy relationship inputs, temporary goals/mood intensity/event scoring, topic-weight redistribution, and activation of rules with unavailable mandatory inputs.
+- **Acceptance criteria:** Same inputs give identical persisted progress and one identical evaluation per run/rule; each run owns one 15-minute interval and its effective decimal TimeScale; one normal trigger processes at most the oldest due interval; cursor, due, `LastSimulatedAt`, and scaled `CurrentWorldTime` advance atomically; duplicate intervals create no duplicate progress/world-time advancement/diagnostic/effect; unavailable inputs receive stable primary reasons before random evaluation without failing the run; no autonomous social effect is fabricated; no provider is required; and M06/M07 Player behavior remains unchanged.
 - **Required verification:** Unit/scenario/PostgreSQL/concurrency/architecture/security tests and deterministic snapshot comparison.
-- **Manual checks:** Run fixed seed twice from restored fixture; inspect reasons/template posts; retry interval.
+- **Manual checks:** Run fixed seed twice from restored fixture; inspect interval progress/unavailable reasons; retry interval and confirm no autonomous social mutation.
 - **Review focus:** Uncontrolled time/randomness, ordering, idempotency, AI absence, `WorldId`.
 - **Suggested milestone commit:** `feat(simulation): add deterministic action engine`.
-- **Exit criteria:** Reproducible auditable rules pass independent simulation review.
+- **Exit criteria:** Reproducible, auditable tick processing and unavailable rule evaluation pass independent simulation review.
 - **Main risks:** Hidden nondeterminism, interval overlap, overlarge transactions, premature rule families.
 - **Rollback:** Disable scheduling, deploy prior compatible artifact, preserve run/action audit rows and cursors.
 
@@ -538,12 +538,12 @@ Every listed schema change includes an EF migration, clean/previous-schema Postg
 - **Goal:** Persist deterministic directional relationships and explain meaningful changes.
 - **User-visible result:** Friendship/rivalry/attraction summaries and recent history respond to interactions.
 - **Dependencies:** M08; M09 only for phrasing, never mechanics.
-- **Backend scope:** REL-01 dimensions/events, caps/ledgers/asymmetry, derived labels, same-world application contracts, and activation of autonomous `FOLLOW-01` eligibility using real relationship state; shared romance status is not stored in directional rows.
+- **Backend scope:** REL-01 dimensions/events, caps/ledgers/asymmetry, derived labels, same-world application contracts, and activation of autonomous `FOLLOW-01`, `REPLY-01`, and `REACT-01` eligibility using real relationship state; shared romance status is not stored in directional rows.
 - **Database scope:** Relationships, RelationshipEvents, daily ledgers, bounds/uniques/composite FKs/history indexes, migration.
 - **Flutter scope:** Safe qualitative summary/recent history with loading/empty/error/offline states; no hidden raw scores unless approved.
 - **Infrastructure scope:** None.
 - **Seed data:** Stranger/friend/close-friend/rival scenarios and public-defence/conflict events.
-- **Test scope:** Initial values, deltas/multipliers/clamps/daily caps, asymmetry, labels/priority, duplicate event, transaction rollback, ownership, UI projection, and autonomous `FOLLOW-01` activation from real relationship values.
+- **Test scope:** Initial values, deltas/multipliers/clamps/daily caps, asymmetry, labels/priority, duplicate event, transaction rollback, ownership, UI projection, and autonomous `FOLLOW-01`/`REPLY-01`/`REACT-01` activation from real relationship values.
 - **Documentation updates:** No balance change without `GAME_RULES.md` rule-version update.
 - **Explicit exclusions:** Romantic pair transitions, dating, marriage/divorce, client-authored deltas, passive MVP decay.
 - **Acceptance criteria:** Qualified events create one auditable directional change; history explains it; no romantic status column exists here.
@@ -648,12 +648,12 @@ Every listed schema change includes an EF migration, clean/previous-schema Postg
 - **Goal:** Advance an Active world after absence through bounded deterministic compression.
 - **User-visible result:** Returning player sees reliable world progress and a concise “while you were away” summary.
 - **Dependencies:** M08 and released M10-M13 behavior. Full M14 is not required; seeded MVP topics remain sufficient.
-- **Backend scope:** CATCH-01 elapsed-time calculation, six-hour/daily buckets, caps/priorities, checkpoint/Partial state, summary facts/wording, duplicate/concurrent resume, cursor updates.
+- **Backend scope:** CATCH-01 elapsed-time calculation; bounded multi-interval backlog processing beyond M08's one-trigger/one-interval primitive; accumulated world-time advancement as the sum of each logical interval's captured scaled delta; batching, compression, caps, priorities, yielding, six-hour/daily buckets, checkpoint/Partial state, summary facts/wording, duplicate/concurrent resume, and cursor updates.
 - **Database scope:** Catch-up run/bucket checkpoint and world-summary/item persistence as required, constraints/indexes/idempotency, migration.
 - **Flutter scope:** Resume/progress/partial/error state, summary and safe links to released posts/characters/conversations; no unreleased event link.
 - **Infrastructure scope:** Durable bounded background processing and lease recovery using PostgreSQL.
 - **Seed data:** No/short/long/over-cap, failure-after-bucket, duplicate/concurrent resume fixtures.
-- **Test scope:** Paused/archived exclusion, compression/caps/order, relationship/message effects, checkpoint retry, concurrent resume, summary correctness/fallback, UI states.
+- **Test scope:** Paused/archived exclusion, multi-interval batching/limits/yielding, compression/caps/order, relationship/message effects, checkpoint retry, concurrent resume, summary correctness/fallback, UI states.
 - **Documentation updates:** Operational limits and setup; balancing changes require rule-version documentation.
 - **Explicit exclusions:** Simulating every minute, full trend updates without M14 approval, unbounded catch-up, AI-invented summary facts.
 - **Acceptance criteria:** Same snapshot/interval/version/seed yields same committed progress; retry duplicates nothing; summary contains only committed facts.

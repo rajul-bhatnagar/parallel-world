@@ -10,7 +10,7 @@ Friendship/rivalry/attraction summaries and recent history respond to interactio
 M08; M09 only for phrasing, never mechanics.
 
 ## Scope
-- **Backend:** REL-01 dimensions/events, caps/ledgers/asymmetry, derived labels, same-world application contracts, and activation of autonomous `FOLLOW-01` eligibility from real directional relationship state; shared romance status is not stored in directional rows.
+- **Backend:** REL-01 dimensions/events, caps/ledgers/asymmetry, derived labels, same-world application contracts, and activation of autonomous `FOLLOW-01`, `REPLY-01`, and `REACT-01` eligibility from real directional relationship state; shared romance status is not stored in directional rows.
 - **Database:** Relationships, RelationshipEvents, daily ledgers, bounds/uniques/composite FKs/history indexes, migration.
 - **Flutter:** Safe qualitative summary/recent history with loading/empty/error/offline states; no hidden raw scores unless approved.
 - **Infrastructure:** None.
@@ -19,7 +19,7 @@ M08; M09 only for phrasing, never mechanics.
 Romantic pair transitions, dating, marriage/divorce, client-authored deltas, passive MVP decay.
 
 ## Test scope
-Initial values, deltas/multipliers/clamps/daily caps, asymmetry, labels/priority, duplicate event, transaction rollback, ownership, UI projection, and autonomous `FOLLOW-01` activation using real relationship values.
+Initial values, deltas/multipliers/clamps/daily caps, asymmetry, labels/priority, duplicate event, transaction rollback, ownership, UI projection, and autonomous `FOLLOW-01`/`REPLY-01`/`REACT-01` activation using real relationship values.
 
 ## Security and ownership considerations
 Formula fidelity, transaction/idempotency, hidden-score privacy, separation of romance. Repository-wide ownership, privacy, and secret-handling rules remain mandatory where applicable.

@@ -41,7 +41,7 @@ No real-user discovery, messaging, feed, relationship, or shared-world path exis
 - PostgreSQL is authoritative for ownership, game state, world time, relationships, memories, actions, and history.
 - Drift is a cache and pending-local-action store only. It never runs authoritative simulation or resolves mechanical conflicts.
 - Deterministic rules decide actors, targets, actions, values, time, and outcomes. AI generates wording for a persisted decision only.
-- All persistent timestamps use UTC. In M08, Character-local schedule and quiet-hour time is derived from the authoritative simulation UTC instant through the world-level IANA `DisplayTimeZoneId`, which defaults to `UTC`; no server/device timezone inference or per-character timezone state is used.
+- All persistent timestamps use UTC. In M08, Character-local schedule and quiet-hour time is derived from the interval's deterministic resulting `CurrentWorldTime` through the world-level IANA `DisplayTimeZoneId`, which defaults to `UTC`; no server/device timezone inference or per-character timezone state is used.
 - Simulation and background work are idempotent and safe to retry.
 
 ## 4. Technology stack
@@ -318,8 +318,9 @@ flowchart TD
     L --> C["Acquire interval concurrency protection"]
     C --> R["Create/resume SimulationRun"]
     R --> S["Derive persisted run seed"]
-    S --> E["Select eligible actors and evaluate rules"]
-    E --> A["Persist planned SimulationActions and reason codes"]
+    S --> E["Evaluate registered rules in stable order"]
+    E --> D["Persist one SimulationRuleEvaluation per run/rule"]
+    D --> A["Persist planned SimulationActions only for approved actions"]
     A --> X["Apply deterministic mechanics transactionally"]
     X --> J["Persist wording/background work records"]
     J --> K["Checkpoint and complete/partial run"]
@@ -328,15 +329,19 @@ flowchart TD
 
 Decision creation and execution are separable. A planned action contains actor, target, action type, topic/stance/tone/intent, seed, rule version, reason components, and idempotency key. Mechanical application follows GAME_RULES.md and commits before or with a durable text-work record. Generated wording is attached only after validation; template fallback completes text-required actions when AI fails.
 
-Simulation intervals are half-open and uniquely owned by a world/rule-version interval key. A retry loads the existing run/action state and resumes; it never rerolls. Long catch-up work commits at safe bucket/action boundaries rather than holding one large transaction.
+Rule evaluation begins by resolving every mandatory input from approved persisted/domain state. Missing data or semantics produces `Unavailable`; complete inputs rejected by deterministic conditions produce `Ineligible`; successful eligibility may be `Eligible`; and a committed approved effect is `Executed`. Persist exactly one `SimulationRuleEvaluation` summary for each run/rule, with a stable machine-readable primary reason chosen by rule-specific validation precedence. Candidate/target/draw/score diagnostics remain transient. Unavailable/ineligible rules create no SimulationAction, GameplayEvent, work item, feature row, or aggregate mutation and do not set `SimulationRun.ErrorCode`. Evaluation continues to other independently eligible rules in stable priority/identifier order; unavailable rules do not consume their random substreams or shift other rules because choices use order-independent substreams.
 
-Local-time rule evaluation remains a pure projection: the persisted simulation UTC instant plus the persisted world IANA timezone produces the local date/time supplied to schedules and quiet hours. Timezone database rules handle DST from that UTC instant, so the engine never accepts an ambiguous or invalid local timestamp as authoritative input.
+For each M08 active tick, the SimulationRun, its claimed `EffectiveTimeScale`, required SimulationRuleEvaluations, checkpoint, mechanical effects, `LastCompletedIntervalEnd`, `NextDueAt`, `GameWorld.LastSimulatedAt`, and `GameWorld.CurrentWorldTime` advancement share one transaction. Any failure rolls back the complete boundary and leaves the same interval due with every world-time field unchanged. The world simulation-state row lock and unique run/rule/interval keys prevent same-world concurrent duplicates and double world-time advancement; a losing trigger observes/reuses the committed state and does not continue into another overdue interval. Different worlds lock and advance independently.
+
+M08 active intervals are fixed 15-minute half-open windows and uniquely owned by a world/rule-version interval key. The never-simulated cursor starts at `GameWorld.CreatedAtUtc`; later intervals start at `LastCompletedIntervalEnd`. `NextDueAt` is the cursor-derived scheduling projection: initial creation time plus 15 minutes, then the completed end plus 15 minutes. `LastSimulatedAt` is a non-authoritative compatibility projection equal to the committed interval end; its creation-time bootstrap value does not represent a completed interval while `LastCompletedIntervalEnd` is null. `CurrentWorldTime` starts at `CreatedAtUtc` and advances by `15 minutes × EffectiveTimeScale` for each committed interval. One normal M08 trigger handles at most the single oldest due interval. A retry loads or reproduces the same run state and effective scale and never rerolls or advances world time twice. M15 owns bounded multi-interval batching/catch-up and commits long work at safe bucket/action boundaries rather than holding one large transaction.
+
+Local-time rule evaluation remains a pure projection: the interval's deterministic resulting `CurrentWorldTime` plus the persisted world IANA timezone produces the local date/time supplied to schedules and quiet hours. Timezone database rules handle DST from that UTC world-time instant, so the engine never accepts an ambiguous or invalid local timestamp as authoritative input. TimeScale affects only accumulated world time; it never changes canonical interval boundaries, eligibility, or due projections.
 
 ## 15. Catch-up simulation lifecycle
 
 Catch-up is triggered when a player returns to an Active world or explicitly requests/resumes processing. Paused/Archived rules follow GAME_RULES.md.
 
-1. Compare persisted simulation cursor/`LastSimulatedAt` with eligible current UTC/game time.
+1. Compare authoritative `LastCompletedIntervalEnd`/derived `NextDueAt` with eligible current UTC; validate `LastSimulatedAt` only as the committed-end compatibility projection and use `CurrentWorldTime` only for accumulated in-world progression.
 2. Claim the next bounded interval using a unique idempotency key and concurrency token.
 3. Split it into detailed and compressed buckets using the authoritative balancing constants.
 4. Load only state needed for each bucket and rank meaningful events deterministically.

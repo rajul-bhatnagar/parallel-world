@@ -492,17 +492,17 @@ Every listed schema change includes an EF migration, clean/previous-schema Postg
 ## 21. M08 Rule-based simulation
 
 - **Goal:** Advance autonomous character activity deterministically without external AI.
-- **User-visible result:** The private world gains reproducible character posts/replies/likes/follows expressed by deterministic templates.
+- **User-visible result:** The private world gains reproducible character posts/replies/likes expressed by deterministic templates. Autonomous Character follows remain deterministically ineligible until M10; M07 Player follows remain operational.
 - **Dependencies:** M05-M07.
-- **Backend scope:** Injected clock/PRNG, world time, SimulationRun/Action, ACT/POST/REPLY/REACT/FOLLOW rules, stable ordering, reasons/statuses, idempotent half-open intervals, template fallback, checkpoint-safe execution.
+- **Backend scope:** Injected clock/PRNG, world time, SimulationRun/Action, ACT/POST/REPLY/REACT rules, deterministic `FOLLOW-01` unavailable/ineligible evaluation while M10 relationship state is absent, stable ordering, reasons/statuses, idempotent half-open intervals, template fallback, checkpoint-safe execution.
 - **Database scope:** Runs/actions/idempotency/work records, exact interval uniqueness, cursor locking, composite target FKs, migration.
 - **Flutter scope:** Development-only trigger only if securely gated; status and authoritative refresh.
 - **Infrastructure scope:** BackgroundService may process durable PostgreSQL work; in-memory queue is not authority.
 - **Seed data:** Stable scenarios 1001-1004 and deterministic rule version.
-- **Test scope:** Same-state/interval/version/seed equality, candidate-order independence, caps/cooldowns/reasons, duplicate/overlap, rollback/partial resume, cross-world targets.
+- **Test scope:** Same-state/interval/version/seed equality, candidate-order independence, caps/cooldowns/reasons, duplicate/overlap, rollback/partial resume, cross-world targets, no autonomous follow action/row without relationship state, unaffected M07 Player follows, no temporary relationship persistence, deterministic repeated follow ineligibility without fallback randomness, and no M10 schema/model leakage.
 - **Documentation updates:** Rule/architecture docs only if an approved behavior decision changes; otherwise operational notes.
-- **Explicit exclusions:** External AI, catch-up compression, relationships/memory/dating, real-time delivery.
-- **Acceptance criteria:** Same inputs give identical mechanics; duplicate interval gives no duplicate effect; no provider is required.
+- **Explicit exclusions:** External AI, catch-up compression, relationships/memory/dating, real-time delivery, temporary/proxy relationship inputs, and autonomous follow activation before M10.
+- **Acceptance criteria:** Same inputs give identical mechanics; duplicate interval gives no duplicate effect; no provider is required. With no M10 relationship state, simulation creates no autonomous follow action or effect, and M07 Player follow/unfollow remains unchanged.
 - **Required verification:** Unit/scenario/PostgreSQL/concurrency/architecture/security tests and deterministic snapshot comparison.
 - **Manual checks:** Run fixed seed twice from restored fixture; inspect reasons/template posts; retry interval.
 - **Review focus:** Uncontrolled time/randomness, ordering, idempotency, AI absence, `WorldId`.
@@ -538,12 +538,12 @@ Every listed schema change includes an EF migration, clean/previous-schema Postg
 - **Goal:** Persist deterministic directional relationships and explain meaningful changes.
 - **User-visible result:** Friendship/rivalry/attraction summaries and recent history respond to interactions.
 - **Dependencies:** M08; M09 only for phrasing, never mechanics.
-- **Backend scope:** REL-01 dimensions/events, caps/ledgers/asymmetry, derived labels, same-world application contracts; shared romance status is not stored in directional rows.
+- **Backend scope:** REL-01 dimensions/events, caps/ledgers/asymmetry, derived labels, same-world application contracts, and activation of autonomous `FOLLOW-01` eligibility using real relationship state; shared romance status is not stored in directional rows.
 - **Database scope:** Relationships, RelationshipEvents, daily ledgers, bounds/uniques/composite FKs/history indexes, migration.
 - **Flutter scope:** Safe qualitative summary/recent history with loading/empty/error/offline states; no hidden raw scores unless approved.
 - **Infrastructure scope:** None.
 - **Seed data:** Stranger/friend/close-friend/rival scenarios and public-defence/conflict events.
-- **Test scope:** Initial values, deltas/multipliers/clamps/daily caps, asymmetry, labels/priority, duplicate event, transaction rollback, ownership, UI projection.
+- **Test scope:** Initial values, deltas/multipliers/clamps/daily caps, asymmetry, labels/priority, duplicate event, transaction rollback, ownership, UI projection, and autonomous `FOLLOW-01` activation from real relationship values.
 - **Documentation updates:** No balance change without `GAME_RULES.md` rule-version update.
 - **Explicit exclusions:** Romantic pair transitions, dating, marriage/divorce, client-authored deltas, passive MVP decay.
 - **Acceptance criteria:** Qualified events create one auditable directional change; history explains it; no romantic status column exists here.

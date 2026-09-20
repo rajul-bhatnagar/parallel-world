@@ -4,28 +4,28 @@
 Advance autonomous character activity deterministically without external AI.
 
 ## User-visible result
-The private world gains reproducible character posts/replies/likes/follows expressed by deterministic templates.
+The private world gains reproducible character posts, replies, and likes expressed by deterministic templates. Autonomous Character follows remain deterministically ineligible until M10 relationship state exists; M07 Player follow/unfollow remains available.
 
 ## Dependencies
 M05-M07.
 
 ## Scope
-- **Backend:** Injected clock/PRNG, world time, SimulationRun/Action, ACT/POST/REPLY/REACT/FOLLOW rules, stable ordering, reasons/statuses, idempotent half-open intervals, template fallback, checkpoint-safe execution.
+- **Backend:** Injected clock/PRNG, world time, SimulationRun/Action, ACT/POST/REPLY/REACT rules, `FOLLOW-01` unavailable/ineligible evaluation without M10 relationship state, stable ordering, reasons/statuses, idempotent half-open intervals, template fallback, checkpoint-safe execution.
 - **Database:** Runs/actions/idempotency/work records, exact interval uniqueness, cursor locking, composite target FKs, migration.
 - **Flutter:** Development-only trigger only if securely gated; status and authoritative refresh.
 - **Infrastructure:** BackgroundService may process durable PostgreSQL work; in-memory queue is not authority.
 
 ## Explicit exclusions
-External AI, catch-up compression, relationships/memory/dating, real-time delivery.
+External AI, catch-up compression, relationships/memory/dating, real-time delivery, temporary or proxy relationship inputs, and autonomous follow activation before M10.
 
 ## Test scope
-Same-state/interval/version/seed equality, candidate-order independence, caps/cooldowns/reasons, duplicate/overlap, rollback/partial resume, cross-world targets.
+Same-state/interval/version/seed equality, candidate-order independence, caps/cooldowns/reasons, duplicate/overlap, rollback/partial resume, and cross-world targets. Verify that `FOLLOW-01` is ineligible without relationship state, simulation creates no autonomous follow action or row, M07 Player follows remain unaffected, no temporary relationship state is persisted, repeated evaluation preserves the same follow-ineligible result without fallback randomness, and no M10 tables/entities/fields are introduced.
 
 ## Security and ownership considerations
 Uncontrolled time/randomness, ordering, idempotency, AI absence, `WorldId`. Repository-wide ownership, privacy, and secret-handling rules remain mandatory where applicable.
 
 ## Acceptance criteria
-Same inputs give identical mechanics; duplicate interval gives no duplicate effect; no provider is required.
+Same inputs give identical mechanics; duplicate interval gives no duplicate effect; no provider is required. Missing M10 relationship state deterministically produces no autonomous follow action or follow effect while M07 Player follow/unfollow continues to work.
 
 ## Required verification
 Unit/scenario/PostgreSQL/concurrency/architecture/security tests and deterministic snapshot comparison. Record every result as Passed, Failed, Unavailable, or Not applicable — with reason.

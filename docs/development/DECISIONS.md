@@ -206,6 +206,35 @@ Backend queries, Flutter state, and tests share one parent-scoped ordering and c
 
 A later approved product requirement needs whole-thread search, a different nesting/depth model, or a compatible bulk thread-loading contract.
 
+## ADR-017 — M08 autonomous follows require M10 relationship state
+
+**Date:** 2026-09-20
+**Status:** Accepted
+
+**Context**
+
+M08 introduces deterministic autonomous social simulation, while `FOLLOW-01` requires directional Familiarity, Trust, Affection, and Rivalry inputs owned by the M10 relationship engine. M08 explicitly excludes relationship persistence and mechanics. Synthesizing temporary values, deriving proxy values from interests or reputation, weakening the follow threshold, or moving M10 persistence into M08 would create an undocumented second relationship model and make later activation inconsistent.
+
+**Decision**
+
+- M08 does not synthesize, infer, persist, or otherwise substitute Familiarity, Trust, Affection, or Rivalry values.
+- When M10 relationship state is unavailable, autonomous Character evaluation of `FOLLOW-01` deterministically returns unavailable/ineligible. It creates no autonomous follow action, `Follow` row, or follow-change event and consumes no fallback random roll.
+- The absence of M10 relationship state is expected M08 behavior, not a simulation error. Repeating the same M08 state continues to produce no autonomous follow action.
+- M07 Player follow and unfollow behavior remains fully available and unchanged.
+- M10 activates autonomous `FOLLOW-01` evaluation using the real directional relationship state it introduces. M10 must not redesign the accepted `FOLLOW-01` scoring contract merely to activate it.
+
+**Alternatives considered**
+
+Temporary relationship defaults, hidden pair scores derived from interests or reputation, reduced follow thresholds, and early M10 relationship tables were rejected because they invent mechanics, violate milestone ownership, or produce state that M10 would later have to reinterpret.
+
+**Consequences**
+
+M08 autonomously creates posts, replies, and likes, but not follows. Its follow evaluation and tests must prove the deterministic unavailable state, absence of autonomous follow rows and temporary relationship state, and continued operation of M07 Player follows. M10 owns the first milestone in which autonomous Character follows can become eligible.
+
+**Revisit when**
+
+Only if the ownership or inputs of `FOLLOW-01` are changed through an accepted gameplay and architecture decision.
+
 ## New ADR template
 
 ### ADR-XXX — Title

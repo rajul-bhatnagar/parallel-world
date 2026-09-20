@@ -6,13 +6,20 @@ Read AGENTS.md, docs/milestones/M08_SIMULATION.md, docs/product/PRODUCT.md, docs
 Task: Rule-Based Simulation
 
 Scope:
-Implement SimulationRun, SimulationAction, deterministic random provider, world clock, activity selector, decision creation/execution separation, template text generator, create-post/reply/like/follow actions, development trigger, idempotency and transaction tests. No external AI, messaging, memory, or dating.
+Implement SimulationRun, SimulationAction, deterministic random provider, world clock, activity selector, decision creation/execution separation, template text generator, create-post/reply/like actions, deterministic FOLLOW-01 unavailable/ineligible evaluation, development trigger, idempotency and transaction tests. No external AI, messaging, memory, or dating.
+
+Autonomous follow phase boundary:
+- M08 must not synthesize, infer, persist, or proxy Familiarity, Trust, Affection, or Rivalry.
+- Without M10 relationship state, autonomous Character FOLLOW-01 evaluation is deterministically unavailable/ineligible and creates no SimulationAction, Follow row, or follow-change event. Do not use fallback randomness.
+- Existing M07 Player follow/unfollow behavior remains operational and unchanged.
+- M10 activates autonomous FOLLOW-01 eligibility using real relationship state; do not implement or design that state in M08.
 
 Explicit exclusions:
 - No external AI, messaging, memory, romance, catch-up, or deferred events/trends.
 
 Tests:
 - Test deterministic seeds/order, interval uniqueness, idempotency, concurrency, transaction boundaries, fallback wording, and cross-world rejection.
+- Verify autonomous follow ineligibility without relationship state, no autonomous follow rows, unaffected M07 Player follows, no temporary relationship persistence, deterministic repeated follow eligibility results, and no M10 tables/entities/fields.
 
 Before editing:
 1. List relevant existing files.

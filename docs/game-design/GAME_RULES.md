@@ -282,7 +282,7 @@ AI receives actor voice attributes, decided topic, stance, tone, intent, maximum
 - **Persistence:** FollowChanged event with score, reasons, actor, target, and prior edge.
 - **Idempotency:** Actor/target/desired-state key.
 - **Example:** Familiarity 45 and overlap 70 qualify; score 63 and roll 40 creates the edge.
-- **Status:** MVP.
+- **Status:** MVP. M07 Player follow/unfollow is active. Autonomous Character evaluation remains deterministically unavailable/ineligible during M08 because Familiarity, Trust, Affection, and Rivalry are not implemented until M10. Missing relationship state creates no autonomous follow action, edge, or event and does not use fallback randomness. M10 activates autonomous evaluation with real relationship state; no temporary, inferred, or proxy relationship inputs are permitted before then.
 
 ## 9. Private messaging
 

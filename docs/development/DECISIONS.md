@@ -431,6 +431,40 @@ At scale `2.0000`, each committed 15-minute interval advances `CurrentWorldTime`
 
 M15 defines multi-interval catch-up execution details or a future approved feature introduces historical TimeScale editing beyond per-run auditability.
 
+## ADR-024 — M09 local-first zero-paid-API text generation
+
+**Date:** 2026-09-21
+**Status:** Accepted
+
+**Context**
+
+M09 requires one provider/configuration contract before implementing wording generation. The current development and MVP path must work without a paid API, external billing account, provider key, model download in CI, or AI availability as a correctness dependency. The core architecture must also remain provider-neutral so a later reviewed provider can replace or supplement the initial adapter without entering Domain, Application contracts, or Simulation mechanics.
+
+**Decision**
+
+- M09 is local-first. Ollama is the initial generation provider, implemented behind the provider-neutral M09 text-generation abstraction. Ollama-specific transport and response types remain inside the AI/infrastructure adapter and do not enter Domain, Simulation, or core Application contracts.
+- The preferred initial model is `qwen3:4b`, but the server-side model name remains configurable. Development may select the smallest suitable locally installed Ollama text model. No model-specific gameplay behavior is allowed.
+- The default development/MVP path requires no OpenAI subscription, paid Hugging Face inference, paid Gemini usage, other paid AI API, external billing account, or automatic cloud fallback. Provider failure follows `Ollama -> deterministic application-owned template fallback`, never `Ollama -> paid provider`.
+- Central backend configuration covers `Enabled`, `BaseUrl`, `Model`, `Timeout`, `MaxOutputLength`, and `PromptTemplateVersion`. The local endpoint may default to `http://localhost:11434`, the timeout defaults to 10 seconds, and configuration is never client-controlled or exposed to Flutter. Ollama installation, startup, or model availability is not a backend-startup requirement.
+- One retry is allowed only for a transient local connection or timeout failure. Invalid authoritative input, malformed/invalid output, and non-transient failures are not repeatedly retried. Cancellation remains effective throughout the timeout/retry path.
+- Same authoritative facts plus the same template version produce identical fallback text that obeys the existing Post/Reply content limits. Provider absence, timeout, rate/resource rejection, invalid response, unsafe/unusable output, or budget exhaustion cannot rerun simulation, change mechanics, or fail already-decided gameplay.
+- AI receives only a minimal structured wording contract for already-decided facts. It returns presentation wording only and cannot choose actor, target, action, eligibility, outcome, score, relationship value, timing, randomness, state transition, counter, or whether an effect exists. Untrusted social text is delimited data and cannot authorize tools or commands.
+- M09 uses application-level structural/content validation, existing content constraints, minimized context, and safe deterministic fallback. It does not require a paid moderation API. A dedicated moderation model/service remains deferred until a separate accepted decision identifies a free/local or otherwise approved approach.
+- Normal automated tests and CI use a deterministic fake provider and local HTTP transport stubs. They require no network, real Ollama process, model download, paid API, or provider credential. A narrowly scoped real-Ollama check is optional local manual verification only.
+- Cloud or freemium providers, automatic routing/failover, and multi-provider orchestration require a later accepted decision. Gameplay determinism never depends on generated wording or provider determinism.
+
+**Alternatives considered**
+
+Making a paid cloud provider the M09 default, automatically falling back from Ollama to a paid API, requiring Ollama/model installation for backend startup or CI, letting provider-specific types cross module boundaries, and relying on a paid moderation service were rejected because they violate the zero-cost requirement, weaken test isolation, or make gameplay availability depend on AI infrastructure.
+
+**Consequences**
+
+M09 can implement and verify its full abstraction, persistence, validation, retry, fallback, diagnostics, and transport behavior without paid usage. Local wording quality and latency depend on the configured machine/model, but provider failure degrades only presentation. Setup documentation describes optional local Ollama installation and model selection while the default fake/fallback paths keep builds and tests self-contained.
+
+**Revisit when**
+
+A separately approved cloud/freemium provider, dedicated moderation system, provider-routing policy, or production deployment topology is required and its privacy, secret, cost, retry, and fallback contracts are recorded.
+
 ## New ADR template
 
 ### ADR-XXX — Title

@@ -28,7 +28,7 @@ Release labels are **MVP**, **Version 1**, **Future**, and **Development-only**.
 | ASP.NET Core API | Authentication/authorization boundary | Token validation, use-case ownership, validation, ProblemDetails | Sanitized response and correlated log |
 | Background worker | Trusted process, untrusted persisted payload references | Re-resolve world/resource scope, leases/idempotency | Retry/contain without duplicate mechanics |
 | PostgreSQL | Authoritative private store | Private network, TLS where supported, least privilege, constraints, backups | Transaction rollback; no client fallback authority |
-| AI provider | External/untrusted processor | Backend-only key, minimized delimited input, output validation, budget/timeout | Deterministic fallback; mechanics remain committed |
+| AI provider | Local/untrusted Ollama process in M09; future external provider only if approved | Backend-only configuration, minimized delimited input, output validation, resource budget/timeout | Deterministic fallback; mechanics remain committed |
 | Push provider | External delivery service | Minimal payload, device-scoped token, no sensitive body | Persisted notification remains truth |
 | Object storage | Future external data store | Signed/safe URLs, type/size checks, least privilege | Feature unavailable; no access broadening |
 | CI/CD/hosting | Privileged operational systems | Protected secrets, least privilege, reviewed deployments/audit | Rotate/revoke and halt affected deployment |
@@ -41,7 +41,7 @@ flowchart LR
     A -->|"Authorized queries + TLS"| P[("Private PostgreSQL")]
     A --> W["Background worker"]
     W --> P
-    W -->|"Minimized context"| AI["External AI provider"]
+    W -.->|"Minimized context"| AI["Optional local Ollama"]
     W -.->|"Minimal notification"| PUSH["Push provider — later"]
     CI["CI/CD and hosting"] -->|"Protected deployment secrets"| A
 ```
@@ -391,13 +391,15 @@ Spam posts/message flooding/date-invitation repetition are constrained by endpoi
 
 ## 23. AI-provider security
 
-- Provider credentials, selection, and calls remain backend-only.
-- Use provider/model allowlists, timeouts, output/token/cost limits, bounded retry, and durable idempotent work.
+- ADR-024 selects backend-local Ollama as the M09 provider with configurable preferred model `qwen3:4b`. Provider selection, endpoint/model configuration, and calls remain backend-only; Flutter cannot control or discover them.
+- M09 requires no paid API key, subscription, billing account, or automatic paid-cloud fallback. Future provider credentials remain runtime secrets and require a separate accepted provider decision.
+- Use the configured local endpoint/model allowlist, a configurable 10-second default timeout, output/resource limits, at most one transient connection/timeout retry, and durable idempotent work. Ollama absence or model unavailability fails safely to deterministic fallback and never blocks backend startup.
 - Send only authorized minimized context for a persisted already-decided action.
 - Treat provider output as untrusted text; validate length, actor/target/outcome, disclosure, format, and prohibited claims.
-- Provider failure/invalid output uses deterministic template fallback where supported and never rolls back/reapplies mechanics.
+- Provider failure, invalid output, content-safety rejection, or budget exhaustion uses deterministic template fallback and never rolls back/reapplies mechanics or invokes a paid provider.
 - Persist only provider-neutral status, hashes, latency/token usage, fallback state, and safe errors—no full sensitive prompt/raw response.
 - Provider instructions/output cannot invoke tools, commands, queries, or mechanical mutations.
+- M09 moderation is structural/application validation plus minimal safe fallback. A dedicated moderation model/API is deferred and cannot silently introduce a paid dependency.
 
 ## 24. Prompt and context minimization
 
@@ -417,7 +419,7 @@ flowchart TD
     SCOPE --> KNOW["Apply knowledge/secret access rules"]
     KNOW --> MEMORY["Rank and cap authorized memories"]
     MEMORY --> CONTRACT["Build delimited minimal decision contract"]
-    CONTRACT --> AI["Approved provider/model with timeout/budget"]
+    CONTRACT --> AI["Configured local Ollama with timeout/resource budget"]
     AI --> VALIDATE["Validate length, outcome, actors, disclosure"]
     VALIDATE -->|"Valid"| TEXT["Persist wording only"]
     VALIDATE -->|"Invalid/failure"| FALLBACK["Deterministic fallback"]

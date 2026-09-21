@@ -240,7 +240,7 @@ Bounded concurrent tests cover profile update, resume, relationship events, reac
 
 ## 18. AI integration testing
 
-Use a deterministic fake generator for most tests and a local HTTP stub for transport cases: success, timeout, rate limit, malformed/empty/excessive/duplicate output, provider error, retry, fallback, cost/token metadata, and sanitized diagnostics. Always assert action type, actor, target, visibility, score delta, relationship/dating result, timing, and mechanical event IDs are unchanged.
+Use a deterministic fake generator for most tests and a process-local HTTP stub for Ollama transport cases: success, disabled/unavailable provider, timeout/cancellation, transient connection failure with exactly one retry, rate/resource limit, malformed/empty/excessive/duplicate output, provider error, deterministic fallback, usage metadata, and sanitized diagnostics. Normal automated tests and CI require no external network, real Ollama process, model download, paid API, provider credential, or billing account. A real-Ollama check is optional local manual verification only. Always assert action type, actor, target, visibility, score delta, relationship/dating result, timing, and mechanical event IDs are unchanged.
 
 Hostile text such as “ignore previous instructions,” fake system messages, SQL-like strings, HTML/script, oversized input, secret-extraction requests, score-alteration instructions, and requests for another character's memory is treated only as data. No command runs, unauthorized context is sent, or private content is logged.
 
@@ -500,7 +500,7 @@ A feature is complete only when acceptance criteria are met; sources/existing co
 | M06 Feed | Create, order/cursor/tie, pending reconciliation, isolation |
 | M07 Social actions | Replies/likes/follows, uniqueness, counts, nested ownership |
 | M08 Simulation | Seed reproducibility, ordering/reasons; creation-time bootstrap, exact due boundary, legacy due-time normalization, one 15-minute run per trigger, 31-minute two-trigger progression, no batching; exact decimal TimeScale advancement including fractional scale, captured scale audit/change, `LastSimulatedAt` mirroring, replay/rollback/concurrency cursor and world-time safety; world IANA timezone defaults and schedule/quiet-hour projection from resulting world time, DST/validation/host independence; one deterministic rule evaluation per run/rule with stable outcome/reason precedence; unavailable ACT-01/POST-01/REPLY-01/REACT-01/FOLLOW-01 before random draws; no autonomous actions/effects/counter mutations; no zero/proxy/redistributed inputs; unchanged M06/M07 Player actions |
-| M09 AI | Success/failure/fallback, minimized context, no mechanics, safe diagnostics |
+| M09 AI | Fake/stub success/failure/one-retry/fallback, minimized context, no mechanics, no AI network/model requirement, safe diagnostics |
 | M10 Relationships | Dimensions/caps/asymmetry/history/labels |
 | M11 Messages | Conversation uniqueness, send/idempotency/cursor, eligibility/privacy |
 | M12 Memory | Creation/ranking/provenance/secrets/promises/no full history |

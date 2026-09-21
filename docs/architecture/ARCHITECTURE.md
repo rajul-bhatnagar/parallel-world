@@ -17,14 +17,14 @@ The modular monolith is the correct initial style because one process and one da
 
 ## 2. System context
 
-The Flutter client communicates only with the ASP.NET Core backend. The backend owns authentication, authorization, simulation, persistence, external AI integration, realtime delivery, and later push delivery. PostgreSQL is private to the backend.
+The Flutter client communicates only with the ASP.NET Core backend. The backend owns authentication, authorization, simulation, persistence, local AI integration, realtime delivery, and later push delivery. PostgreSQL is private to the backend; future external AI providers remain behind the same backend boundary if separately approved.
 
 ```mermaid
 flowchart LR
     P["Player"] --> M["Flutter mobile app"]
     M -->|"HTTPS / authorized SignalR"| B["ASP.NET Core modular monolith"]
     B --> DB[("Managed PostgreSQL")]
-    B --> AI["External AI provider"]
+    B -.-> AI["Optional local Ollama"]
     B -.-> PUSH["Push provider (later)"]
     B -.-> OBJ["Object storage (media only, later)"]
 ```
@@ -132,7 +132,7 @@ Owns deterministic actor/action selection, rule evaluation, world-time and catch
 
 ### `ParallelWorld.AI`
 
-Owns stable text-generation interfaces, minimal context construction, provider adapters, template fallback, output validation, moderation hooks, usage diagnostics, and retry classification. It cannot write scores or decide actions.
+Owns stable text-generation interfaces, minimal context construction, the local Ollama adapter, template fallback, output validation, application-level content-safety hooks, usage diagnostics, and retry classification. Ollama transport types remain inside this module. It cannot write scores or decide actions.
 
 ### `ParallelWorld.Api`
 
@@ -371,14 +371,14 @@ The SimulationAction has already decided actor, target, type, topic, stance, ton
 
 1. Build minimal context.
 2. Retrieve no more than the GAME_RULES.md memory limit with knowledge/secret checks.
-3. Select configured provider/model behind an interface.
-4. Apply timeout, token, and budget limits.
+3. Select configured local Ollama/model behind an interface; disabled or unavailable configuration proceeds to fallback.
+4. Apply the configurable timeout (10-second default), output/resource budgets, and at most one transient connection/timeout retry.
 5. Generate wording.
 6. Validate length, action consistency, actor/target, secret disclosure, and prohibited claims.
 7. Detect near-duplicate output where relevant.
-8. Apply configured moderation when appropriate.
+8. Apply structural/application content validation; M09 has no mandatory paid moderation dependency.
 9. Persist provider-neutral request/result status, latency, token usage, rule/action IDs, and safe diagnostics—not full sensitive prompts.
-10. Use template fallback on provider, validation, moderation, or budget failure.
+10. Use deterministic template fallback on provider, validation, content-safety, or budget failure; never route automatically to a paid provider.
 11. Attach wording to the decided action without mutating mechanics.
 
 ## 17. Private messaging lifecycle
@@ -561,7 +561,7 @@ Fixed-seed reproducibility, stable candidate ordering, duplicate interval/action
 
 ## 30. Configuration and secrets
 
-Environment-specific configuration covers PostgreSQL connection, token issuer/audience/signing/expiry, AI provider/model/timeout/token and budget limits, Serilog levels/sinks, CORS, rate limits, SignalR limits, FCM later, object storage later, simulation enablement, and worker polling/lease settings.
+Environment-specific configuration covers PostgreSQL connection, token issuer/audience/signing/expiry, and M09's server-side Ollama `Enabled`, `BaseUrl`, `Model`, `Timeout`, `MaxOutputLength`, and `PromptTemplateVersion` settings plus resource budgets. It also covers Serilog levels/sinks, CORS, rate limits, SignalR limits, FCM later, object storage later, simulation enablement, and worker polling/lease settings. ADR-024 prefers configurable `qwen3:4b`, a local `http://localhost:11434` endpoint, and a 10-second timeout without making Ollama availability a startup requirement.
 
 Non-secret defaults may live in committed configuration. Secrets are injected at runtime. Flutter receives only public API base URL/build environment and public platform configuration. Startup validates required configuration and fails safely; diagnostics name missing keys without printing values.
 
@@ -572,7 +572,7 @@ flowchart TD
     STORE["Mobile app distribution"] --> APP["Flutter app"]
     APP -->|"HTTPS / WSS"| API["One hosted ASP.NET Core deployment"]
     API --> DB[("Managed PostgreSQL with backups")]
-    API --> AIP["Configured AI provider"]
+    API -.-> AIP["Optional local Ollama"]
     API -.-> FCM["FCM (later)"]
     API -.-> OBJ["Object storage (media later)"]
     CI["GitHub Actions"] -->|"build, test, controlled deploy"| API
@@ -622,7 +622,6 @@ Growth alone does not justify microservices.
 
 1. Exact patch pins within the accepted .NET 10 LTS and Flutter 3.47/Dart 3.13 baseline (M01 responsibility).
 2. Freezed usage scope versus handwritten immutable models.
-3. Initial external AI provider/model and provider-selection policy.
 4. Initial hosting provider and managed PostgreSQL vendor.
 5. Choice of EF naming-convention package versus explicit mappings; PostgreSQL `snake_case` itself is accepted.
 6. First milestone that introduces SignalR versus API refresh/polling.

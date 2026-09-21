@@ -258,7 +258,7 @@ flowchart LR
 | M06 | M05 | Chronological feed ordering accepted by ADR-015 |
 | M07 | M06 | None |
 | M08 | M05-M07 | None |
-| M09 | M08 persisted decisions | AI provider choice |
+| M09 | M08 persisted decisions; ADR-024 | None |
 | M10 | M08; M09 for final wording only | None |
 | M11 | M03-M05, M08-M10 | Delayed timing remains deferred |
 | M12 | M10-M11 and event provenance | None |
@@ -515,22 +515,22 @@ Every listed schema change includes an EF migration, clean/previous-schema Postg
 
 - **Goal:** Add provider wording to already-decided actions without changing mechanics.
 - **User-visible result:** Character text is more natural; failures still show deterministic fallback.
-- **Dependencies:** M08 persisted decisions; approved provider/config choice.
-- **Backend scope:** Provider-neutral interface/adapter, minimized context, request/result metadata, timeouts/budgets/retry classification, output validation/duplicate detection/moderation hook, fallback.
+- **Dependencies:** M08 persisted decisions; ADR-024 local-first provider/configuration contract.
+- **Backend scope:** Provider-neutral interface, one local Ollama adapter, minimized structured context, request/result metadata, configurable 10-second default timeout, one transient retry, output/resource budgets, output validation/duplicate detection, application-level content-safety hook, and deterministic fallback.
 - **Database scope:** Generation request/result/work metadata without full sensitive prompts/raw responses; idempotency and migration.
 - **Flutter scope:** Display persisted wording/fallback normally; no provider call/key or mechanical assumption.
-- **Infrastructure scope:** Runtime secret injection and staging budget; fake provider by default locally/CI.
+- **Infrastructure scope:** Optional server-side Ollama with configurable preferred `qwen3:4b`; no paid API or automatic cloud fallback; deterministic fake provider and local HTTP stub for automated tests/CI.
 - **Seed data:** Deterministic valid/invalid/timeout/rate/fallback fixtures.
-- **Test scope:** Success, failure, timeout, invalid/empty/excessive/duplicate, hostile prompt as data, context access, no mechanical mutation, sanitized logs.
+- **Test scope:** Fake/stub success, disabled/unavailable provider, transient retry, timeout/cancellation, invalid/empty/excessive/duplicate output, hostile prompt as data, context access, deterministic fallback, no mechanical mutation, sanitized logs, and no external network/model requirement.
 - **Documentation updates:** Environment variable names/provider setup; source docs only for accepted decisions.
-- **Explicit exclusions:** AI-selected actions/targets/scores/memories, full chat history, mobile provider access, real AI in automated tests.
-- **Acceptance criteria:** Mechanical records are identical with fake success/failure; fallback completes safely; secrets/private context do not leak.
+- **Explicit exclusions:** AI-selected actions/targets/scores/memories, full chat history, mobile provider access, real AI in automated tests, mandatory Ollama/model installation, multiple/hosted-provider orchestration, paid API/moderation dependencies, and automatic cloud fallback.
+- **Acceptance criteria:** Mechanical records are identical with fake success/failure; Ollama absence never blocks startup/gameplay; fallback completes safely; tests require no AI network/model; secrets/private context do not leak; no paid provider is called.
 - **Required verification:** Unit/stub integration/security/architecture tests and budget/fallback manual check.
-- **Manual checks:** Staging wording under strict budget, forced timeout/invalid output, inspect logs/context metadata.
+- **Manual checks:** Optional local Ollama wording with fictional data and strict resource limits; disabled/unavailable provider, forced timeout/invalid output, deterministic fallback, and sanitized logs/context metadata.
 - **Review focus:** Mechanical capability boundary, privacy, provider secrets, retries/cost.
 - **Suggested milestone commit:** `feat(ai): generate validated wording for decided actions`.
 - **Exit criteria:** AI affects wording only and provider failure cannot break mechanics.
-- **Main risks:** Cost growth, prompt injection, secret leakage, repetitive text.
+- **Main risks:** Local resource exhaustion, prompt injection, secret leakage, repetitive text, and future provider cost if separately approved.
 - **Rollback:** Disable provider/use fallback; retain committed mechanics and safe diagnostics.
 
 ## 23. M10 Relationship engine
@@ -799,7 +799,6 @@ Probability and impact are initial qualitative ratings and must be reviewed at t
 Do not silently settle these before the affected milestone:
 
 1. Hosting provider, managed PostgreSQL vendor, and production topology details.
-3. Initial AI provider/model, moderation, budget, and provider-selection policy.
 4. Production secret-management provider and hosting-specific signing-key custody/rotation operations for M18; ADR-013 resolves the M03 token/session contract.
 5. Registration/recovery method and email verification for Version 1.
 6. Exact CI runner operating systems beyond the accepted GitHub Actions M01 checks.
@@ -823,7 +822,8 @@ Do not silently settle these before the affected milestone:
 3. **Mandatory realtime:** M16 requires persisted in-app notifications and HTTP synchronization; SignalR is conditional and push is deferred.
 4. **Checklist applicability:** every milestone now records Passed, Failed, Unavailable, or Not applicable with reason and does not require nonexistent migrations/projects/tools.
 5. **M15 trend updates:** M15 uses only released seeded topics unless M14 is separately activated.
-6. **Offline local queue wording in the planning brief:** the risk mitigation proposes a local queue broadly, while approved Flutter/product/API documents allow drafts and retry of already-submitted indeterminate operations only. This plan preserves the empty allowlist for new offline initiation. `PRODUCT.md`, `ARCHITECTURE.md`, `API_CONVENTIONS.md`, and `FLUTTER_GUIDELINES.md` would require coordinated correction before expansion.
+6. **M09 AI provider:** ADR-024 selects local Ollama with configurable preferred `qwen3:4b`, zero paid-API dependency, application validation, deterministic fallback, bounded retry/timeout, and fake/stub-only automated tests; cloud providers remain deferred.
+7. **Offline local queue wording in the planning brief:** the risk mitigation proposes a local queue broadly, while approved Flutter/product/API documents allow drafts and retry of already-submitted indeterminate operations only. This plan preserves the empty allowlist for new offline initiation. `PRODUCT.md`, `ARCHITECTURE.md`, `API_CONVENTIONS.md`, and `FLUTTER_GUIDELINES.md` would require coordinated correction before expansion.
 
 ### Final consistency checklist
 

@@ -1,10 +1,14 @@
+using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using ParallelWorld.Api.Endpoints;
 using ParallelWorld.Api.Errors;
 using ParallelWorld.Api.Health;
 using ParallelWorld.Api.Observability;
+using ParallelWorld.Application.Simulation;
 using ParallelWorld.Infrastructure;
+using ParallelWorld.Simulation;
 using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -21,6 +25,28 @@ builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddProblemDetails(ProblemDetailsConfiguration.Configure);
 builder.Services.AddOpenApi();
 builder.Services.AddInfrastructure(builder.Configuration);
+builder.Services.AddSingleton<IDeterministicRandomProvider, DeterministicRandomProvider>();
+builder.Services.AddSingleton<IWorldTimeProjector, WorldTimeProjector>();
+builder.Services.AddSingleton<IDeterministicTemplateGenerator, DeterministicTemplateGenerator>();
+builder.Services.AddSingleton<ISimulationRule, ActSimulationRule>();
+builder.Services.AddSingleton<ISimulationRule, PostSimulationRule>();
+builder.Services.AddSingleton<ISimulationRule, ReplySimulationRule>();
+builder.Services.AddSingleton<ISimulationRule, ReactSimulationRule>();
+builder.Services.AddSingleton<ISimulationRule, FollowSimulationRule>();
+builder.Services.AddScoped<ISimulationService, SimulationService>();
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy("development-simulation", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            EndpointResults.GetUserId(context.User)?.ToString("N") ?? "anonymous",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 5,
+                QueueLimit = 0,
+                Window = TimeSpan.FromMinutes(1),
+            }));
+});
 builder.Services.AddHealthChecks()
     .AddCheck("self", () => HealthCheckResult.Healthy(), tags: ["live"])
     .AddCheck<PostgreSqlHealthCheck>(PostgreSqlHealthCheck.Name, tags: ["ready"]);
@@ -36,11 +62,13 @@ app.UseSerilogRequestLogging(options =>
 app.UseExceptionHandler();
 app.UseStatusCodePages();
 app.UseAuthentication();
+app.UseRateLimiter();
 app.UseAuthorization();
 
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
+    app.MapDevelopmentSimulationEndpoints();
 }
 
 app.MapHealthChecks("/health/live", new HealthCheckOptions

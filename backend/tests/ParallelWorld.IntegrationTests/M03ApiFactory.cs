@@ -21,6 +21,7 @@ internal sealed partial class M03ApiFactory : ApiFactory
     private readonly string _testConnectionString;
     private readonly TimeProvider? _timeProvider;
     private readonly ILogEventSink? _logSink;
+    private readonly string _environmentName;
     private bool _databaseCreated;
 
     private M03ApiFactory(
@@ -28,13 +29,15 @@ internal sealed partial class M03ApiFactory : ApiFactory
         string testConnectionString,
         string databaseName,
         TimeProvider? timeProvider,
-        ILogEventSink? logSink)
+        ILogEventSink? logSink,
+        string environmentName)
     {
         _administrativeConnectionString = administrativeConnectionString;
         _testConnectionString = testConnectionString;
         DatabaseName = databaseName;
         _timeProvider = timeProvider;
         _logSink = logSink;
+        _environmentName = environmentName;
     }
 
     public string DatabaseName { get; }
@@ -59,7 +62,8 @@ internal sealed partial class M03ApiFactory : ApiFactory
     public static async Task<M03ApiFactory> CreateAsync(
         string baseConnectionString,
         TimeProvider? timeProvider = null,
-        ILogEventSink? logSink = null)
+        ILogEventSink? logSink = null,
+        string environmentName = "Testing")
     {
         var configuredBuilder = new NpgsqlConnectionStringBuilder(baseConnectionString);
         var configuredDatabaseName = configuredBuilder.Database;
@@ -86,7 +90,8 @@ internal sealed partial class M03ApiFactory : ApiFactory
             testBuilder.ConnectionString,
             databaseName,
             timeProvider,
-            logSink);
+            logSink,
+            environmentName);
 
         await factory.CreateDatabaseAsync();
         try
@@ -121,7 +126,7 @@ internal sealed partial class M03ApiFactory : ApiFactory
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
-        builder.UseEnvironment("Testing");
+        builder.UseEnvironment(_environmentName);
         builder.ConfigureAppConfiguration((_, configuration) =>
             configuration.AddInMemoryCollection(
                 TestAuthenticationConfiguration.Create(_testConnectionString)));

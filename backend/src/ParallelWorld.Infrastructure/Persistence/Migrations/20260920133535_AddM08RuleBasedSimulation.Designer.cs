@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using ParallelWorld.Infrastructure.Persistence;
@@ -11,9 +12,11 @@ using ParallelWorld.Infrastructure.Persistence;
 namespace ParallelWorld.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(ParallelWorldDbContext))]
-    partial class ParallelWorldDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260920133535_AddM08RuleBasedSimulation")]
+    partial class AddM08RuleBasedSimulation
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

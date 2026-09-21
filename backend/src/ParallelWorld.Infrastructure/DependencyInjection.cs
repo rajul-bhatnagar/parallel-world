@@ -6,12 +6,14 @@ using Microsoft.Extensions.Options;
 using ParallelWorld.Application.Abstractions.Persistence;
 using ParallelWorld.Application.Authentication;
 using ParallelWorld.Application.Characters;
+using ParallelWorld.Application.Simulation;
 using ParallelWorld.Application.Social;
 using ParallelWorld.Application.Worlds;
 using ParallelWorld.Infrastructure.Authentication;
 using ParallelWorld.Infrastructure.Characters;
 using ParallelWorld.Infrastructure.Configuration;
 using ParallelWorld.Infrastructure.Persistence;
+using ParallelWorld.Infrastructure.Simulation;
 using ParallelWorld.Infrastructure.Social;
 using ParallelWorld.Infrastructure.Worlds;
 
@@ -82,6 +84,7 @@ public static class DependencyInjection
         services.AddSingleton<IReplyCursorCodec, ReplyCursorCodec>();
         services.AddScoped<ISocialRepository, SocialRepository>();
         services.AddScoped<ISocialFeedService, SocialFeedService>();
+        services.AddScoped<ISimulationRepository, SimulationRepository>();
         services.AddSingleton<IConfigureOptions<JwtBearerOptions>, JwtBearerOptionsConfiguration>();
         services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer();
         services.AddAuthorization();

@@ -44,4 +44,34 @@ public sealed class GameWorld
     public DateTimeOffset UpdatedAt { get; private set; }
 
     public long Version { get; private set; }
+
+    public void AdvanceSimulation(
+        DateTimeOffset intervalEndUtc,
+        long worldTimeDeltaTicks,
+        DateTimeOffset observedAtUtc)
+    {
+        if (intervalEndUtc.Offset != TimeSpan.Zero)
+        {
+            throw new ArgumentException("The simulation interval end must be UTC.", nameof(intervalEndUtc));
+        }
+
+        if (observedAtUtc.Offset != TimeSpan.Zero)
+        {
+            throw new ArgumentException("The observation time must be UTC.", nameof(observedAtUtc));
+        }
+
+        if (worldTimeDeltaTicks <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(worldTimeDeltaTicks));
+        }
+
+        if (intervalEndUtc <= LastSimulatedAt)
+        {
+            throw new InvalidOperationException("Simulation time must advance monotonically.");
+        }
+
+        CurrentWorldTime = CurrentWorldTime.AddTicks(worldTimeDeltaTicks);
+        LastSimulatedAt = intervalEndUtc;
+        UpdatedAt = observedAtUtc;
+    }
 }

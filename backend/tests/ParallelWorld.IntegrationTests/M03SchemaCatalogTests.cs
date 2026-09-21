@@ -6,15 +6,29 @@ using ParallelWorld.Infrastructure.Persistence;
 namespace ParallelWorld.IntegrationTests;
 
 [Trait("Category", "PostgreSql")]
-public sealed class M07SchemaCatalogTests
+public sealed class M08SchemaCatalogTests
 {
     [Fact]
-    public async Task MigratedSchema_HasExactM07TablesConstraintsAndIndexes()
+    public async Task MigratedSchema_HasExactM08TablesConstraintsAndIndexes()
     {
         await using var factory = await CreateFactoryAsync();
         TestDatabaseGuard.EnsureSafe(factory.DatabaseName);
         await using var scope = factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<ParallelWorldDbContext>();
+
+        var migrations = await ReadNamesAsync(db, """
+            SELECT "MigrationId"
+            FROM "__EFMigrationsHistory"
+            ORDER BY "MigrationId"
+            """);
+        Assert.Equal(new[]
+        {
+            "20260831162301_InitialM03",
+            "20260905120855_AddM05CharacterCatalogue",
+            "20260912160326_AddM06SocialFeed",
+            "20260916132321_AddM07SocialActions",
+            "20260920133535_AddM08RuleBasedSimulation",
+        }, migrations);
 
         var tables = await ReadNamesAsync(db, """
             SELECT table_name
@@ -42,6 +56,10 @@ public sealed class M07SchemaCatalogTests
             "post_reactions",
             "posts",
             "refresh_tokens",
+            "simulation_actions",
+            "simulation_rule_evaluations",
+            "simulation_run_checkpoints",
+            "simulation_runs",
             "users",
             "world_settings",
             "world_simulation_states",
@@ -78,6 +96,9 @@ public sealed class M07SchemaCatalogTests
         "ak_gameplay_events_world_id_id",
         "ak_player_profiles_world_id_id",
         "ak_posts_world_id_id",
+        "ak_simulation_actions_world_id_id",
+        "ak_simulation_rule_evaluations_world_id_id",
+        "ak_simulation_runs_world_id_id",
         "ck_actors_detail_shape",
         "ck_character_interests_strength",
         "ck_character_opinions_confidence",
@@ -116,6 +137,19 @@ public sealed class M07SchemaCatalogTests
         "ck_posts_not_self_parent",
         "ck_posts_reply_count",
         "ck_refresh_tokens_expiry",
+        "ck_simulation_actions_distinct_actors",
+        "ck_simulation_actions_ordinal",
+        "ck_simulation_actions_status",
+        "ck_simulation_rule_evaluations_outcome",
+        "ck_simulation_run_checkpoints_bucket",
+        "ck_simulation_run_checkpoints_ordinal",
+        "ck_simulation_run_checkpoints_status",
+        "ck_simulation_runs_active_interval",
+        "ck_simulation_runs_effective_time_scale",
+        "ck_simulation_runs_interval",
+        "ck_simulation_runs_processed_through",
+        "ck_simulation_runs_status",
+        "ck_simulation_runs_type",
         "ck_world_settings_action_limit",
         "ck_world_settings_ai_budget",
         "ck_world_settings_time_scale",
@@ -153,6 +187,13 @@ public sealed class M07SchemaCatalogTests
         "fk_refresh_tokens_installations_user_device",
         "fk_refresh_tokens_replacement",
         "fk_refresh_tokens_users_user_id",
+        "fk_simulation_actions_actors_world_actor",
+        "fk_simulation_actions_actors_world_target",
+        "fk_simulation_actions_posts_world_target",
+        "fk_simulation_actions_runs_world_run",
+        "fk_simulation_rule_evaluations_runs_world_run",
+        "fk_simulation_run_checkpoints_runs_world_run",
+        "fk_simulation_runs_game_worlds_world_id",
         "fk_world_settings_game_worlds_world_id",
         "fk_world_simulation_states_game_worlds_world_id",
         "pk_actors",
@@ -171,6 +212,10 @@ public sealed class M07SchemaCatalogTests
         "pk_post_reactions",
         "pk_posts",
         "pk_refresh_tokens",
+        "pk_simulation_actions",
+        "pk_simulation_rule_evaluations",
+        "pk_simulation_run_checkpoints",
+        "pk_simulation_runs",
         "pk_users",
         "pk_world_settings",
         "pk_world_simulation_states",
@@ -185,6 +230,9 @@ public sealed class M07SchemaCatalogTests
         "ak_gameplay_events_world_id_id",
         "ak_player_profiles_world_id_id",
         "ak_posts_world_id_id",
+        "ak_simulation_actions_world_id_id",
+        "ak_simulation_rule_evaluations_world_id_id",
+        "ak_simulation_runs_world_id_id",
         "ix_character_schedules_world_character_day_start",
         "ix_characters_world_status_id",
         "ix_device_installations_user_last_seen",
@@ -211,6 +259,14 @@ public sealed class M07SchemaCatalogTests
         "ix_refresh_tokens_family_expiry",
         "ix_refresh_tokens_user_device_expiry",
         "ix_refresh_tokens_user_family_created_state",
+        "ix_simulation_actions_world_actor",
+        "ix_simulation_actions_world_status_scheduled_id",
+        "ix_simulation_actions_world_target_actor",
+        "ix_simulation_actions_world_target_post",
+        "ix_simulation_rule_evaluations_world_run_rule",
+        "ix_simulation_run_checkpoints_world_run_bucket",
+        "ix_simulation_runs_world_completed",
+        "ix_simulation_runs_world_status_interval",
         "pk_actors",
         "pk_character_interests",
         "pk_character_opinions",
@@ -227,6 +283,10 @@ public sealed class M07SchemaCatalogTests
         "pk_post_reactions",
         "pk_posts",
         "pk_refresh_tokens",
+        "pk_simulation_actions",
+        "pk_simulation_rule_evaluations",
+        "pk_simulation_run_checkpoints",
+        "pk_simulation_runs",
         "pk_users",
         "pk_world_settings",
         "pk_world_simulation_states",
@@ -250,6 +310,14 @@ public sealed class M07SchemaCatalogTests
         "ux_post_reactions_world_post_actor_type",
         "ux_refresh_tokens_replaced_by_token_id",
         "ux_refresh_tokens_token_hash",
+        "ux_simulation_actions_world_idempotency_key",
+        "ux_simulation_actions_world_run_ordinal",
+        "ux_simulation_rule_evaluations_run_rule",
+        "ux_simulation_run_checkpoints_world_idempotency_key",
+        "ux_simulation_run_checkpoints_world_run_bucket",
+        "ux_simulation_run_checkpoints_world_run_ordinal",
+        "ux_simulation_runs_world_idempotency_key",
+        "ux_simulation_runs_world_rule_interval",
         "ux_users_normalized_email",
         "ux_world_settings_world_id",
         "ux_world_simulation_states_world_id",

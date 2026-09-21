@@ -54,6 +54,10 @@ public sealed class WorldSettingsConfiguration : IEntityTypeConfiguration<WorldS
         builder.Property(entity => entity.Id).HasColumnName("id");
         builder.Property(entity => entity.WorldId).HasColumnName("world_id");
         builder.Property(entity => entity.TimeScale).HasColumnName("time_scale").HasPrecision(8, 4);
+        builder.Property(entity => entity.DisplayTimeZoneId)
+            .HasColumnName("display_time_zone_id")
+            .HasMaxLength(100)
+            .HasDefaultValue(WorldSettings.UtcTimeZoneId);
         builder.Property(entity => entity.ActionLimit).HasColumnName("action_limit");
         builder.Property(entity => entity.AiBudgetTokens).HasColumnName("ai_budget_tokens");
         builder.Property(entity => entity.ContentSettingsJson).HasColumnName("content_settings").HasColumnType("jsonb");

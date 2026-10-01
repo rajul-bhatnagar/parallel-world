@@ -6,10 +6,10 @@ using ParallelWorld.Infrastructure.Persistence;
 namespace ParallelWorld.IntegrationTests;
 
 [Trait("Category", "PostgreSql")]
-public sealed class M08SchemaCatalogTests
+public sealed class M09SchemaCatalogTests
 {
     [Fact]
-    public async Task MigratedSchema_HasExactM08TablesConstraintsAndIndexes()
+    public async Task MigratedSchema_HasExactM09TablesConstraintsAndIndexes()
     {
         await using var factory = await CreateFactoryAsync();
         TestDatabaseGuard.EnsureSafe(factory.DatabaseName);
@@ -28,6 +28,7 @@ public sealed class M08SchemaCatalogTests
             "20260912160326_AddM06SocialFeed",
             "20260916132321_AddM07SocialActions",
             "20260920133535_AddM08RuleBasedSimulation",
+            "20260921173919_AddM09AiTextGeneration",
         }, migrations);
 
         var tables = await ReadNamesAsync(db, """
@@ -41,6 +42,7 @@ public sealed class M08SchemaCatalogTests
         Assert.Equal(new[]
         {
             "actors",
+            "ai_generation_requests",
             "character_interests",
             "character_opinions",
             "character_schedules",
@@ -100,6 +102,11 @@ public sealed class M08SchemaCatalogTests
         "ak_simulation_rule_evaluations_world_id_id",
         "ak_simulation_runs_world_id_id",
         "ck_actors_detail_shape",
+        "ck_ai_generation_requests_attempt_count",
+        "ck_ai_generation_requests_latency",
+        "ck_ai_generation_requests_status",
+        "ck_ai_generation_requests_time",
+        "ck_ai_generation_requests_token_counts",
         "ck_character_interests_strength",
         "ck_character_opinions_confidence",
         "ck_character_opinions_intensity",
@@ -157,6 +164,7 @@ public sealed class M08SchemaCatalogTests
         "fk_actors_characters_world_character",
         "fk_actors_game_worlds_world_id",
         "fk_actors_player_profiles_world_profile",
+        "fk_ai_generation_requests_actions_world_action",
         "fk_character_interests_characters_world_character",
         "fk_character_opinions_characters_world_character",
         "fk_character_schedules_characters_world_character",
@@ -197,6 +205,7 @@ public sealed class M08SchemaCatalogTests
         "fk_world_settings_game_worlds_world_id",
         "fk_world_simulation_states_game_worlds_world_id",
         "pk_actors",
+        "pk_ai_generation_requests",
         "pk_character_interests",
         "pk_character_opinions",
         "pk_character_schedules",
@@ -233,6 +242,7 @@ public sealed class M08SchemaCatalogTests
         "ak_simulation_actions_world_id_id",
         "ak_simulation_rule_evaluations_world_id_id",
         "ak_simulation_runs_world_id_id",
+        "ix_ai_generation_requests_world_status_completed",
         "ix_character_schedules_world_character_day_start",
         "ix_characters_world_status_id",
         "ix_device_installations_user_last_seen",
@@ -268,6 +278,7 @@ public sealed class M08SchemaCatalogTests
         "ix_simulation_runs_world_completed",
         "ix_simulation_runs_world_status_interval",
         "pk_actors",
+        "pk_ai_generation_requests",
         "pk_character_interests",
         "pk_character_opinions",
         "pk_character_schedules",
@@ -295,6 +306,8 @@ public sealed class M08SchemaCatalogTests
         "ux_actors_player_profile_id",
         "ux_actors_world_character",
         "ux_actors_world_player_profile",
+        "ux_ai_generation_requests_world_action_input",
+        "ux_ai_generation_requests_world_idempotency_key",
         "ux_character_interests_world_character_topic",
         "ux_character_opinions_world_character_topic",
         "ux_character_traits_world_character",

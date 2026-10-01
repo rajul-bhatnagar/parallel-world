@@ -88,6 +88,30 @@ public sealed class ProjectReferenceTests
         Assert.True(File.Exists(Path.Combine(applicationDirectory, "Worlds", "WorldService.cs")));
     }
 
+    [Fact]
+    public void OllamaTransport_DoesNotLeakIntoDomainApplicationOrSimulation()
+    {
+        var sourceRoot = Path.Combine(FindBackendDirectory().FullName, "src");
+        var protectedProjects = new[]
+        {
+            "ParallelWorld.Domain",
+            "ParallelWorld.Application",
+            "ParallelWorld.Simulation",
+        };
+
+        foreach (var project in protectedProjects)
+        {
+            var source = string.Join(
+                Environment.NewLine,
+                Directory.EnumerateFiles(
+                        Path.Combine(sourceRoot, project),
+                        "*.cs",
+                        SearchOption.AllDirectories)
+                    .Select(File.ReadAllText));
+            Assert.DoesNotContain("Ollama", source, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
     private static DirectoryInfo FindBackendDirectory()
     {
         var current = new DirectoryInfo(AppContext.BaseDirectory);

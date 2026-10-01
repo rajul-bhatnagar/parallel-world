@@ -59,6 +59,8 @@ public sealed class ParallelWorldDbContext(DbContextOptions<ParallelWorldDbConte
 
     public DbSet<SimulationAction> SimulationActions => Set<SimulationAction>();
 
+    public DbSet<AiGenerationRequest> AiGenerationRequests => Set<AiGenerationRequest>();
+
     public async Task<IApplicationTransaction> BeginTransactionAsync(
         ApplicationIsolationLevel isolationLevel,
         CancellationToken cancellationToken = default)

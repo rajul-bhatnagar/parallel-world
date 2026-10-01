@@ -99,6 +99,21 @@ M01 adds buildable backend and Android application shells. M02 adds the producti
    flutter run --dart-define=API_BASE_URL=http://10.0.2.2:8080 --dart-define=APP_ENVIRONMENT=local
    ```
 
+8. AI wording is optional and disabled by default. To use a locally installed Ollama server, make
+   the configured model available yourself, start Ollama, and enable the server-side adapter:
+
+   ```powershell
+   $env:AI__Generation__Enabled = 'true'
+   $env:AI__Generation__BaseUrl = 'http://localhost:11434'
+   $env:AI__Generation__Model = 'qwen3:4b'
+   ```
+
+   `AI__Generation__Timeout`, `AI__Generation__MaxOutputLength`, and
+   `AI__Generation__PromptTemplateVersion` may also be overridden server-side. Clients cannot
+   select these values. If Ollama is disabled, unavailable, timed out, missing the model, or returns
+   invalid text, the backend uses deterministic application-owned wording instead. Ollama is never
+   contacted by automated tests, and no paid provider or API key is required.
+
 The API exposes M03 guest session endpoints under `/api/v1/auth` and owned-world endpoints under `/api/v1/worlds`, alongside `/health/live`, `/health/ready`, and Development-only `/openapi/v1.json`. It requires the PostgreSQL connection and current RSA signing key configuration at startup. Store connection strings and private keys in local environment variables or a deployment secret manager; never commit them.
 
 For local PostgreSQL and the containerized API:

@@ -145,6 +145,8 @@ For M08, character-local display time means the projection of the interval's det
 
 Traits are integers 0-100. MVP traits are fixed after character creation.
 
+Each Character also has a persisted mechanics-only `Reputation` from 0 through 100, defaulting to 50 for existing and new Characters. It is independent from PlayerProfile Reputation. M10 introduces no Character Reputation progression: follows, reactions, replies, relationship events, counts, Influence, Popularity, and AI wording do not change it. A future update rule requires a separate accepted gameplay decision.
+
 | Trait | Influences |
 |---|---|
 | Humour | Humorous tone eligibility, playful replies, joke-topic weighting |
@@ -256,7 +258,7 @@ AI receives actor voice attributes, decided topic, stance, tone, intent, maximum
 - **Persistence:** Notice decision, reply decision, stance, tone, impact, target post, seed, text intent.
 - **Idempotency:** Actor/post/intent key.
 - **Example:** A direct mention guarantees notice, but a Tired actor may still decline a non-urgent reply when the reply roll fails.
-- **Status:** MVP. M07 Player replies are active outside this autonomous rule. Autonomous Character evaluation remains deterministically unavailable/ineligible during M08 because Familiarity and RelationshipRelevance are not implemented until M10. Missing relationship state creates no autonomous reply action, Post, event, or reply-count mutation and consumes no rule-specific random roll. M10 activates autonomous evaluation with real relationship state; zero/default/proxy substitutes and alternate pre-M10 formulas are prohibited.
+- **Status:** MVP. M07 Player replies are active outside this autonomous rule. M10 supplies Familiarity and directional RelationshipRelevance, removing `relationship_state_unavailable`. Autonomous Character evaluation remains unavailable with `mood_activation_unavailable`, the first remaining unresolved mandatory input in formula order; GoalRelevance also remains unresolved under ADR-020. Missing terms are not zeroed, dropped, proxied, or renormalized, and no rule-specific roll or autonomous effect occurs while unavailable.
 
 ### Rule REACT-01: react, repost, quote, bookmark, or ignore
 
@@ -271,9 +273,11 @@ AI receives actor voice attributes, decided topic, stance, tone, intent, maximum
 - **Persistence:** Reaction/action or ignored-decision diagnostic with components.
 - **Idempotency:** Actor/post/action-type unique key.
 - **Example:** High interest and agreement yield score 78; roll 22 creates one Like. Retry returns it.
-- **Status:** Like/Ignore MVP; repost, quote, bookmark deferred. M07 Player likes/unlikes are active outside this autonomous rule. Autonomous Character evaluation remains deterministically unavailable/ineligible during M08 because Affection is not implemented until M10. Missing relationship state creates no autonomous reaction action, PostReaction, event, or like-count mutation and consumes no rule-specific random roll. M10 activates autonomous evaluation with real relationship state; zero/default/proxy substitutes and alternate pre-M10 formulas are prohibited.
+- **Status:** Like/Ignore MVP; repost, quote, bookmark deferred. M07 Player likes/unlikes are active outside this autonomous rule. M10 supplies Affection and Character Reputation supplies AuthorReputation, removing those availability gaps. Autonomous Character evaluation remains unavailable with `positive_mood_unavailable`. Missing-input precedence is relationship state, AuthorReputation, PositiveMood, GoalRelevance, then repetition semantics; after PositiveMood resolves, use `goal_relevance_unavailable`, and after the earlier inputs resolve use `repetition_semantics_unavailable`. Missing terms are not zeroed, proxied, dropped, or renormalized, and no rule-specific roll or autonomous effect occurs while unavailable.
 
 ### Rule FOLLOW-01: follow or unfollow
+
+`InterestOverlap` is the Jaccard similarity of the two Actors' sets of canonical persisted interest/topic identifiers: `round(100 * |A intersect B| / |A union B|)`. Duplicate identifiers have no additional weight, ordering is irrelevant, and comparison never uses display strings. If either set is empty, including when both are empty, the result is 0. Identical non-empty sets produce 100. Arithmetic is deterministic decimal arithmetic and rounding is midpoint away from zero under the universal score-rounding rule.
 
 - **Purpose:** Maintain world-local follow edges from sustained relevance.
 - **Inputs:** Familiarity, interest overlap, reputation, trust, affection, rivalry, qualified recent events, current edge.
@@ -286,7 +290,7 @@ AI receives actor voice attributes, decided topic, stance, tone, intent, maximum
 - **Persistence:** FollowChanged event with score, reasons, actor, target, and prior edge.
 - **Idempotency:** Actor/target/desired-state key.
 - **Example:** Familiarity 45 and overlap 70 qualify; score 63 and roll 40 creates the edge.
-- **Status:** MVP. M07 Player follow/unfollow is active. Autonomous Character evaluation remains deterministically unavailable/ineligible during M08 because Familiarity, Trust, Affection, and Rivalry are not implemented until M10. Missing relationship state creates no autonomous follow action, edge, or event and does not use fallback randomness. M10 activates autonomous evaluation with real relationship state; no temporary, inferred, or proxy relationship inputs are permitted before then.
+- **Status:** MVP. M07 Player follow/unfollow is active. M10 supplies Familiarity, Trust, Affection, Rivalry, deterministic InterestOverlap, and Character Reputation. FOLLOW-01 is fully evaluable and uses the unchanged threshold, coefficients, deterministic roll, cooldowns, active-edge/history constraints, and replay contract. It transitions normally among Ineligible, Eligible, and Executed. Autonomous Character follows remain server-side and cannot be submitted through a client impersonation path.
 
 ## 9. Private messaging
 
@@ -324,18 +328,26 @@ AI receives actor voice attributes, decided topic, stance, tone, intent, maximum
 
 Relationships are directional. A-to-B and B-to-A are updated only by event rules that explicitly affect each direction.
 
+The directional state contains exactly nine dimensions: Familiarity, Trust, Respect, Affection, Comfort, Rivalry, Jealousy, Attraction, and Commitment. Every dimension is an integer from 0 through 100. There is no tenth hidden score.
+
 ### Initial values
 
 For newly introduced actors: Familiarity 10, Trust 50, Respect 50, Affection 20, Comfort 15, Commitment 0, Rivalry 0, Jealousy 0. Attraction is `clamp(10 + round(0.30*Compatibility) + SeededOffset[-5,5],0,40)`. Compatibility and preferences are structured inputs; if romance is disabled or incompatible, Attraction is 0.
 
 Fear is not an MVP relationship dimension because PRODUCT.md does not require it. Adding Fear later requires an accepted product/rules change, defined event impacts, and migration of existing relationships.
 
+`RelationshipRelevance` is a directional measure of how socially significant the target is to the source Actor, rather than a measure of positive affinity alone:
+
+`RelationshipRelevance = clamp(round(0.25*Familiarity + 0.15*Trust + 0.15*Respect + 0.15*Affection + 0.10*Comfort + 0.10*Rivalry + 0.05*Jealousy + 0.025*Attraction + 0.025*Commitment), 0, 100)`.
+
+The coefficients sum to 1.0. Rivalry and Jealousy intentionally increase relevance because conflict can make another Actor socially significant. Calculation uses exact deterministic decimal arithmetic, rounds midpoint away from zero, preserves source-to-target directionality, and applies the clamp only as a final defensive operation. AI and generated text are never inputs.
+
 ### Rule REL-01: apply a relationship event
 
 - **Purpose:** Apply auditable bounded directional deltas.
 - **Inputs:** Event type, actor/target, base matrix row, severity, personality, mood, relationship state, public/private context, repetition count.
 - **Preconditions:** Valid same-world actors; source event committed; event not previously applied.
-- **Decision:** `FinalDelta=round(BaseDelta * SeverityMultiplier * PersonalityMultiplier * MoodMultiplier * ContextMultiplier * RepetitionMultiplier)`. Multipliers are bounded: severity 0.5-2.0, personality 0.75-1.25, mood 0.85-1.15, context 0.75-1.25, repetition 0.5-1.25.
+- **Decision:** `FinalDelta=round(BaseDelta * SeverityMultiplier * PersonalityMultiplier * MoodMultiplier * ContextMultiplier * RepetitionMultiplier)`. M10 v1 defaults `SeverityMultiplier`, `PersonalityMultiplier`, `MoodMultiplier`, `ContextMultiplier`, and `RepetitionMultiplier` to exactly `1.0`. The only existing exact non-neutral mappings remain the dimension-specific public-negative context multiplier and repeated-positive multiplier stated below. The documented ranges reserve future rule versions but do not authorize selecting another value. Any additional non-neutral mapping requires a separate accepted decision defining its persisted source, exact mapping, range, rounding, and replay/versioning behavior.
 - **Randomness:** None after source event is decided.
 - **Limits:** Ordinary/severe per-event caps and ordinary daily cap; values clamp 0-100. Severe importance-90 events may use the severe cap and bypass daily ordinary cap once.
 - **Cooldown:** Source-action cooldowns; repeated argument cooldown.
@@ -372,7 +384,25 @@ Abbreviations: `F` Familiarity, `T` Trust, `R` Respect, `A` Affection, `At` Attr
 | Unfollow |  | -2 | -1 | -2 |  | -1 |  | +1 |  |
 | Re-follow | +2 | +1 |  | +1 |  | +1 |  | -1 |  |
 
-Public negative events multiply Respect loss and Rivalry gain by 1.25. Empathy reduces negative response to accidental harm; Sensitivity increases emotional dimensions. Repeated positive events of the same type after three in seven days use 0.5 repetition multiplier; repeated negative events use up to 1.25. No modifier can reverse a base delta's sign.
+For an authoritative public negative event, apply `ContextMultiplier = 1.25` only to Respect loss and Rivalry gain. After three authoritative positive events of the same type in the preceding seven game days, apply `RepetitionMultiplier = 0.5` to subsequent positive events of that type. All other M10 v1 context and repetition cases use `1.0`; the earlier “up to 1.25” repeated-negative behavior and the Empathy/Sensitivity adjustments remain inactive because their exact mappings are undefined. Personality, mood, and severity multipliers remain `1.0`. No modifier may be chosen randomly, inferred from wording, or reverse a base delta's sign. A future rule-version decision may activate another non-neutral mapping.
+
+### M10 v1 authoritative social-action mapping
+
+Relationship event classification uses committed gameplay facts only, never natural-language content:
+
+| Authoritative gameplay result | Relationship event |
+|---|---|
+| Successful initial Follow creation | no M10 v1 relationship event |
+| Successful Unfollow | canonical `Unfollow` |
+| Successful re-follow | canonical `Re-follow` |
+| Successful Like creation | no M10 v1 relationship event |
+| Like removal/unlike | no M10 v1 relationship event |
+| Successful generic Reply creation | no M10 v1 relationship event |
+| Reply authoritatively classified as Helpful | canonical `Helpful reply` |
+| Post creation alone | no relationship event |
+| M09 provider or fallback wording | no relationship event |
+
+An action invokes REL-01 only when an authoritative gameplay action/event maps to a canonical row with approved deterministic base deltas. Otherwise the social action may still succeed, but no relationship score changes and no fake zero-delta RelationshipEvent is created. `Unfollow` and `Re-follow` use their existing rows. `Helpful reply` applies only after an authoritative deterministic mechanic classifies the reply as Helpful; generic reply text, sentiment, M09 wording, and provider output cannot perform that classification. For an approved row, REL-01 identifies direction from authoritative actor/target state, loads or concurrency-safely creates the unique directional relationship, applies the row once, clamps each dimension independently to 0-100, and persists gameplay-event/rule/direction provenance. Reverse direction changes only through a separately approved directional effect.
 
 ### Derived friendship states
 

@@ -202,8 +202,8 @@ Architecture tests enforce project references and selected namespace/module rule
 
 - `User` is the account owner, whether guest or registered.
 - `GameWorld` is the ownership and isolation boundary, not a giant object graph loaded as one aggregate.
-- `Actor` is the shared participant identity. `PlayerProfile` represents the human-controlled actor; `Character` adds AI-controlled structured state.
-- Directional relationship feelings are one actor's values toward another. Shared romantic status/history is one pair-level record, not duplicated on both directions.
+- `Actor` is the shared participant identity. `PlayerProfile` represents the human-controlled actor; `Character` adds AI-controlled structured state including its independent persisted mechanics Reputation. Character and PlayerProfile Reputation are never substituted for one another.
+- Directional relationship feelings are exactly nine bounded values owned by one source Actor toward one target Actor. Rows are initialized lazily and concurrency-safely on first approved use; the reverse direction is independent. InterestOverlap and RelationshipRelevance are deterministic derived rule inputs, not hidden stored dimensions. Shared romantic status/history is one pair-level record, not duplicated on both directions.
 - `SimulationAction` is an auditable planned action with reason, seed, rule version, target, state, and idempotency key.
 - `Memory` is structured knowledge owned by a character with provenance and access rules.
 - `WorldEvent` is world-scoped shared context; `CharacterLifeEvent` belongs to one character.
@@ -419,7 +419,7 @@ Conversation history remains in Messaging; Memories stores structured meaningful
 
 ## 19. Relationship and dating lifecycle
 
-Interaction → immutable relationship event → bounded directional deltas → derived friendship label → optional romantic eligibility evaluation → one shared pair-level romantic transition → status-history event → eligible memories/notifications.
+Authoritative interaction → optional canonical relationship-event mapping with an approved matrix row → immutable relationship event → bounded directional deltas → derived friendship label → optional romantic eligibility evaluation → one shared pair-level romantic transition → status-history event → eligible memories/notifications. A valid social action without an approved relationship row stops before REL-01 and is not an error. Generated wording never selects or modifies any step.
 
 Relationships owns both directional value rows and the pair-level romantic status/history boundary. Applying an event, deltas, daily-cap ledger, and status transition occurs transactionally. A source-event/rule/direction uniqueness constraint prevents duplicate application. Derived friendship labels may be cached for reads but numerical values and history remain authoritative.
 

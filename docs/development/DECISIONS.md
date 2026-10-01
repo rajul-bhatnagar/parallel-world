@@ -465,6 +465,78 @@ M09 can implement and verify its full abstraction, persistence, validation, retr
 
 A separately approved cloud/freemium provider, dedicated moderation system, provider-routing policy, or production deployment topology is required and its privacy, secret, cost, retry, and fallback contracts are recorded.
 
+## ADR-025 — M10 deterministic relationship mechanics contract
+
+**Date:** 2026-10-01
+**Status:** Accepted; supplements ADR-017, ADR-019, and ADR-020; unresolved-blocker portions superseded by ADR-026
+
+**Context**
+
+M10 requires one exact directional dimension set, deterministic derived inputs for FOLLOW-01 and REPLY-01, reproducible REL-01 modifiers, and authoritative social-action mapping. Existing planning listed only seven dimensions in one implementation prompt, left `InterestOverlap` and `RelationshipRelevance` undefined, and described multiplier ranges without fully defining mappings. Inventing proxies or deriving mechanics from generated text would violate the rules-before-language boundary.
+
+**Decision**
+
+- M10 relationship state has exactly nine directional 0-100 integer dimensions: Familiarity, Trust, Respect, Affection, Comfort, Rivalry, Jealousy, Attraction, and Commitment. Source-to-target and target-to-source are independent. No tenth hidden score exists.
+- Existing defaults remain: Familiarity 10, Trust 50, Respect 50, Affection 20, Comfort 15, Commitment 0, Rivalry 0, and Jealousy 0. Attraction follows the existing deterministic compatibility/seed rule when its approved inputs are available and is 0 when romance is disabled or incompatible.
+- Directional rows are initialized lazily on the first approved need for that source-to-target pair. Unique world/source/target identity, distinct-actor checks, same-world composite foreign keys, and transactional conflict reload/retry make concurrent initialization deterministic without pre-creating an uncontrolled N-by-N matrix.
+- `InterestOverlap` is the midpoint-away-from-zero rounded 0-100 Jaccard similarity of sets of canonical persisted interest/topic identifiers. Duplicates and order do not matter. Either empty set yields 0; identical non-empty sets yield 100.
+- `RelationshipRelevance = clamp(round(0.25F + 0.15T + 0.15R + 0.15A + 0.10C + 0.10Ry + 0.05J + 0.025At + 0.025Cm),0,100)` using exact decimal arithmetic and midpoint-away-from-zero rounding. Rivalry and Jealousy increase relevance because relevance measures directional social significance, not positive affinity.
+- M10 v1 multipliers default to exactly 1.0. Existing exact exceptions remain: public-negative events use 1.25 for Respect loss and Rivalry gain, and repeated positive events after three of the same type in seven game days use 0.5. Undefined severity, personality, mood, repeated-negative, Empathy, and Sensitivity mappings remain neutral. Additional non-neutral behavior requires a separate accepted rule-version decision.
+- Gameplay facts alone classify relationship events. Initial Follow maps to `follow`, Unfollow to the existing `Unfollow` row, re-follow to `Re-follow`, Like creation to `like`, and Reply creation to `reply`. Unlike, Post creation alone, and M09 provider/fallback wording create no M10 v1 relationship event. Natural-language sentiment or wording never determines event type, direction, multiplier, delta, dimension, relevance, or eligibility.
+- The existing matrix lacks exact base rows for initial `follow`, `like`, and generic `reply`; `Helpful reply` is not a generic-reply alias. Those effects remain blocked until exact matrix rows are approved. No implementation may borrow or invent deltas.
+- FOLLOW-01 now has real relationship values and deterministic InterestOverlap, but autonomous activation remains blocked because Character Reputation has no approved persisted source. PlayerProfile Reputation does not supply Character Reputation, and follower count, popularity, influence, AI wording, or relationship state are forbidden proxies.
+- REPLY-01 now resolves Familiarity and RelationshipRelevance but remains unavailable with `mood_activation_unavailable` as its first currently unresolved mandatory input in formula order; GoalRelevance also remains unresolved. No term is zeroed, dropped, or renormalized.
+- REACT-01 now resolves Affection but remains unavailable because AuthorReputation, PositiveMood/numeric mood semantics, GoalRelevance, and repetition semantics are unresolved. A stable reason code/precedence for the earliest missing input must be approved with its source contract before activation.
+- ADR-020 remains authoritative for ACT-01 and POST-01. M10 does not activate them.
+- One relationship effect is unique by authoritative gameplay event, rule version, source Actor, and target Actor. It never keys from generated wording. The relationship row, event, and daily ledger change atomically and concurrency-safely; reverse direction changes only through a separately approved directional effect.
+
+**Alternatives considered**
+
+Seven dimensions, a hidden composite score, fuzzy interest matching, runtime hashing, inferred Character Reputation, arbitrary multipliers inside allowed ranges, treating every reply as Helpful, borrowing Re-follow deltas for initial Follow, sentiment analysis, and AI-derived mechanics were rejected because they invent state or make deterministic outcomes depend on presentation.
+
+**Consequences**
+
+The nine-dimension model, defaults, derived relevance calculations, multiplier defaults/exceptions, directionality, bounds, and AI boundary are implementation-ready. M10 as a whole remains blocked only on an approved Character Reputation source, exact base-delta rows for initial Follow/Like/generic Reply, and REACT-01's earliest-missing-input reason/source contract. REPLY-01 remains deliberately gated by existing ADR-020 inputs rather than blocking relationship persistence itself.
+
+**Revisit when**
+
+Source of truth approves Character Reputation, the missing matrix rows, the REACT-01 input/reason contract, or any additional non-neutral REL-01 multiplier mapping.
+
+## ADR-026 — M10 Character Reputation and social-action relationship effects
+
+**Date:** 2026-10-01
+**Status:** Accepted; supplements ADR-025 and resolves its remaining M10 blockers
+
+**Context**
+
+ADR-025 left M10 blocked on Character Reputation, missing base-delta rows for initial Follow/Like/generic Reply, and REACT-01 missing-input precedence. Those gaps can be resolved without inventing relationship deltas: social actions and relationship effects are separate, and an action without an approved canonical matrix row simply has no REL-01 effect.
+
+**Decision**
+
+- M10 adds persisted `Character.Reputation`, an integer from 0 through 100 with non-null default 50. Existing Character rows backfill to 50 and new Characters initialize to 50. It is independent from PlayerProfile Reputation.
+- M10 adds no Character Reputation progression. REL-01, follows, likes, replies, follower/reaction counts, Influence, Popularity, relationship dimensions, post count, and AI text do not change it. Future progression requires a separate accepted gameplay rule.
+- Character Reputation supplies the Character `Reputation` input to FOLLOW-01 and Character `AuthorReputation` input to REACT-01. PlayerProfile Reputation is not substituted for Character-authored evaluation.
+- FOLLOW-01 is fully evaluable in M10 using its unchanged relationship values, deterministic InterestOverlap, Character Reputation, thresholds, coefficients, and PRNG contract. Outcomes are Ineligible, Eligible, or Executed. M07 active-edge uniqueness/history, cooldown/cap, replay, same-world, and server-only Character-authority constraints remain mandatory.
+- Initial Follow, Like, Unlike, and generic Reply create no M10 v1 relationship delta and no zero-delta RelationshipEvent. The social action remains valid and retains its own audit/idempotency behavior.
+- Unfollow and Re-follow use their existing canonical matrix rows. `Helpful reply` uses its existing row only after an authoritative deterministic mechanic classifies the reply as Helpful. Free-form content, sentiment analysis, M09 wording, Ollama output, and fallback text cannot classify helpfulness.
+- REL-01 runs only when an authoritative gameplay action/event maps to a canonical relationship-event row that already has approved deterministic base deltas. Absence of a mapping or row is an intentional no-relationship-effect result, not a failure.
+- REPLY-01 resolves Familiarity and RelationshipRelevance but remains unavailable with primary reason `mood_activation_unavailable`; GoalRelevance remains unresolved behind that gate.
+- REACT-01 availability precedence is: relationship state, AuthorReputation, PositiveMood, GoalRelevance, repetition semantics. M10 resolves the first two. The primary remaining reason is the new stable code `positive_mood_unavailable`; after PositiveMood resolves it is `goal_relevance_unavailable`; after prior inputs resolve and repetition remains undefined it is the new stable code `repetition_semantics_unavailable`.
+- CurrentMoodType is not converted to PositiveMood, and repetition behavior is not inferred. No missing term is assigned zero, removed, proxied, or renormalized.
+- ADR-020 continues to gate ACT-01 and POST-01. M09 remains presentation-only and has no authority over event classification, Reputation, relationship mechanics, or rule availability.
+
+**Alternatives considered**
+
+Deriving Reputation from other scores or counts, adding reputation progression to M10, synthesizing zero-delta relationship events, inventing Follow/Like/Reply matrix rows, treating every reply as Helpful, classifying text sentiment, and retaining `relationship_state_unavailable` after relationship state exists were rejected because they conflate independent mechanics or invent inputs.
+
+**Consequences**
+
+M10 has no remaining mechanical planning blocker. FOLLOW-01 activates with approved inputs; REPLY-01 and REACT-01 remain deterministically unavailable for their exact next missing inputs; ordinary Follow/Like/Reply actions remain functional without implicit relationship changes. Implementation must add the Character column and migration, but this planning decision itself changes no schema or code.
+
+**Revisit when**
+
+A Character Reputation progression rule, authoritative Helpful-reply classifier, PositiveMood mapping, GoalRelevance source, repetition semantics, or new social-action relationship delta is separately approved.
+
 ## New ADR template
 
 ### ADR-XXX — Title

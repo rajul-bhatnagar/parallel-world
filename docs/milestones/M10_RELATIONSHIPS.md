@@ -10,7 +10,7 @@ Friendship/rivalry/attraction summaries and recent history respond to interactio
 M08; M09 only for phrasing, never mechanics.
 
 ## Scope
-- **Backend:** REL-01 dimensions/events, caps/ledgers/asymmetry, derived labels, same-world application contracts, and activation of autonomous `FOLLOW-01`, `REPLY-01`, and `REACT-01` eligibility from real directional relationship state; shared romance status is not stored in directional rows.
+- **Backend:** Exactly nine directional REL-01 dimensions—Familiarity, Trust, Respect, Affection, Comfort, Rivalry, Jealousy, Attraction, and Commitment—plus events, caps/ledgers/asymmetry, derived labels, same-world application contracts, deterministic InterestOverlap and RelationshipRelevance, persisted neutral Character Reputation, and autonomous-rule transitions according to ADR-025/026. Shared romance status is not stored in directional rows.
 - **Database:** Relationships, RelationshipEvents, daily ledgers, bounds/uniques/composite FKs/history indexes, migration.
 - **Flutter:** Safe qualitative summary/recent history with loading/empty/error/offline states; no hidden raw scores unless approved.
 - **Infrastructure:** None.
@@ -19,7 +19,10 @@ M08; M09 only for phrasing, never mechanics.
 Romantic pair transitions, dating, marriage/divorce, client-authored deltas, passive MVP decay.
 
 ## Test scope
-Initial values, deltas/multipliers/clamps/daily caps, asymmetry, labels/priority, duplicate event, transaction rollback, ownership, UI projection, and autonomous `FOLLOW-01`/`REPLY-01`/`REACT-01` activation using real relationship values.
+Nine-dimension initial values, Character Reputation default/backfill/bounds/independence, deltas/neutral-v1-multiplier defaults and approved exceptions/clamps/daily caps, asymmetry, labels/priority, duplicate event, transaction rollback, ownership, UI projection, InterestOverlap, RelationshipRelevance, social-action/no-relationship-effect separation, FOLLOW-01 activation, and deterministic REPLY-01/REACT-01 remaining gates.
+
+## Implementation readiness
+Unblocked by ADR-026. Character Reputation is approved; initial Follow/Like/Unlike/generic Reply intentionally have no M10 v1 REL-01 effect; FOLLOW-01 is fully evaluable; REPLY-01 and REACT-01 retain exact deterministic non-relationship gates without blocking the M10 relationship engine.
 
 ## Security and ownership considerations
 Formula fidelity, transaction/idempotency, hidden-score privacy, separation of romance. Repository-wide ownership, privacy, and secret-handling rules remain mandatory where applicable.

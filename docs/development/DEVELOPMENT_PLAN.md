@@ -538,12 +538,12 @@ Every listed schema change includes an EF migration, clean/previous-schema Postg
 - **Goal:** Persist deterministic directional relationships and explain meaningful changes.
 - **User-visible result:** Friendship/rivalry/attraction summaries and recent history respond to interactions.
 - **Dependencies:** M08; M09 only for phrasing, never mechanics.
-- **Backend scope:** REL-01 dimensions/events, caps/ledgers/asymmetry, derived labels, same-world application contracts, and activation of autonomous `FOLLOW-01`, `REPLY-01`, and `REACT-01` eligibility using real relationship state; shared romance status is not stored in directional rows.
-- **Database scope:** Relationships, RelationshipEvents, daily ledgers, bounds/uniques/composite FKs/history indexes, migration.
+- **Backend scope:** Exactly nine directional REL-01 dimensions (Familiarity, Trust, Respect, Affection, Comfort, Rivalry, Jealousy, Attraction, Commitment), events, caps/ledgers/asymmetry, derived labels, deterministic InterestOverlap and RelationshipRelevance, neutral persisted Character Reputation, same-world application contracts, fully evaluable FOLLOW-01, and exact REPLY-01/REACT-01 remaining gates defined by ADR-025/026; shared romance status is not stored in directional rows.
+- **Database scope:** Relationships, RelationshipEvents, daily ledgers, bounds/uniques/composite FKs/history indexes, and non-null bounded `characters.reputation` default/backfill 50; migration.
 - **Flutter scope:** Safe qualitative summary/recent history with loading/empty/error/offline states; no hidden raw scores unless approved.
 - **Infrastructure scope:** None.
 - **Seed data:** Stranger/friend/close-friend/rival scenarios and public-defence/conflict events.
-- **Test scope:** Initial values, deltas/multipliers/clamps/daily caps, asymmetry, labels/priority, duplicate event, transaction rollback, ownership, UI projection, and autonomous `FOLLOW-01`/`REPLY-01`/`REACT-01` activation from real relationship values.
+- **Test scope:** Nine-dimension initial values, Character Reputation, exact approved base deltas with neutral M10 v1 multiplier defaults and exceptions, clamps/daily caps, asymmetry, labels/priority, duplicate event, transaction rollback, ownership, UI projection, InterestOverlap, RelationshipRelevance, social-action/no-delta separation, active FOLLOW-01, and correctly gated REPLY-01/REACT-01 behavior.
 - **Documentation updates:** No balance change without `GAME_RULES.md` rule-version update.
 - **Explicit exclusions:** Romantic pair transitions, dating, marriage/divorce, client-authored deltas, passive MVP decay.
 - **Acceptance criteria:** Qualified events create one auditable directional change; history explains it; no romantic status column exists here.
@@ -553,6 +553,7 @@ Every listed schema change includes an EF migration, clean/previous-schema Postg
 - **Suggested milestone commit:** `feat(relationships): add deterministic directional relationship engine`.
 - **Exit criteria:** Relationship slice passes game-rule/database/Flutter review.
 - **Main risks:** Pacing imbalance, duplicate deltas, wrong direction, exposing hidden values.
+- **Implementation readiness:** Unblocked by ADR-026. Initial Follow/Like/Unlike/generic Reply intentionally have no REL-01 delta; no missing matrix row is required for those actions.
 - **Rollback:** Disable new event production if needed; preserve immutable history and use compensating events/migration, not row rewriting.
 
 ## 24. M11 Private messaging

@@ -185,9 +185,10 @@ Constraints:
 
 ### Characters
 
-- `Id`, `WorldId`, `DisplayName`, `Handle`, `Bio`, `Age`, `Profession`, `Archetype`, `WritingStyle`, `ActivityLevel`, `Influence`, `Popularity`, `CurrentMoodType`, `Status`, `CreatedAt`, `UpdatedAt`, `Version`
+- `Id`, `WorldId`, `DisplayName`, `Handle`, `Bio`, `Age`, `Profession`, `Archetype`, `WritingStyle`, `ActivityLevel`, `Influence`, `Popularity`, `Reputation`, `CurrentMoodType`, `Status`, `CreatedAt`, `UpdatedAt`, `Version`
 - Unique `(WorldId, Id)` and `(WorldId, Handle)`.
-- Checks for non-negative age and bounded activity/influence/popularity.
+- Checks for non-negative age and bounded activity/influence/popularity/reputation.
+- `Reputation` is non-null, constrained from 0 through 100, and defaults/backfills to 50. It is independent from PlayerProfile Reputation. M10 adds no reputation-history table or progression rule.
 - Index `(WorldId, Status, Id)` for catalogue/simulation eligibility.
 
 Actor creation and its PlayerProfile/Character detail are one transaction. Because ordinary FKs cannot assert a referenced actor discriminator without triggers, the application validates discriminator/detail consistency and integration tests prove it; the database checks null-shape, uniqueness, and same-world identity.
@@ -294,10 +295,10 @@ Conversation participation and sender membership are verified in the transaction
 
 ### Relationships
 
-Directional current values only:
+Directional current values only. Rows are created lazily on the first approved need for one source-to-target direction; existing or new worlds do not pre-create an uncontrolled actor-pair matrix. Concurrent creation relies on the directional unique constraint and transaction retry/reload semantics.
 
 - `Id`, `WorldId`, `SourceActorId`, `TargetActorId`
-- `Familiarity`, `Trust`, `Respect`, `Affection`, `Attraction`, `Comfort`, `Rivalry`, `Jealousy`, `Commitment`
+- Exactly nine 0-100 dimensions: `Familiarity`, `Trust`, `Respect`, `Affection`, `Comfort`, `Rivalry`, `Jealousy`, `Attraction`, `Commitment`
 - `UpdatedAt`, `Version`
 
 Constraints and indexes:
@@ -307,6 +308,7 @@ Constraints and indexes:
 - Check source differs from target and every value is 0-100.
 - Index `(WorldId, TargetActorId)` for reverse lookups.
 - No `RomanticStatus` column is permitted here.
+- No composite or hidden tenth relationship score is persisted. `RelationshipRelevance` and `InterestOverlap` are deterministic derived inputs defined by ADR-025, not stored relationship dimensions.
 
 ### RomanticRelationships
 
@@ -325,6 +327,7 @@ One shared pair-level current status:
 - Composite FKs to Actors and GameplayEvents.
 - Delta checks enforce the GAME_RULES.md ordinary/severe maximum range; application validates event-specific cap.
 - Cursor index `(WorldId, SourceActorId, TargetActorId, OccurredAt DESC, Id DESC)`.
+- Natural-language content and AI generation records are never relationship-event provenance. M10 v1 applies REL-01 only for authoritative mappings with approved base rows. Initial Follow, Like, Unlike, and generic Reply intentionally create no relationship delta and no zero-delta RelationshipEvent; Unfollow and Re-follow use their existing rows, while Helpful reply requires a separate authoritative classification.
 
 ### RelationshipDailyChangeLedgers
 

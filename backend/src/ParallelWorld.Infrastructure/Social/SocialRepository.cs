@@ -75,7 +75,9 @@ internal sealed class SocialRepository(ParallelWorldDbContext dbContext) : ISoci
                 actor.Id,
                 profile.DisplayName,
                 profile.Handle,
-                settings.RuleVersion))
+                settings.RuleVersion,
+                world.CurrentWorldTime,
+                settings.DisplayTimeZoneId))
             .SingleOrDefaultAsync(cancellationToken);
 
     public async Task<(string RequestHash, FeedPost Post)?> FindIdempotentPostAsync(
@@ -217,6 +219,9 @@ internal sealed class SocialRepository(ParallelWorldDbContext dbContext) : ISoci
             && follow.EndedAt == null,
             cancellationToken);
 
+    public Task<Follow?> FindLatestFollowAsync(Guid worldId, Guid followerActorId, Guid followedActorId, CancellationToken cancellationToken) =>
+        dbContext.Follows.Where(f => f.WorldId == worldId && f.FollowerActorId == followerActorId && f.FollowedActorId == followedActorId).OrderByDescending(f => f.StartedAt).ThenByDescending(f => f.Id).FirstOrDefaultAsync(cancellationToken);
+
     public void AddSeedPosts(SeedPostSet seedPosts)
     {
         dbContext.GameplayEvents.AddRange(seedPosts.Events);
@@ -246,6 +251,8 @@ internal sealed class SocialRepository(ParallelWorldDbContext dbContext) : ISoci
         dbContext.GameplayEvents.Add(gameplayEvent);
         dbContext.Follows.Add(follow);
     }
+
+    public void AddGameplayEvent(GameplayEvent gameplayEvent) => dbContext.GameplayEvents.Add(gameplayEvent);
 
     private IQueryable<FeedPostRow> PostRows(
         Guid worldId,

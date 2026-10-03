@@ -10,6 +10,7 @@ public sealed class SimulationService(
     IUnitOfWork unitOfWork,
     TimeProvider timeProvider,
     IWorldTimeProjector worldTimeProjector,
+    ParallelWorld.Application.Relationships.IRelationshipService relationshipService,
     IDeterministicRandomProvider randomProvider,
     IEnumerable<ISimulationRule> rules) : ISimulationService
 {
@@ -126,6 +127,12 @@ public sealed class SimulationService(
             locked.Settings.RuleVersion,
             observedAtUtc,
             RunIdempotencyKey(worldId, candidateStart, candidateEnd, locked.Settings.RuleVersion));
+        var gameDate = DateOnly.FromDateTime(localWorldTime.DateTime);
+        var followCandidates = await repository.ListFollowCandidatesAsync(
+            worldId,
+            resultingWorldTime,
+            gameDate,
+            cancellationToken);
         var context = new SimulationRuleContext(
             worldId,
             runId,
@@ -136,11 +143,14 @@ public sealed class SimulationService(
             locked.Settings.TimeScale,
             locked.Settings.RuleVersion,
             seed,
-            SimulationInputAvailability.M08,
-            randomProvider);
+            SimulationInputAvailability.M10,
+            randomProvider,
+            followCandidates);
+        FollowRuleAction? followAction = null;
         var evaluations = _rules.Select(rule =>
         {
             var decision = rule.Evaluate(context);
+            followAction ??= decision.FollowAction;
             return new SimulationRuleEvaluation(
                 DeterministicSimulationIdentity.CreateEvaluationId(worldId, runId, rule.Code),
                 worldId,
@@ -167,7 +177,19 @@ public sealed class SimulationService(
         locked.World.AdvanceSimulation(candidateEnd, deltaTicks, observedAtUtc);
         run.Complete(observedAtUtc);
         repository.AddRun(run, checkpoint, evaluations);
+        Guid? autonomousFollowEventId = null;
+        if (followAction is not null)
+        {
+            autonomousFollowEventId = repository.AddAutonomousFollow(worldId, runId, candidateEnd, resultingWorldTime, gameDate, locked.Settings.RuleVersion, followAction);
+        }
         await unitOfWork.SaveChangesAsync(cancellationToken);
+        if (autonomousFollowEventId is Guid relationshipGameplayEventId && followAction?.RelationshipEventType is string relationshipEventType)
+        {
+            await relationshipService.ApplyAsync(new(worldId, followAction.SourceActorId, followAction.TargetActorId,
+                relationshipGameplayEventId, relationshipEventType, false, relationshipEventType == "Re-follow",
+                gameDate, candidateEnd, locked.Settings.RuleVersion,
+                $"m10:relationship:{relationshipGameplayEventId:N}"), cancellationToken);
+        }
         await transaction.CommitAsync(cancellationToken);
 
         return new(

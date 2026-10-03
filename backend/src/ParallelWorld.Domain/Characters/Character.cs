@@ -25,6 +25,7 @@ public sealed class Character
         int activityLevel,
         int influence,
         int popularity,
+        int reputation,
         MoodType currentMoodType,
         DateTimeOffset createdAt)
     {
@@ -37,6 +38,7 @@ public sealed class Character
         ValidateRange(activityLevel, 0, 100, nameof(activityLevel));
         ValidateRange(influence, 0, 100, nameof(influence));
         ValidateRange(popularity, 0, 100, nameof(popularity));
+        ValidateRange(reputation, 0, 100, nameof(reputation));
 
         Id = id;
         WorldId = worldId;
@@ -50,6 +52,7 @@ public sealed class Character
         ActivityLevel = activityLevel;
         Influence = influence;
         Popularity = popularity;
+        Reputation = reputation;
         CurrentMoodType = currentMoodType;
         Status = CharacterStatus.Active;
         CreatedAt = createdAt;
@@ -68,6 +71,7 @@ public sealed class Character
     public int ActivityLevel { get; private set; }
     public int Influence { get; private set; }
     public int Popularity { get; private set; }
+    public int Reputation { get; private set; }
     public MoodType CurrentMoodType { get; private set; }
     public CharacterStatus Status { get; private set; }
     public DateTimeOffset CreatedAt { get; private set; }

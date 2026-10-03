@@ -11,7 +11,7 @@ public sealed record FeedSeedContext(
 
 public sealed record CharacterPostAuthor(Guid ActorId, string DisplayName, string Handle);
 
-public sealed record PlayerPostAuthor(Guid ActorId, string DisplayName, string Handle, int RuleVersion);
+public sealed record PlayerPostAuthor(Guid ActorId, string DisplayName, string Handle, int RuleVersion, DateTimeOffset CurrentWorldTime, string DisplayTimeZoneId);
 
 public sealed record FeedAuthor(
     Guid ActorId,
@@ -162,6 +162,8 @@ public interface ISocialRepository
         Guid followedActorId,
         CancellationToken cancellationToken);
 
+    Task<Follow?> FindLatestFollowAsync(Guid worldId, Guid followerActorId, Guid followedActorId, CancellationToken cancellationToken);
+
     void AddSeedPosts(SeedPostSet seedPosts);
 
     void AddPlayerPost(GameplayEvent gameplayEvent, Post post, IdempotencyRecord idempotencyRecord);
@@ -171,6 +173,7 @@ public interface ISocialRepository
     void RemoveReaction(PostReaction reaction);
 
     void AddFollow(GameplayEvent gameplayEvent, Follow follow);
+    void AddGameplayEvent(GameplayEvent gameplayEvent);
 }
 
 public interface ISocialFeedService

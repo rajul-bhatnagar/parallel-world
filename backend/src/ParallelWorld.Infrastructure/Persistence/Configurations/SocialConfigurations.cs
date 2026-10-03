@@ -242,6 +242,8 @@ public sealed class FollowConfiguration : IEntityTypeConfiguration<Follow>
         {
             table.HasCheckConstraint("ck_follows_distinct_actors", "follower_actor_id <> followed_actor_id");
             table.HasCheckConstraint("ck_follows_time", "ended_at IS NULL OR ended_at >= started_at");
+            table.HasCheckConstraint("ck_follows_game_time", "ended_game_time IS NULL OR ended_game_time >= started_game_time");
+            table.HasCheckConstraint("ck_follows_end_game_fields", "(ended_at IS NULL AND ended_game_time IS NULL AND ended_game_date IS NULL) OR (ended_at IS NOT NULL AND ended_game_time IS NOT NULL AND ended_game_date IS NOT NULL)");
         });
         builder.HasKey(entity => entity.Id).HasName("pk_follows");
         builder.Property(entity => entity.Id).HasColumnName("id");
@@ -249,7 +251,11 @@ public sealed class FollowConfiguration : IEntityTypeConfiguration<Follow>
         builder.Property(entity => entity.FollowerActorId).HasColumnName("follower_actor_id");
         builder.Property(entity => entity.FollowedActorId).HasColumnName("followed_actor_id");
         builder.Property(entity => entity.StartedAt).HasColumnName("started_at");
+        builder.Property(entity => entity.StartedGameTime).HasColumnName("started_game_time");
+        builder.Property(entity => entity.StartedGameDate).HasColumnName("started_game_date");
         builder.Property(entity => entity.EndedAt).HasColumnName("ended_at");
+        builder.Property(entity => entity.EndedGameTime).HasColumnName("ended_game_time");
+        builder.Property(entity => entity.EndedGameDate).HasColumnName("ended_game_date");
         builder.Property(entity => entity.GameplayEventId).HasColumnName("gameplay_event_id");
         builder.Property(entity => entity.IdempotencyKey).HasColumnName("idempotency_key").HasMaxLength(200);
         builder.HasIndex(entity => new { entity.WorldId, entity.FollowerActorId, entity.FollowedActorId })

@@ -18,7 +18,7 @@ public sealed class SimulationTests
         new(2026, 9, 20, 10, 0, 0, TimeSpan.Zero);
 
     [Fact]
-    public async Task FirstTick_UsesCreationBoundaryAndPersistsFiveUnavailableEvaluations()
+    public async Task FirstTick_UsesCreationBoundaryAndPersistsM10RuleAvailability()
     {
         var clock = new MutableTimeProvider(CreatedAt);
         await using var factory = await CreateFactoryAsync(clock);
@@ -78,11 +78,14 @@ public sealed class SimulationTests
                 0),
             run.Seed);
         Assert.Equal(5, evaluations.Count);
-        Assert.All(evaluations, evaluation => Assert.Equal(SimulationRuleOutcome.Unavailable, evaluation.Outcome));
+        Assert.Equal(4, evaluations.Count(evaluation => evaluation.Outcome == SimulationRuleOutcome.Unavailable));
+        Assert.Single(evaluations, evaluation => evaluation.Outcome == SimulationRuleOutcome.Ineligible
+            && evaluation.RuleCode == SimulationRuleCodes.Follow
+            && evaluation.ReasonCode == SimulationReasonCodes.FollowCandidateIneligible);
         Assert.Equal(2, evaluations.Count(evaluation =>
             evaluation.ReasonCode == SimulationReasonCodes.GoalRelevanceUnavailable));
-        Assert.Equal(3, evaluations.Count(evaluation =>
-            evaluation.ReasonCode == SimulationReasonCodes.RelationshipStateUnavailable));
+        Assert.Single(evaluations, evaluation => evaluation.ReasonCode == SimulationReasonCodes.MoodActivationUnavailable);
+        Assert.Single(evaluations, evaluation => evaluation.ReasonCode == SimulationReasonCodes.PositiveMoodUnavailable);
         Assert.Equal(state.LastCompletedIntervalEnd, world.LastSimulatedAt);
         Assert.Equal(CreatedAt.AddMinutes(15), world.CurrentWorldTime);
         Assert.Empty(await db.SimulationActions.Where(item => item.WorldId == guest.World.Id).ToListAsync());

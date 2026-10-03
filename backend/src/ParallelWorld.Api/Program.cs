@@ -94,6 +94,7 @@ app.MapAuthenticationEndpoints();
 app.MapWorldEndpoints();
 app.MapCharacterEndpoints();
 app.MapSocialFeedEndpoints();
+app.MapRelationshipEndpoints();
 
 await app.RunAsync();
 

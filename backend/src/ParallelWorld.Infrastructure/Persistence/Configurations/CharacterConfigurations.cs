@@ -15,6 +15,7 @@ public sealed class CharacterConfiguration : IEntityTypeConfiguration<Character>
             table.HasCheckConstraint("ck_characters_activity_level", "activity_level BETWEEN 0 AND 100");
             table.HasCheckConstraint("ck_characters_influence", "influence BETWEEN 0 AND 100");
             table.HasCheckConstraint("ck_characters_popularity", "popularity BETWEEN 0 AND 100");
+            table.HasCheckConstraint("ck_characters_reputation", "reputation BETWEEN 0 AND 100");
         });
         builder.HasKey(entity => entity.Id).HasName("pk_characters");
         builder.Property(entity => entity.Id).HasColumnName("id");
@@ -29,6 +30,7 @@ public sealed class CharacterConfiguration : IEntityTypeConfiguration<Character>
         builder.Property(entity => entity.ActivityLevel).HasColumnName("activity_level");
         builder.Property(entity => entity.Influence).HasColumnName("influence");
         builder.Property(entity => entity.Popularity).HasColumnName("popularity");
+        builder.Property(entity => entity.Reputation).HasColumnName("reputation").HasDefaultValue(50);
         builder.Property(entity => entity.CurrentMoodType)
             .HasColumnName("current_mood_type")
             .HasConversion(value => value.ToString().ToLowerInvariant(), value => Enum.Parse<MoodType>(value, true))

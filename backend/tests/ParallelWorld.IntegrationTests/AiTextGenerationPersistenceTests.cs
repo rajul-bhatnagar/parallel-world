@@ -185,6 +185,7 @@ public sealed class AiTextGenerationPersistenceTests
             50,
             50,
             50,
+            50,
             MoodType.Calm,
             CreatedAt);
         var characterActor = Actor.CreateCharacter(

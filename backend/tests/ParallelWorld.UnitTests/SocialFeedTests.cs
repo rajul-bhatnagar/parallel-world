@@ -76,6 +76,8 @@ public sealed class SocialFeedTests
             actorId,
             actorId,
             CreatedAt,
+            CreatedAt,
+            DateOnly.FromDateTime(CreatedAt.Date),
             Guid.NewGuid(),
             "operation"));
         var follow = new Follow(
@@ -84,10 +86,12 @@ public sealed class SocialFeedTests
             Guid.NewGuid(),
             Guid.NewGuid(),
             CreatedAt,
+            CreatedAt,
+            DateOnly.FromDateTime(CreatedAt.Date),
             Guid.NewGuid(),
             "operation");
-        follow.End(CreatedAt.AddMinutes(1));
-        follow.End(CreatedAt.AddMinutes(2));
+        follow.End(CreatedAt.AddMinutes(1), CreatedAt.AddMinutes(1), DateOnly.FromDateTime(CreatedAt.Date));
+        follow.End(CreatedAt.AddMinutes(2), CreatedAt.AddMinutes(2), DateOnly.FromDateTime(CreatedAt.Date));
         Assert.Equal(CreatedAt.AddMinutes(1), follow.EndedAt);
     }
 

@@ -6,10 +6,10 @@ using ParallelWorld.Infrastructure.Persistence;
 namespace ParallelWorld.IntegrationTests;
 
 [Trait("Category", "PostgreSql")]
-public sealed class M09SchemaCatalogTests
+public sealed class M10SchemaCatalogTests
 {
     [Fact]
-    public async Task MigratedSchema_HasExactM09TablesConstraintsAndIndexes()
+    public async Task MigratedSchema_HasExactM10TablesConstraintsAndIndexes()
     {
         await using var factory = await CreateFactoryAsync();
         TestDatabaseGuard.EnsureSafe(factory.DatabaseName);
@@ -29,6 +29,7 @@ public sealed class M09SchemaCatalogTests
             "20260916132321_AddM07SocialActions",
             "20260920133535_AddM08RuleBasedSimulation",
             "20260921173919_AddM09AiTextGeneration",
+            "20261003064625_AddM10RelationshipEngine",
         }, migrations);
 
         var tables = await ReadNamesAsync(db, """
@@ -58,6 +59,9 @@ public sealed class M09SchemaCatalogTests
             "post_reactions",
             "posts",
             "refresh_tokens",
+            "relationship_daily_change_ledgers",
+            "relationship_events",
+            "relationships",
             "simulation_actions",
             "simulation_rule_evaluations",
             "simulation_run_checkpoints",
@@ -77,7 +81,7 @@ public sealed class M09SchemaCatalogTests
               AND c.contype <> 'n'
             ORDER BY c.conname
             """);
-        Assert.Equal(ExpectedConstraints, constraints);
+        Assert.Equal(ExpectedConstraints.Concat(M10Constraints).Order(StringComparer.Ordinal), constraints);
 
         var indexes = await ReadNamesAsync(db, """
             SELECT indexname
@@ -86,7 +90,7 @@ public sealed class M09SchemaCatalogTests
               AND tablename <> '__EFMigrationsHistory'
             ORDER BY indexname
             """);
-        Assert.Equal(ExpectedIndexes, indexes);
+        Assert.Equal(ExpectedIndexes.Concat(M10Indexes).Order(StringComparer.Ordinal), indexes);
     }
 
     private static readonly string[] ExpectedConstraints =
@@ -334,6 +338,28 @@ public sealed class M09SchemaCatalogTests
         "ux_users_normalized_email",
         "ux_world_settings_world_id",
         "ux_world_simulation_states_world_id",
+    ];
+
+    private static readonly string[] M10Constraints =
+    [
+        "ak_relationships_world_id_id",
+        "ck_characters_reputation",
+        "ck_follows_end_game_fields", "ck_follows_game_time",
+        "ck_relationship_daily_ledgers_affection", "ck_relationship_daily_ledgers_attraction", "ck_relationship_daily_ledgers_comfort", "ck_relationship_daily_ledgers_commitment", "ck_relationship_daily_ledgers_distinct_actors", "ck_relationship_daily_ledgers_familiarity", "ck_relationship_daily_ledgers_jealousy", "ck_relationship_daily_ledgers_respect", "ck_relationship_daily_ledgers_rivalry", "ck_relationship_daily_ledgers_trust",
+        "ck_relationship_events_affection_delta", "ck_relationship_events_attraction_delta", "ck_relationship_events_comfort_delta", "ck_relationship_events_commitment_delta", "ck_relationship_events_distinct_actors", "ck_relationship_events_familiarity_delta", "ck_relationship_events_jealousy_delta", "ck_relationship_events_respect_delta", "ck_relationship_events_rivalry_delta", "ck_relationship_events_trust_delta",
+        "ck_relationships_affection", "ck_relationships_attraction", "ck_relationships_comfort", "ck_relationships_commitment", "ck_relationships_distinct_actors", "ck_relationships_familiarity", "ck_relationships_jealousy", "ck_relationships_respect", "ck_relationships_rivalry", "ck_relationships_trust",
+        "fk_relationship_daily_ledgers_actors_world_source", "fk_relationship_daily_ledgers_actors_world_target",
+        "fk_relationship_events_actors_world_source", "fk_relationship_events_actors_world_target", "fk_relationship_events_gameplay_events_world_event", "fk_relationship_events_relationships_world_relationship",
+        "fk_relationships_actors_world_source", "fk_relationships_actors_world_target", "fk_relationships_game_worlds_world_id",
+        "pk_relationship_daily_change_ledgers", "pk_relationship_events", "pk_relationships",
+    ];
+
+    private static readonly string[] M10Indexes =
+    [
+        "IX_relationship_daily_change_ledgers_world_id_target_actor_id", "IX_relationship_events_world_id_relationship_id", "IX_relationship_events_world_id_target_actor_id", "IX_relationships_world_id_target_actor_id",
+        "ak_relationships_world_id_id", "ix_relationship_events_game_date", "ix_relationship_events_history", "ix_relationships_world_source_updated_id",
+        "pk_relationship_daily_change_ledgers", "pk_relationship_events", "pk_relationships",
+        "ux_relationship_events_source_rule_direction", "ux_relationship_events_world_idempotency_key", "ux_relationships_world_source_target",
     ];
 
     private static async Task<string[]> ReadNamesAsync(ParallelWorldDbContext db, string sql)

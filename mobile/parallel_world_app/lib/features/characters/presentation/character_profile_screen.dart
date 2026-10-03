@@ -4,6 +4,8 @@ import 'package:parallel_world_app/app/theme.dart';
 import 'package:parallel_world_app/core/errors/app_failure.dart';
 import 'package:parallel_world_app/features/characters/application/character_details_provider.dart';
 import 'package:parallel_world_app/features/characters/domain/character_models.dart';
+import 'package:parallel_world_app/features/relationships/application/relationship_provider.dart';
+import 'package:parallel_world_app/features/relationships/domain/relationship_models.dart';
 import 'package:parallel_world_app/features/session/application/session_controller.dart';
 
 class CharacterProfileScreen extends ConsumerWidget {
@@ -40,7 +42,12 @@ class CharacterProfileScreen extends ConsumerWidget {
                 : const UnknownFailure().message,
             onRetry: () => ref.invalidate(characterDetailsProvider(request)),
           ),
-          data: (view) => _ProfileBody(view: view),
+          data: (view) => _ProfileBody(
+            view: view,
+            relationship: ref.watch(
+              relationshipProvider(RelationshipRequest(worldId, characterId)),
+            ),
+          ),
         ),
       ),
     );
@@ -48,9 +55,10 @@ class CharacterProfileScreen extends ConsumerWidget {
 }
 
 class _ProfileBody extends StatelessWidget {
-  const _ProfileBody({required this.view});
+  const _ProfileBody({required this.view, required this.relationship});
 
   final CharacterDetailsView view;
+  final AsyncValue<RelationshipView> relationship;
 
   @override
   Widget build(BuildContext context) {
@@ -102,6 +110,53 @@ class _ProfileBody extends StatelessWidget {
           const Text('No public schedule is available.')
         else
           ...character.schedule.map(_ScheduleTile.new),
+        const SizedBox(height: AppSpacing.large),
+        Text('Relationship', style: Theme.of(context).textTheme.titleLarge),
+        const SizedBox(height: AppSpacing.small),
+        relationship.when(
+          loading: () => const LinearProgressIndicator(
+            semanticsLabel: 'Loading relationship',
+          ),
+          error: (error, _) =>
+              const Text('Relationship unavailable. Try again later.'),
+          data: (value) {
+            if (value.isOffline) {
+              return const ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(Icons.cloud_off_outlined),
+                title: Text('Relationship unavailable offline'),
+              );
+            }
+            final summary = value.summary;
+            if (summary == null) {
+              return const Text('No relationship history yet.');
+            }
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(_label(summary.state.replaceAll('_', '-'))),
+                if (value.history.isNotEmpty) ...[
+                  const SizedBox(height: AppSpacing.small),
+                  ...value.history
+                      .take(3)
+                      .map(
+                        (event) => ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          dense: true,
+                          leading: const Icon(Icons.history),
+                          title: Text(_label(event.eventType)),
+                          subtitle: Text(
+                            MaterialLocalizations.of(
+                              context,
+                            ).formatMediumDate(event.occurredAtUtc.toLocal()),
+                          ),
+                        ),
+                      ),
+                ],
+              ],
+            );
+          },
+        ),
       ],
     );
   }

@@ -1,3 +1,4 @@
+using ParallelWorld.Domain.Relationships;
 using ParallelWorld.Domain.Simulation;
 using ParallelWorld.Domain.Worlds;
 
@@ -25,11 +26,18 @@ public interface ISimulationRepository
         Guid runId,
         CancellationToken cancellationToken);
 
+    Task<IReadOnlyList<FollowRuleCandidate>> ListFollowCandidatesAsync(Guid worldId, DateTimeOffset currentGameTime, DateOnly currentGameDate, CancellationToken cancellationToken);
+
+    Guid AddAutonomousFollow(Guid worldId, Guid runId, DateTimeOffset occurredAt, DateTimeOffset occurredGameTime, DateOnly occurredGameDate, int ruleVersion, FollowRuleAction action);
+
     void AddRun(
         SimulationRun run,
         SimulationRunCheckpoint checkpoint,
         IReadOnlyCollection<SimulationRuleEvaluation> evaluations);
 }
+
+public sealed record FollowRuleCandidate(Guid SourceActorId, Guid TargetActorId, RelationshipValues Relationship, int InterestOverlap, int TargetReputation, bool IsFollowing, bool HasHistoricalFollow, int QualifiedNegativeEventCount, int StableOrdinal);
+public sealed record FollowRuleAction(Guid SourceActorId, Guid TargetActorId, bool DesiredFollowing, string? RelationshipEventType, int Score, int Roll, int StableOrdinal);
 
 public sealed record SimulationWorldSnapshot(
     Guid WorldId,

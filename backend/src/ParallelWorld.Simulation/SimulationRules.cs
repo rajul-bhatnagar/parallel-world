@@ -1,3 +1,5 @@
+using ParallelWorld.Application.Simulation;
+using ParallelWorld.Domain.Relationships;
 using ParallelWorld.Domain.Simulation;
 
 namespace ParallelWorld.Simulation;
@@ -20,6 +22,12 @@ public static class SimulationReasonCodes
     public const string TopicInputsUnavailable = "topic_inputs_unavailable";
     public const string QuietHours = "quiet_hours";
     public const string ScheduleIneligible = "schedule_ineligible";
+    public const string PositiveMoodUnavailable = "positive_mood_unavailable";
+    public const string RepetitionSemanticsUnavailable = "repetition_semantics_unavailable";
+    public const string FollowCandidateIneligible = "follow_candidate_ineligible";
+    public const string FollowThresholdIneligible = "follow_threshold_ineligible";
+    public const string FollowRollIneligible = "follow_roll_ineligible";
+    public const string FollowExecuted = "follow_executed";
 }
 
 public sealed record SimulationRuleContext(
@@ -33,21 +41,27 @@ public sealed record SimulationRuleContext(
     int RuleVersion,
     long Seed,
     SimulationInputAvailability InputAvailability,
-    IDeterministicRandomProvider Random);
+    IDeterministicRandomProvider Random,
+    IReadOnlyList<FollowRuleCandidate>? FollowCandidates = null);
 
 public sealed record SimulationInputAvailability(
     bool HasGoalRelevance,
     bool HasMoodActivation,
     bool HasEventRelevance,
     bool HasTopicInputs,
-    bool HasRelationshipState)
+    bool HasRelationshipState,
+    bool HasAuthorReputation = false,
+    bool HasPositiveMood = false,
+    bool HasRepetitionSemantics = false)
 {
     public static SimulationInputAvailability M08 { get; } = new(false, false, false, false, false);
+    public static SimulationInputAvailability M10 { get; } = new(false, false, false, false, true, true, false, false);
 }
 
 public sealed record SimulationRuleDecision(
     SimulationRuleOutcome Outcome,
-    string ReasonCode);
+    string ReasonCode,
+    FollowRuleAction? FollowAction = null);
 
 public interface ISimulationRule
 {
@@ -119,14 +133,8 @@ public sealed class ReplySimulationRule : ISimulationRule
     public int Priority => 300;
 
     public SimulationRuleDecision Evaluate(SimulationRuleContext context) =>
-        RelationshipDecision(context, Code);
-
-    private static SimulationRuleDecision RelationshipDecision(
-        SimulationRuleContext context,
-        string ruleCode) =>
-        !context.InputAvailability.HasRelationshipState
-            ? new(SimulationRuleOutcome.Unavailable, SimulationReasonCodes.RelationshipStateUnavailable)
-            : throw new InvalidOperationException($"{ruleCode} cannot activate before M10.");
+        !context.InputAvailability.HasRelationshipState ? new(SimulationRuleOutcome.Unavailable, SimulationReasonCodes.RelationshipStateUnavailable)
+        : new(SimulationRuleOutcome.Unavailable, SimulationReasonCodes.MoodActivationUnavailable);
 }
 
 public sealed class ReactSimulationRule : ISimulationRule
@@ -134,10 +142,15 @@ public sealed class ReactSimulationRule : ISimulationRule
     public string Code => SimulationRuleCodes.React;
     public int Priority => 400;
 
-    public SimulationRuleDecision Evaluate(SimulationRuleContext context) =>
-        !context.InputAvailability.HasRelationshipState
-            ? new(SimulationRuleOutcome.Unavailable, SimulationReasonCodes.RelationshipStateUnavailable)
-            : throw new InvalidOperationException($"{Code} cannot activate before M10.");
+    public SimulationRuleDecision Evaluate(SimulationRuleContext context)
+    {
+        if (!context.InputAvailability.HasRelationshipState) return new(SimulationRuleOutcome.Unavailable, SimulationReasonCodes.RelationshipStateUnavailable);
+        if (!context.InputAvailability.HasAuthorReputation) return new(SimulationRuleOutcome.Unavailable, "author_reputation_unavailable");
+        if (!context.InputAvailability.HasPositiveMood) return new(SimulationRuleOutcome.Unavailable, SimulationReasonCodes.PositiveMoodUnavailable);
+        if (!context.InputAvailability.HasGoalRelevance) return new(SimulationRuleOutcome.Unavailable, SimulationReasonCodes.GoalRelevanceUnavailable);
+        if (!context.InputAvailability.HasRepetitionSemantics) return new(SimulationRuleOutcome.Unavailable, SimulationReasonCodes.RepetitionSemanticsUnavailable);
+        throw new InvalidOperationException("REACT-01 has no approved M10 execution contract beyond repetition.");
+    }
 }
 
 public sealed class FollowSimulationRule : ISimulationRule
@@ -145,8 +158,27 @@ public sealed class FollowSimulationRule : ISimulationRule
     public string Code => SimulationRuleCodes.Follow;
     public int Priority => 500;
 
-    public SimulationRuleDecision Evaluate(SimulationRuleContext context) =>
-        !context.InputAvailability.HasRelationshipState
-            ? new(SimulationRuleOutcome.Unavailable, SimulationReasonCodes.RelationshipStateUnavailable)
-            : throw new InvalidOperationException($"{Code} cannot activate before M10.");
+    public SimulationRuleDecision Evaluate(SimulationRuleContext context)
+    {
+        if (!context.InputAvailability.HasRelationshipState) return new(SimulationRuleOutcome.Unavailable, SimulationReasonCodes.RelationshipStateUnavailable);
+        foreach (var c in context.FollowCandidates ?? [])
+        {
+            if (c.IsFollowing)
+            {
+                if (c.Relationship.Rivalry >= 60 || c.Relationship.Trust <= 25 || c.QualifiedNegativeEventCount >= 3)
+                {
+                    return new(SimulationRuleOutcome.Executed, SimulationReasonCodes.FollowExecuted,
+                        new(c.SourceActorId, c.TargetActorId, false, "Unfollow", 0, 0, c.StableOrdinal));
+                }
+                continue;
+            }
+            if (c.Relationship.Familiarity < 20 || (c.InterestOverlap < 40 && c.TargetReputation < 70)) continue;
+            var score = RelationshipMechanics.FollowProbability(c.Relationship, c.InterestOverlap, c.TargetReputation);
+            if (score < 60) continue;
+            var roll = context.Random.NextInt(new(context.Seed, Code, c.SourceActorId, c.TargetActorId, null, c.StableOrdinal), 0, 100);
+            if (roll < score) return new(SimulationRuleOutcome.Executed, SimulationReasonCodes.FollowExecuted, new(c.SourceActorId, c.TargetActorId, true, c.HasHistoricalFollow ? "Re-follow" : null, score, roll, c.StableOrdinal));
+            return new(SimulationRuleOutcome.Eligible, SimulationReasonCodes.FollowRollIneligible);
+        }
+        return new(SimulationRuleOutcome.Ineligible, SimulationReasonCodes.FollowCandidateIneligible);
+    }
 }

@@ -35,6 +35,7 @@ public static class CharacterCastFactory
                 template.ActivityLevel,
                 template.Influence,
                 template.Popularity,
+                50,
                 template.Mood,
                 context.WorldCreatedAt));
             actors.Add(Actor.CreateCharacter(

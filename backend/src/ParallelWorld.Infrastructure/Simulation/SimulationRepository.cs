@@ -1,6 +1,9 @@
 using Microsoft.EntityFrameworkCore;
 using ParallelWorld.Application.Simulation;
+using ParallelWorld.Domain.Relationships;
 using ParallelWorld.Domain.Simulation;
+using ParallelWorld.Domain.Social;
+using ParallelWorld.Domain.Worlds;
 using ParallelWorld.Infrastructure.Persistence;
 
 namespace ParallelWorld.Infrastructure.Simulation;
@@ -57,6 +60,112 @@ internal sealed class SimulationRepository(ParallelWorldDbContext dbContext) : I
         dbContext.SimulationRuns.SingleOrDefaultAsync(
             run => run.WorldId == worldId && run.Id == runId,
             cancellationToken);
+
+    public async Task<IReadOnlyList<FollowRuleCandidate>> ListFollowCandidatesAsync(Guid worldId, DateTimeOffset currentGameTime, DateOnly currentGameDate, CancellationToken cancellationToken)
+    {
+        var followCutoff = currentGameTime.AddDays(-7);
+        var refollowCutoff = currentGameTime.AddDays(-14);
+        var negativeEventCutoff = currentGameDate.AddDays(-7);
+        var actors = await (from actor in dbContext.Actors.AsNoTracking()
+                            join character in dbContext.Characters.AsNoTracking()
+                                on new { actor.WorldId, actor.CharacterId }
+                                equals new { character.WorldId, CharacterId = (Guid?)character.Id }
+                            where actor.WorldId == worldId
+                                && actor.ActorType == ActorType.Character
+                                && actor.Status == ActorStatus.Active
+                                && actor.CharacterId != null
+                            orderby actor.Id
+                            select new { ActorId = actor.Id, CharacterId = character.Id, character.Reputation })
+            .ToListAsync(cancellationToken);
+        var actorIds = actors.Select(x => x.ActorId).ToArray();
+        var characterIds = actors.Select(x => x.CharacterId).ToArray();
+        var relationships = (await dbContext.Relationships.AsNoTracking()
+                .Where(x => x.WorldId == worldId && actorIds.Contains(x.SourceActorId) && actorIds.Contains(x.TargetActorId))
+                .ToListAsync(cancellationToken))
+            .ToDictionary(x => (x.SourceActorId, x.TargetActorId));
+        var follows = await dbContext.Follows.AsNoTracking()
+            .Where(x => x.WorldId == worldId && actorIds.Contains(x.FollowerActorId) && actorIds.Contains(x.FollowedActorId))
+            .ToListAsync(cancellationToken);
+        var followLookup = follows.ToLookup(x => (x.FollowerActorId, x.FollowedActorId));
+        var dailyCounts = follows
+            .GroupBy(x => x.FollowerActorId)
+            .ToDictionary(
+                x => x.Key,
+                x => x.Sum(follow => (follow.StartedGameDate == currentGameDate ? 1 : 0)
+                    + (follow.EndedGameDate == currentGameDate ? 1 : 0)));
+        var qualifiedNegativeCounts = (await dbContext.RelationshipEvents.AsNoTracking()
+                .Where(x => x.WorldId == worldId
+                    && actorIds.Contains(x.SourceActorId)
+                    && actorIds.Contains(x.TargetActorId)
+                    && x.IsQualifiedNegative
+                    && x.OccurredGameDate >= negativeEventCutoff)
+                .Select(x => new { x.SourceActorId, x.TargetActorId })
+                .ToListAsync(cancellationToken))
+            .GroupBy(x => (x.SourceActorId, x.TargetActorId))
+            .ToDictionary(x => x.Key, x => x.Count());
+        var interests = (await dbContext.CharacterInterests.AsNoTracking()
+                .Where(x => x.WorldId == worldId && characterIds.Contains(x.CharacterId))
+                .Select(x => new { x.CharacterId, x.TopicId })
+                .ToListAsync(cancellationToken))
+            .GroupBy(x => x.CharacterId)
+            .ToDictionary(x => x.Key, x => x.Select(y => y.TopicId).ToArray());
+
+        var candidates = new List<FollowRuleCandidate>();
+        var stableOrdinal = 0;
+        foreach (var source in actors)
+        {
+            foreach (var target in actors)
+            {
+                var ordinal = stableOrdinal++;
+                if (source.ActorId == target.ActorId || dailyCounts.GetValueOrDefault(source.ActorId) >= 2)
+                {
+                    continue;
+                }
+
+                var history = followLookup[(source.ActorId, target.ActorId)].ToArray();
+                var active = history.SingleOrDefault(x => x.EndedAt is null);
+                if (active is not null && active.StartedGameTime > followCutoff)
+                {
+                    continue;
+                }
+                if (active is null && history.Length > 0
+                    && history.Max(x => x.EndedGameTime) is DateTimeOffset lastEndedGameTime
+                    && lastEndedGameTime > refollowCutoff)
+                {
+                    continue;
+                }
+
+                var values = relationships.GetValueOrDefault((source.ActorId, target.ActorId))?.Values
+                    ?? RelationshipValues.Initial;
+                candidates.Add(new(
+                    source.ActorId,
+                    target.ActorId,
+                    values,
+                    RelationshipMechanics.InterestOverlap(
+                        interests.GetValueOrDefault(source.CharacterId) ?? [],
+                        interests.GetValueOrDefault(target.CharacterId) ?? []),
+                    target.Reputation,
+                    active is not null,
+                    history.Length > 0,
+                    qualifiedNegativeCounts.GetValueOrDefault((source.ActorId, target.ActorId)),
+                    ordinal));
+            }
+        }
+
+        return candidates;
+    }
+
+    public Guid AddAutonomousFollow(Guid worldId, Guid runId, DateTimeOffset occurredAt, DateTimeOffset occurredGameTime, DateOnly occurredGameDate, int ruleVersion, FollowRuleAction action)
+    {
+        var key = $"m10:follow:{runId:N}:{action.SourceActorId:N}:{action.TargetActorId:N}";
+        var eventId = Guid.NewGuid();
+        dbContext.GameplayEvents.Add(new GameplayEvent(eventId, worldId, action.DesiredFollowing ? "followStarted" : "followEnded", action.SourceActorId, action.TargetActorId, occurredAt, 50, 0, "follow_01", ruleVersion, key, occurredAt));
+        if (action.DesiredFollowing) dbContext.Follows.Add(new Follow(Guid.NewGuid(), worldId, action.SourceActorId, action.TargetActorId, occurredAt, occurredGameTime, occurredGameDate, eventId, key));
+        else dbContext.Follows.Single(f => f.WorldId == worldId && f.FollowerActorId == action.SourceActorId && f.FollowedActorId == action.TargetActorId && f.EndedAt == null).End(occurredAt, occurredGameTime, occurredGameDate);
+        var simulationAction = new SimulationAction(Guid.NewGuid(), worldId, runId, action.StableOrdinal, action.SourceActorId, action.DesiredFollowing ? "follow" : "unfollow", action.TargetActorId, null, null, null, null, $"follow_01_score_{action.Score}_roll_{action.Roll}", occurredAt, key);
+        simulationAction.MarkExecuted(occurredAt); dbContext.SimulationActions.Add(simulationAction);
+        return eventId;
+    }
 
     public void AddRun(
         SimulationRun run,

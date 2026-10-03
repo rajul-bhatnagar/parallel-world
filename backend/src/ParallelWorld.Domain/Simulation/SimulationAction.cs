@@ -67,6 +67,13 @@ public sealed class SimulationAction
     public DateTimeOffset? ExecutedAt { get; private set; }
     public string IdempotencyKey { get; private set; }
     public long Version { get; private set; }
+
+    public void MarkExecuted(DateTimeOffset executedAt)
+    {
+        Status = SimulationActionStatus.Executed;
+        ExecutedAt = executedAt;
+        Version++;
+    }
 }
 
 public enum SimulationActionStatus

@@ -18,6 +18,9 @@ import 'package:parallel_world_app/features/feed/data/feed_api.dart';
 import 'package:parallel_world_app/features/feed/data/feed_cache.dart';
 import 'package:parallel_world_app/features/feed/data/feed_repository.dart';
 import 'package:parallel_world_app/features/session/application/session_contracts.dart';
+import 'package:parallel_world_app/features/relationships/application/relationship_contracts.dart';
+import 'package:parallel_world_app/features/relationships/application/relationship_provider.dart';
+import 'package:parallel_world_app/features/relationships/data/relationship_api.dart';
 import 'package:parallel_world_app/features/session/application/session_dependencies.dart';
 import 'package:parallel_world_app/features/session/data/auth_api.dart';
 import 'package:parallel_world_app/features/session/data/session_manager.dart';
@@ -136,6 +139,9 @@ final _feedRepositoryImplementationProvider = Provider<FeedRepository>(
     ref.watch(_feedCacheProvider),
   ),
 );
+final _relationshipGatewayProvider = Provider<RelationshipGateway>(
+  (ref) => RelationshipApi(ref.watch(authenticatedDioProvider)),
+);
 
 Widget buildAppScope({required AppConfig config, required Widget child}) =>
     ProviderScope(
@@ -155,6 +161,9 @@ Widget buildAppScope({required AppConfig config, required Widget child}) =>
         ),
         feedRepositoryProvider.overrideWith(
           (ref) => ref.watch(_feedRepositoryImplementationProvider),
+        ),
+        relationshipGatewayProvider.overrideWith(
+          (ref) => ref.watch(_relationshipGatewayProvider),
         ),
       ],
       child: child,

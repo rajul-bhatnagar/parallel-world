@@ -4,6 +4,7 @@ using System.Text;
 using ParallelWorld.Application.Abstractions.Persistence;
 using ParallelWorld.Application.Characters;
 using ParallelWorld.Application.Common;
+using ParallelWorld.Application.Relationships;
 using ParallelWorld.Domain.Characters;
 using ParallelWorld.Domain.Social;
 
@@ -16,6 +17,7 @@ public sealed class SocialFeedService(
     ICharacterCatalogueService characterCatalogueService,
     IUnitOfWork unitOfWork,
     IPersistenceFailureClassifier failureClassifier,
+    IRelationshipService relationshipService,
     TimeProvider timeProvider) : ISocialFeedService
 {
     public const string CreatePostOperation = "social.create-post";
@@ -421,7 +423,10 @@ public sealed class SocialFeedService(
                         existing.StartedAt));
                 }
 
+                var previous = await repository.FindLatestFollowAsync(worldId, player.ActorId, actorId, cancellationToken);
+
                 var now = timeProvider.GetUtcNow();
+                var gameDate = ProjectGameDate(player.CurrentWorldTime, player.DisplayTimeZoneId);
                 var operationId = Guid.NewGuid();
                 var eventId = Guid.NewGuid();
                 var gameplayEvent = new GameplayEvent(
@@ -443,10 +448,16 @@ public sealed class SocialFeedService(
                     player.ActorId,
                     actorId,
                     now,
+                    player.CurrentWorldTime,
+                    gameDate,
                     eventId,
                     $"m07:follow:{operationId:N}");
                 repository.AddFollow(gameplayEvent, follow);
                 await unitOfWork.SaveChangesAsync(cancellationToken);
+                if (previous is not null)
+                {
+                    await relationshipService.ApplyAsync(new(worldId, player.ActorId, actorId, eventId, "Re-follow", false, true, gameDate, now, player.RuleVersion, $"m10:relationship:{eventId:N}"), cancellationToken);
+                }
                 await transaction.CommitAsync(cancellationToken);
                 return SocialResult<FollowState>.Success(new(actorId, true, now));
             }
@@ -487,8 +498,13 @@ public sealed class SocialFeedService(
                     cancellationToken);
                 if (existing is not null)
                 {
-                    existing.End(timeProvider.GetUtcNow());
+                    var now = timeProvider.GetUtcNow();
+                    var gameDate = ProjectGameDate(player.CurrentWorldTime, player.DisplayTimeZoneId);
+                    existing.End(now, player.CurrentWorldTime, gameDate);
+                    var eventId = Guid.NewGuid();
+                    repository.AddGameplayEvent(new GameplayEvent(eventId, worldId, "followEnded", player.ActorId, actorId, now, 0, 0, "player_unfollow", player.RuleVersion, $"m10:unfollow:{eventId:N}", now));
                     await unitOfWork.SaveChangesAsync(cancellationToken);
+                    await relationshipService.ApplyAsync(new(worldId, player.ActorId, actorId, eventId, "Unfollow", false, false, gameDate, now, player.RuleVersion, $"m10:relationship:{eventId:N}"), cancellationToken);
                 }
 
                 await transaction.CommitAsync(cancellationToken);
@@ -678,6 +694,12 @@ public sealed class SocialFeedService(
         var bytes = Encoding.UTF8.GetBytes(FormattableString.Invariant(
             $"POST\n/api/v1/worlds/{worldId:N}/posts\n{clientPostId:N}\n{content}"));
         return Convert.ToHexString(SHA256.HashData(bytes));
+    }
+
+    private static DateOnly ProjectGameDate(DateTimeOffset currentWorldTime, string displayTimeZoneId)
+    {
+        var timeZone = TimeZoneInfo.FindSystemTimeZoneById(displayTimeZoneId);
+        return DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(currentWorldTime, timeZone).DateTime);
     }
 
     private const string CreateReplyOperation = "social.create-reply";

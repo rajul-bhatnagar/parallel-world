@@ -566,7 +566,7 @@ Every listed schema change includes an EF migration, clean/previous-schema Postg
 - **Flutter scope:** Conversation list/chat/composer, paging, cache, pending/failed/retry, approved reply state, polling/refresh.
 - **Infrastructure scope:** Durable wording work through existing BackgroundService pattern; realtime not required.
 - **Seed data:** Empty/history, eligible/no-response, provider-fallback, equal-time cursor fixtures.
-- **Test scope:** Conversation uniqueness, sender/membership, duplicate client ID, order/cursor, eligibility/fallback, ownership, pending retry, log redaction, screen states.
+- **Test scope:** Conversation uniqueness, sender/membership, duplicate client ID, order/cursor, eligibility/fallback, ownership, pending retry, log redaction, screen states; fixed M11-v1 `Urgency=50` and `ConflictAvoidancePenalty=0`; wording/punctuation/length/client/provider/fallback invariance; Rivalry-alone non-penalty; deterministic PRNG authority.
 - **Documentation updates:** Messaging setup and any approved contract clarification.
 - **Explicit exclusions:** Simulated delayed replies, character initiation, follow-up, group chat, editing/deletion, SignalR requirement.
 - **Acceptance criteria:** Messages persist and paginate; one logical send creates one message; eligible reply mechanics precede wording; offline history is cache-only.
@@ -576,6 +576,7 @@ Every listed schema change includes an EF migration, clean/previous-schema Postg
 - **Suggested milestone commit:** `feat(messaging): add private character conversations`.
 - **Exit criteria:** Persistent private messaging works without unreleased timing behavior.
 - **Main risks:** Privacy leakage, duplicate sends, cursor errors, accidental delayed-feature scope.
+- **Implementation readiness:** Unblocked by ADR-027. MSG-02 uses the unchanged formula and PRNG behavior with fixed neutral `Urgency=50` on its 0-100 scale and `ConflictAvoidancePenalty=0`; text/AI classification and richer urgency/conflict mechanics remain deferred.
 - **Rollback:** Disable reply worker while retaining player messages; revert compatible clients/API without deleting conversation history.
 
 ## 25. M12 Long-term memory
@@ -825,6 +826,7 @@ Do not silently settle these before the affected milestone:
 5. **M15 trend updates:** M15 uses only released seeded topics unless M14 is separately activated.
 6. **M09 AI provider:** ADR-024 selects local Ollama with configurable preferred `qwen3:4b`, zero paid-API dependency, application validation, deterministic fallback, bounded retry/timeout, and fake/stub-only automated tests; cloud providers remain deferred.
 7. **Offline local queue wording in the planning brief:** the risk mitigation proposes a local queue broadly, while approved Flutter/product/API documents allow drafts and retry of already-submitted indeterminate operations only. This plan preserves the empty allowlist for new offline initiation. `PRODUCT.md`, `ARCHITECTURE.md`, `API_CONVENTIONS.md`, and `FLUTTER_GUIDELINES.md` would require coordinated correction before expansion.
+8. **M11 MSG-02 inputs:** ADR-027 fixes M11-v1 Player-message Urgency at neutral 50 on the 0-100 scale and ConflictAvoidancePenalty at 0. No client, text heuristic, Rivalry-only inference, or AI classification supplies either value; richer mechanics require a later accepted decision.
 
 ### Final consistency checklist
 

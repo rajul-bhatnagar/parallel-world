@@ -65,6 +65,8 @@ The rest of this document references these names. Changing a value requires a re
 | `MAX_UNSOLICITED_MESSAGES_PER_DAY` | 2 | Deferred |
 | `MESSAGE_TOPIC_COOLDOWN_HOURS` | 24 | Deferred initiation; MVP replies use conversation context |
 | `MAX_PLANNED_REPLY_DELAY_HOURS` | 24 | Deferred delayed replies |
+| `M11_REPLY_URGENCY` | 50 on the 0-100 scale | M11 v1; fixed neutral value for every Player-authored message |
+| `M11_CONFLICT_AVOIDANCE_PENALTY` | 0 | M11 v1; no modeled unresolved-conflict mechanic |
 | `MAX_ORDINARY_RELATIONSHIP_DELTA` | 15 per dimension/event | MVP |
 | `MAX_SEVERE_RELATIONSHIP_DELTA` | 30 per dimension/event | MVP |
 | `MAX_DAILY_RELATIONSHIP_DELTA` | 20 absolute per dimension/direction | MVP |
@@ -312,9 +314,9 @@ AI receives actor voice attributes, decided topic, stance, tone, intent, maximum
 ### Rule MSG-02: reply eligibility and timing
 
 - **Purpose:** Decide whether an AI character replies and, when enabled, when.
-- **Inputs:** Message intent/urgency, schedule, sleep/work state, closeness, mood, unresolved conflict, recent messages.
+- **Inputs:** Message intent/urgency, schedule, sleep/work state, closeness, mood, unresolved conflict, recent messages. For every Player-authored M11-v1 message, the backend supplies fixed `Urgency=50` on the 0-100 scale. Because M11 v1 has no modeled unresolved-conflict mechanic, it supplies `ConflictAvoidancePenalty=0`.
 - **Preconditions:** Valid same-world conversation and recipient knowledge; no existing planned reply for source message.
-- **Decision:** `ReplyScore=clamp(35 + 0.20*Urgency + 0.20*Familiarity + 0.15*Trust + 0.15*Comfort + 0.10*Sociability - ConflictAvoidancePenalty,0,100)`. MVP processes an eligible reply without simulated delay; a failed roll records NoResponse. Deferred delay is 0-`MAX_PLANNED_REPLY_DELAY_HOURS`, increased by Sleep/Work/Tired and reduced by urgency/closeness.
+- **Decision:** `ReplyScore=clamp(35 + 0.20*Urgency + 0.20*Familiarity + 0.15*Trust + 0.15*Comfort + 0.10*Sociability - ConflictAvoidancePenalty,0,100)`. For M11 v1, substitute exactly `Urgency=50` and `ConflictAvoidancePenalty=0`; do not derive either value from text, punctuation, length, sentiment, Rivalry, message history, client input, or AI output. MVP processes an eligible reply without simulated delay; a failed roll records NoResponse. Deferred delay is 0-`MAX_PLANNED_REPLY_DELAY_HOURS`, increased by Sleep/Work/Tired and reduced by urgency/closeness.
 - **Randomness:** Deterministic eligibility roll and, when enabled, delay substream.
 - **Limits:** One reply plan per source message; no full-history AI input.
 - **Cooldown:** Conversation repetition/topic cooldown; follow-up after 24 hours only when an unresolved promise/urgent intent remains.
@@ -323,6 +325,8 @@ AI receives actor voice attributes, decided topic, stance, tone, intent, maximum
 - **Idempotency:** Source-message/recipient key.
 - **Example:** A work-state recipient gets an eligible reply; MVP generates it now, while deferred timing would persist a four-hour due time first.
 - **Status:** Eligibility/reply MVP; delayed timing and character follow-up deferred.
+
+Player-authored text remains content for validation and, after the mechanical decision, bounded wording context. It does not supply hidden MSG-02 mechanics. M09/Ollama cannot classify intent, urgency, conflict, reply existence, timing, or probability. Future explicit intent, urgency categories, conflict state, deterministic classification, relationship-driven conflict, or memory-aware inputs require an accepted rule-version decision defining their authoritative source, exact mapping and range, replay/versioning behavior, and MSG-02 interaction before replacing the M11-v1 constants.
 
 ## 10. Relationship system
 

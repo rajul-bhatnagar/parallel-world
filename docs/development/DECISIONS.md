@@ -537,6 +537,36 @@ M10 has no remaining mechanical planning blocker. FOLLOW-01 activates with appro
 
 A Character Reputation progression rule, authoritative Helpful-reply classifier, PositiveMood mapping, GoalRelevance source, repetition semantics, or new social-action relationship delta is separately approved.
 
+## ADR-027 — M11 MSG-02 neutral urgency and conflict defaults
+
+**Date:** 2026-10-03
+**Status:** Accepted; makes the M11-v1 MSG-02 eligibility rule implementation-ready
+
+**Context**
+
+MSG-02 requires numeric `Urgency` and `ConflictAvoidancePenalty` inputs, but no accepted M11 mechanic classifies Player-authored message intent/urgency or persists unresolved conflict. Leaving either value implicit would force implementation to invent text heuristics, misuse Rivalry, accept client-controlled hidden mechanics, or delegate gameplay authority to M09/Ollama.
+
+**Decision**
+
+- M11 v1 evaluates every Player-authored private message with `Urgency=50`, the exact neutral midpoint of MSG-02's documented 0-100 scale. The backend supplies this fixed value; the Player and client cannot select or override it.
+- M11 v1 uses `ConflictAvoidancePenalty=0` because no authoritative unresolved-conflict mechanic exists. Absence of modeled conflict contributes no penalty, and Rivalry alone is not unresolved conflict.
+- The existing MSG-02 formula, coefficients, deterministic PRNG behavior, probability semantics, cooldowns, and immediate/no-response timing remain unchanged. These explicit inputs make the M11-v1 rule fully evaluable.
+- Message content remains presentation/content input subject to ordinary validation. Keywords, sentiment, punctuation, uppercase, regexes, message length, history scanning, and embeddings do not classify intent, Urgency, or conflict.
+- M09/Ollama remains wording-only and runs only after the authoritative MSG-02 decision. Provider configuration, output, failure, and deterministic fallback cannot affect Urgency, ConflictAvoidancePenalty, reply existence, timing, or probability.
+- Future explicit conversation intent, urgency categories, modeled conflict, deterministic intent classification, relationship-driven conflict, or memory-aware context requires a separate accepted decision defining the authoritative source, exact mapping, numeric range, replay/rule-version behavior, and interaction with MSG-02 before replacing these defaults.
+
+**Alternatives considered**
+
+Client-supplied urgency, keyword or punctuation scoring, length-based urgency, sentiment/regex/LLM classification, deriving conflict from Rivalry, scanning conversation history, and treating missing inputs as implementation-local constants were rejected because they create unapproved or unaudited gameplay mechanics.
+
+**Consequences**
+
+M11 can implement and test deterministic immediate reply eligibility/no-response without text-dependent mechanics or AI authority. Different valid Player wording under identical mechanical state produces the same MSG-02 mechanical evaluation. Richer urgency and conflict behavior is deliberately deferred.
+
+**Revisit when**
+
+An accepted rule version introduces explicit intent/urgency, authoritative unresolved-conflict state, relationship-driven conflict, or M12-aware inputs with complete mapping and replay semantics.
+
 ## New ADR template
 
 ### ADR-XXX — Title

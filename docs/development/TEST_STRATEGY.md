@@ -248,6 +248,10 @@ Hostile text such as “ignore previous instructions,” fake system messages, S
 
 Test direct-conversation uniqueness, player membership, message send and `clientMessageId` replay, newest-first cursor order and ID tie-break, eligible immediate MVP reply/no-response, reply-plan persistence, provider fallback, realtime/poll refetch, reconnect, pending local send, indeterminate retry, read cursor, wrong ownership, and redaction.
 
+MSG-02 rule tests assert that every Player-authored message receives fixed `Urgency=50` on the 0-100 scale and that the client cannot override it. Different wording, punctuation, and lengths under otherwise identical mechanical state produce the same eligibility evaluation. Provider enabled/disabled, provider output, and deterministic fallback also leave Urgency and the deterministic PRNG outcome unchanged.
+
+Conflict tests assert `ConflictAvoidancePenalty=0` when no modeled unresolved-conflict state exists. Message wording, history sentiment, Rivalry alone, and AI/provider output cannot create a penalty. Together, the same authoritative mechanical state and deterministic seed with different Player wording must produce the same MSG-02 score, draw, and eligible/no-response outcome.
+
 Character-initiated and simulated delayed replies are deferred. MVP may test that sleep/schedule affects approved eligibility/reason behavior; it must not require unreleased delayed delivery.
 
 ## 20. Relationship and dating testing
@@ -506,7 +510,7 @@ A feature is complete only when acceptance criteria are met; sources/existing co
 | M08 Simulation | Seed reproducibility, ordering/reasons; creation-time bootstrap, exact due boundary, legacy due-time normalization, one 15-minute run per trigger, 31-minute two-trigger progression, no batching; exact decimal TimeScale advancement including fractional scale, captured scale audit/change, `LastSimulatedAt` mirroring, replay/rollback/concurrency cursor and world-time safety; world IANA timezone defaults and schedule/quiet-hour projection from resulting world time, DST/validation/host independence; one deterministic rule evaluation per run/rule with stable outcome/reason precedence; unavailable ACT-01/POST-01/REPLY-01/REACT-01/FOLLOW-01 before random draws; no autonomous actions/effects/counter mutations; no zero/proxy/redistributed inputs; unchanged M06/M07 Player actions |
 | M09 AI | Fake/stub success/failure/one-retry/fallback, minimized context, no mechanics, no AI network/model requirement, safe diagnostics |
 | M10 Relationships | Dimensions/caps/asymmetry/history/labels |
-| M11 Messages | Conversation uniqueness, send/idempotency/cursor, eligibility/privacy |
+| M11 Messages | Conversation uniqueness, send/idempotency/cursor, eligibility/privacy; fixed neutral Urgency, zero conflict penalty, text/client/provider invariance, deterministic PRNG authority |
 | M12 Memory | Creation/ranking/provenance/secrets/promises/no full history |
 | M13 Dating | Eligibility/outcome/cooldown/required history/invalid transitions through Dating |
 | M14 Events/trends | Deferred-feature tests only when intentionally activated |

@@ -400,7 +400,7 @@ sequenceDiagram
     P-->>F: API sync / authorized realtime event
 ```
 
-MVP supports player-to-character direct conversations only. A conversation and every message carry `WorldId`; sender/recipient actors must belong to it. Player message persistence precedes reply evaluation. GAME_RULES.md decides whether a reply exists and its effects. MVP may process it immediately, but the persisted action includes scheduling fields so delayed replies can be added later without making AI authoritative. Relevant memories are selected, not full history. Relationship effects reference the source event and apply idempotently.
+MVP supports player-to-character direct conversations only. A conversation and every message carry `WorldId`; sender/recipient actors must belong to it. Player message persistence precedes reply evaluation. GAME_RULES.md decides whether a reply exists and its effects. M11 v1 supplies fixed mechanical inputs `Urgency=50` on the 0-100 scale and `ConflictAvoidancePenalty=0`; neither the client, message text, nor AI/provider output may alter them or classify intent/conflict. MVP may process an eligible reply immediately, but the persisted action includes scheduling fields so delayed replies can be added later without making AI authoritative. Relevant memories are selected, not full history. Relationship effects reference the source event and apply idempotently.
 
 Group conversations are deferred. Public contracts should avoid assuming all future conversations have exactly two participants, but MVP must not add group-chat UI, behaviour, or speculative generalized infrastructure beyond a clean migration seam.
 

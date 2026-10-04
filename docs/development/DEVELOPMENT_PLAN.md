@@ -261,7 +261,7 @@ flowchart LR
 | M09 | M08 persisted decisions; ADR-024 | None |
 | M10 | M08; M09 for final wording only | None |
 | M11 | M03-M05, M08-M10 | Delayed timing remains deferred |
-| M12 | M10-M11 and event provenance | None |
+| M12 | M10-M11, event provenance, ADR-028, ADR-029 | None |
 | M13 | M10-M12 | Romance/content policy before broad release |
 | M14 | M08 and M10 | Version 1 product activation |
 | M15 | M08, M10-M13 | Full M14 is not required; use released MVP topics only |
@@ -584,21 +584,22 @@ Every listed schema change includes an EF migration, clean/previous-schema Postg
 - **Goal:** Create and retrieve meaningful structured character memories.
 - **User-visible result:** Character wording can reference relevant prior interactions without exposing unrelated secrets.
 - **Dependencies:** M10-M11 and GameplayEvent provenance.
-- **Backend scope:** MEM-01/02 creation/ranking/recall, expiry/reinforcement/contradiction, secrets/knowers, promises/resolution, authorized bounded AI context.
-- **Database scope:** CharacterMemories, Secrets/SecretKnowers, Promises, RecallRequests/Selections with composite provenance/access FKs, checks/uniques/indexes, migration.
+- **Backend scope:** Authoritative structured creation of exactly Fact, Preference, Event, Secret, and Promise; exact MEM-02 ranking; bounded retention; inactive Secret disclosure; structured Promise lifecycle; authorized AI context only after mechanical decisions.
+- **Database scope:** CharacterMemories, provenance-keyed MemoryCreationOutcomes, Secrets/SecretKnowers, Promises, RecallRequests/Selections with typed subject/source provenance, CharacterPrivate owner access, source uniqueness, checks/composite FKs, and no embedding/vector columns.
 - **Flutter scope:** No raw memory browser; only sanitized history/wording projections and ordinary states.
 - **Infrastructure scope:** No new external service; existing AI work receives bounded references.
-- **Seed data:** Meaningful/trivial, promise, secret, contested, expired/permanent memory scenarios.
-- **Test scope:** Thresholds, mandatory types, ranking/tie/cap, expiry, provenance, knower access, promise states, duplicate prevention, no full chat history, secret leakage.
+- **Seed data:** Structured Fact/Preference/Event/Secret/Promise sources, exact/missing subject/topic cases, ordinary retention candidates, and structured Promise due conditions.
+- **Test scope:** Structured-source-only mapping, exact formula/matches/rounding/order/top-eight cap, ordinary no-expiry, deterministic non-protected eviction, 99-protected-plus-one-non-protected eviction, 100-protected rejection with `memory_capacity_protected`, unchanged protected rows, count never above 100, deterministic rejected replay, provenance/replay, owner isolation, Secret non-disclosure, Promise transitions, no AI capacity choice, no full chat history, and M11/M09 authority boundaries.
 - **Documentation updates:** No memory formula/access change without rule/security documentation.
-- **Explicit exclusions:** AI-created authoritative memory, full transcript storage in memory, broad client endpoint, cross-world knowledge.
-- **Acceptance criteria:** Only qualified events create idempotent memories; recall is bounded/reproducible/authorized; AI failure changes no memory.
+- **Explicit exclusions:** AI/text-created mechanics, arbitrary semantic classification, embeddings/vector search, Secret disclosure, full transcript storage in memory, broad client endpoint, cross-world/cross-Character knowledge, M13 behavior.
+- **Acceptance criteria:** Only approved structured sources create idempotent CharacterPrivate memories; exact recall is bounded/reproducible/authorized; AI failure changes no memory; Promise and Secret state remains backend-authoritative.
 - **Required verification:** Rule/scenario/PostgreSQL/security/AI-context tests and safe projection checks.
 - **Manual checks:** Create meaningful/trivial interaction; inspect relevant recall and secret exclusion; force fallback.
-- **Review focus:** Knowledge provenance, secret privacy, bounded context, duplicate/reinforcement semantics.
+- **Review focus:** Knowledge provenance, owner/Secret privacy, exact recall, deterministic retention, duplicate replay, and AI/mechanical separation.
 - **Suggested milestone commit:** `feat(memory): add structured bounded character memory`.
-- **Exit criteria:** Memory continuity works with no unauthorized context.
-- **Main risks:** Secret leakage, context cost, duplicate memories, confusing contradictions.
+- **Exit criteria:** Memory continuity works with no unauthorized context and active memory count never exceeds 100.
+- **Main risks:** Secret leakage, context cost, duplicate memories, capacity races, and mechanical authority leaking to text/AI.
+- **Implementation readiness:** Unblocked by ADR-028 and ADR-029. At a protected-only full cap, skip/reject memory creation with `memory_capacity_protected` without failing the source gameplay/message operation.
 - **Rollback:** Disable recall/context use while retaining structured records; use reviewed data migration for schema rollback.
 
 ## 26. M13 Dating and relationship history

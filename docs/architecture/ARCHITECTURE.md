@@ -400,22 +400,22 @@ sequenceDiagram
     P-->>F: API sync / authorized realtime event
 ```
 
-MVP supports player-to-character direct conversations only. A conversation and every message carry `WorldId`; sender/recipient actors must belong to it. Player message persistence precedes reply evaluation. GAME_RULES.md decides whether a reply exists and its effects. M11 v1 supplies fixed mechanical inputs `Urgency=50` on the 0-100 scale and `ConflictAvoidancePenalty=0`; neither the client, message text, nor AI/provider output may alter them or classify intent/conflict. MVP may process an eligible reply immediately, but the persisted action includes scheduling fields so delayed replies can be added later without making AI authoritative. Relevant memories are selected, not full history. Relationship effects reference the source event and apply idempotently.
+MVP supports player-to-character direct conversations only. A conversation and every message carry `WorldId`; sender/recipient actors must belong to it. Player message persistence precedes reply evaluation. GAME_RULES.md decides whether a reply exists and its effects. M11 v1 supplies fixed mechanical inputs `Urgency=50` on the 0-100 scale and `ConflictAvoidancePenalty=0`; neither the client, message text, memory context, nor AI/provider output may alter them or classify intent/conflict. MVP may process an eligible reply immediately, but the persisted action includes scheduling fields so delayed replies can be added later without making AI authoritative. Only after an eligible reply is decided may M12 select bounded Character-owned memory context for M09 wording; full history is never selected. Relationship effects reference the source event and apply idempotently.
 
 Group conversations are deferred. Public contracts should avoid assuming all future conversations have exactly two participants, but MVP must not add group-chat UI, behaviour, or speculative generalized infrastructure beyond a clean migration seam.
 
 ## 18. Memory lifecycle
 
-1. A committed interaction/event is evaluated by deterministic memory rules.
-2. If meaningful, Memories persists type, owner/knowers, subject/topic, importance, emotional value, confidence, visibility, and source reference.
-3. Promise/secret knowledge and resolution are updated transactionally with their source event.
-4. Expiry/reinforcement follows rule-versioned behaviour; immutable provenance remains auditable.
-5. Later use cases request ranked memory candidates for one character and purpose.
-6. Access checks remove unknown or unauthorized secrets.
-7. The bounded selection is supplied to rules or AI wording.
-8. Recall metadata updates idempotently after actual use.
+1. A committed authoritative structured source explicitly identifies the owner Character, source category, subject, and optional canonical topic. Missing owner knowledge or subject prevents creation; arbitrary text is never classified.
+2. Memories persists exactly one of Fact, Preference, Event, Secret, or Promise with world/owner scope, CharacterPrivate visibility, deterministic confidence/importance, lifecycle, and provenance identity.
+3. Source replay reuses the existing memory through world/owner/source/type uniqueness. Secret and Promise state changes commit transactionally with their authoritative source event.
+4. Ordinary memories do not expire automatically. A Character is bounded to 100 active memories. Capacity decisions serialize per owner Character. Overflow evicts one eligible non-protected memory by Importance ASC, CreatedAtUtc ASC, Id ASC. If all 100 are protected active Secrets/Promises, memory creation alone is durably rejected with `memory_capacity_protected`; existing memories and the source gameplay/message transaction remain valid, and replay reuses the same outcome.
+5. Later use cases request ranked active memories for one Character and purpose using exact subject/topic identifiers, M10 RelationshipRelevance for Actor subjects, and persisted Importance.
+6. Ownership and visibility checks exclude every memory not owned by the requesting Character.
+7. At most `MAX_MEMORIES_PER_AI_REQUEST` memories, ordered by score then CreatedAtUtc DESC and Id DESC, are supplied only to authorized wording work after the mechanical action decision.
+8. Recall request/selection provenance is recorded idempotently without changing mechanical memory state.
 
-Conversation history remains in Messaging; Memories stores structured meaningful knowledge rather than duplicating entire transcripts. Full history is never sent to an AI provider.
+Conversation history remains in Messaging; Memories stores structured meaningful knowledge rather than duplicating entire transcripts. Full history is never sent to an AI provider. M12 v1 has no embeddings, vectors, semantic extraction, Secret disclosure mechanic, or AI authority over memory mechanics.
 
 ## 19. Relationship and dating lifecycle
 

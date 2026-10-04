@@ -405,7 +405,7 @@ Spam posts/message flooding/date-invitation repetition are constrained by endpoi
 
 Player text, posts, messages, selected memories, and world text are untrusted data, never system instructions. Use separated structured sections and a fixed system/developer contract. Do not claim prompt injection is eliminated; contain its impact through least context and output validation.
 
-Allowed when the persisted decision contract requires it: character voice/personality summary, current mood, decided topic/stance/tone/intent, safe relationship summary, the source message/content necessary for the action, authorized world-event summary, and up to `MAX_MEMORIES_PER_AI_REQUEST` selected memories.
+Allowed when the persisted decision contract requires it: character voice/personality summary, current mood, decided topic/stance/tone/intent, safe relationship summary, the source message/content necessary for the action, authorized world-event summary, and up to `MAX_MEMORIES_PER_AI_REQUEST` Character-owned memories selected by deterministic M12 rules after the mechanical action decision.
 
 Never send access/refresh tokens, email, device/install/push identifiers, unrelated account/profile data, secrets unknown to the character/recipient, unrelated memories, raw diagnostics, formulas/hidden thresholds, provider credentials, or full conversation history.
 
@@ -461,9 +461,9 @@ Flutter caches only what user experience needs and clears/separates it on logout
 
 ## 28. Memory and secret privacy
 
-Internal memories are not broadly exposed to Flutter. Player-visible shared/relationship history is a sanitized projection. Secrets are available only to recorded knowers and purposes/recipients allowed by game rules. Promise/secret/memory provenance and all actor references are same-world constrained.
+Every M12 v1 memory has CharacterPrivate visibility and is available only to its owning Character's internal recall path. Raw memory, Secret, Promise, score, and provenance state is not exposed to another Character, Flutter, Player UI, or a public API. Player-visible shared/relationship history is a separate sanitized projection. Promise/Secret/memory provenance and all actor references are same-world constrained.
 
-AI retrieval applies character knowledge and secret restrictions before ranking. Logs, summaries, realtime, notifications, push, and errors must not reveal hidden secret text, motivation, attraction, or memory. An AI output that discloses unauthorized content is rejected and replaced by safe fallback.
+AI retrieval applies world, owner, active-state, and CharacterPrivate restrictions before ranking. Logs, summaries, realtime, notifications, push, and errors must not reveal hidden Secret text, motivation, attraction, or memory. An AI output that discloses unauthorized content is rejected and replaced by safe fallback. M12 v1 does not disclose Secrets, use embeddings/vector search, or allow AI/provider output to set memory type, subject, topic, confidence, importance, visibility, lifecycle, or recall score.
 
 ## 29. Data at rest
 

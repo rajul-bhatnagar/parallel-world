@@ -349,34 +349,42 @@ RelationshipEvents and RomanticStatusHistory record different facts and do not d
 
 ### CharacterMemories
 
-- `Id`, `WorldId`, `CharacterId`, `SubjectActorId` nullable, `GameplayEventId`, `MemoryType`, `Summary`, `Importance`, `EmotionalValue`, `Confidence`, `CreatedAt`, `LastRecalledAt` nullable, `ExpiresAt` nullable, `RecallCount`, `Version`
-- Composite FKs to Character, subject Actor, and GameplayEvent.
-- No generic SourceType/SourceId.
-- Checks: Importance/Confidence 0-100, EmotionalValue -100..100, RecallCount non-negative.
+- `Id`, `WorldId`, `OwnerCharacterId`, `MemoryType`, `SubjectType`, nullable typed subject references such as `SubjectActorId` or `SubjectTopicId`, `TopicId` nullable, `Confidence`, `Importance`, `Visibility`, `LifecycleStatus`, `CreatedAtUtc`, `SourceType`, typed source reference, `SourceId`, `Version`
+- MemoryType permits exactly Fact, Preference, Event, Secret, and Promise. Visibility is CharacterPrivate in M12 v1.
+- Composite FKs constrain the owner Character, any Actor/Topic subject, canonical Topic, and each supported authoritative source to the same world. M12 creates only subject/source kinds with a typed enforceable reference; unchecked arbitrary identifiers are not accepted.
+- Exactly one authoritative subject reference and one supported typed source reference are required. Topic is nullable and never stores an arbitrary generated string.
+- Checks bound Importance/Confidence to 0-100 and enforce the type-specific M12 defaults. Ordinary memories have no automatic expiry field/transition.
 
 Indexes:
 
-- Recall candidates `(WorldId, CharacterId, SubjectActorId, Importance DESC, CreatedAt DESC, Id DESC)`.
-- Expiry `(WorldId, CharacterId, ExpiresAt) WHERE ExpiresAt IS NOT NULL`.
-- Source uniqueness `(WorldId, CharacterId, GameplayEventId, MemoryType)` prevents duplicate creation from retries.
+- Recall candidates `(WorldId, OwnerCharacterId, LifecycleStatus, CreatedAtUtc DESC, Id DESC)` with subject/topic support.
+- Source uniqueness `(WorldId, OwnerCharacterId, SourceType, SourceId, MemoryType)` prevents duplicate creation from retries and causes replay to reuse the existing row.
+- The transactional retention path locks/serializes capacity decisions for one owner Character and bounds active memories to 100. Non-protected eviction order is Importance ASC, CreatedAtUtc ASC, Id ASC. Active Secret and Promise memories are protected. At a protected-only full cap, record/reuse the provenance-keyed rejected creation outcome `memory_capacity_protected`, create no memory, mutate no protected row, and leave the source event/message transaction successful.
+
+### MemoryCreationOutcomes
+
+- `Id`, `WorldId`, `OwnerCharacterId`, `SourceType`, `SourceId`, `MemoryType`, `Outcome`, `ReasonCode` nullable, `MemoryId` nullable, `CreatedAtUtc`
+- Unique `(WorldId, OwnerCharacterId, SourceType, SourceId, MemoryType)` is the idempotency/provenance identity for both created and rejected outcomes.
+- A protected-only rejection stores `Outcome=Rejected`, `ReasonCode=memory_capacity_protected`, and no MemoryId. Replay/concurrent duplicate attempts return this outcome even if later capacity differs.
+- Created outcomes reference the same-world CharacterMemory. Checks require exactly the fields appropriate to Created versus Rejected. The outcome record contains no source body or AI/provider content.
 
 ### Secrets and SecretKnowers
 
-`Secrets` contains `Id`, `WorldId`, `OwnerActorId`, optional `SubjectActorId`, `GameplayEventId`, structured description, `Confidentiality`, `Status`, timestamps, and Version. It uses composite actor/event FKs and a 0-100 confidentiality check.
+`Secrets` contains `Id`, `WorldId`, typed authoritative source/provenance, structured subject, status, timestamps, and Version. It uses same-world composite FKs. M12 v1 permits only Active; Removed/Invalidated is reserved until an explicit authoritative action is approved. There is no disclosure-pressure, leakage, or spontaneous disclosure state.
 
-`SecretKnowers` contains `WorldId`, `SecretId`, `ActorId`, `LearnedFromGameplayEventId`, `LearnedAt`, `DisclosurePromiseId` nullable, and status. Primary key `(WorldId, SecretId, ActorId)` plus composite FKs prevents cross-world knowledge. Index `(WorldId, ActorId, Status)` supports access-filtered recall.
+`SecretKnowers` contains `WorldId`, `SecretId`, `CharacterId`, authoritative learned-from source, `LearnedAtUtc`, and status. Primary key `(WorldId, SecretId, CharacterId)` plus composite FKs prevents cross-world knowledge. Each active knower has its own CharacterPrivate Secret memory, and only that Character's recall can select it.
 
 ### Promises
 
-- `Id`, `WorldId`, `CreatorActorId`, `RecipientActorId`, `CreatedGameplayEventId`, `ResolvedGameplayEventId` nullable, structured description, `DueAt` nullable, `DueCondition` nullable, `Status`, `Importance`, timestamps, `IdempotencyKey`, `Version`
-- Composite actor/event FKs; creator differs from recipient.
+- `Id`, `WorldId`, `PromiseType`, `SourceActorId`, `TargetActorId` nullable, authoritative created-source reference, authoritative resolved/cancelled-source reference nullable, exactly one supported due-condition form (`DueAtWorldTime` or structured authoritative event ID/type trigger), `Status`, timestamps, `IdempotencyKey`, `Version`
+- Composite actor/source/event FKs keep every reference in the same world.
 - Unique `(WorldId, IdempotencyKey)`.
-- Status check permits Active, Kept, Broken, Cancelled and forbids mutation from terminal states in application/domain rules.
-- Index `(WorldId, Status, DueAt) WHERE Status = 'Active'`.
+- Status check permits Active, Fulfilled, Cancelled, and Expired and forbids mutation from terminal states in application/domain rules. Fulfilled requires a matching authoritative gameplay event; Cancelled requires an explicit authoritative cancellation source; Expired requires an exact due timestamp/date.
+- Index `(WorldId, Status, DueAtWorldTime) WHERE Status = 'Active'`.
 
 ### MemoryRecallRequests and MemoryRecallSelections
 
-`MemoryRecallRequests` stores `Id`, `WorldId`, `CharacterId`, optional `SimulationActionId`, purpose/topic/subject, `CreatedAt`, `IdempotencyKey`. `MemoryRecallSelections` stores `WorldId`, `RequestId`, `MemoryId`, `Rank`, `Score`, and `UsedAt` nullable. Composite keys/FKs enforce same-world selection; unique `(WorldId, RequestId, MemoryId)` and `(WorldId, RequestId, Rank)` prevent duplicates. Recall input/selection can be audited without storing full AI prompts.
+`MemoryRecallRequests` stores `Id`, `WorldId`, `CharacterId`, optional `SimulationActionId`, purpose, authoritative subject reference, optional canonical `TopicId`, `CreatedAtUtc`, and `IdempotencyKey`. `MemoryRecallSelections` stores `WorldId`, `RequestId`, `MemoryId`, `Rank`, exact decimal `Score`, and `UsedAtUtc` nullable. Composite keys/FKs enforce same-world owner-only selection; unique `(WorldId, RequestId, MemoryId)` and `(WorldId, RequestId, Rank)` prevent duplicates. Recall input/selection can be audited without storing full AI prompts. There are no embedding/vector columns or semantic-search indexes in M12 v1.
 
 ## 11. Simulation, idempotency, AI work, and durable jobs
 

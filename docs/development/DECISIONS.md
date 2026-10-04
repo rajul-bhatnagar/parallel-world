@@ -567,6 +567,72 @@ M11 can implement and test deterministic immediate reply eligibility/no-response
 
 An accepted rule version introduces explicit intent/urgency, authoritative unresolved-conflict state, relationship-driven conflict, or M12-aware inputs with complete mapping and replay semantics.
 
+## ADR-028 — M12 deterministic structured memory mechanics
+
+**Date:** 2026-10-04
+**Status:** Accepted; protected-only retention overflow subsequently resolved by ADR-029
+
+**Context**
+
+M12 named memory creation and recall but did not define a closed v1 type set, authoritative source mapping, exact scoring, retention, Secret behavior, or Promise transitions. Implementing those gaps locally would invite NLP/AI classification, semantic search, unstable recall, cross-Character leakage, or destructive retention behavior. M11 also requires memory context to remain downstream of its deterministic reply/no-response decision.
+
+**Decision**
+
+- M12 v1 supports exactly Fact, Preference, Event, Secret, and Promise. Every memory is world-scoped, owned by one Character, provenance-backed, bounded, deterministic, and CharacterPrivate.
+- Creation requires an authoritative structured source that explicitly supplies the owner Character's knowledge, a supported source category, source identity, and an authoritative subject identifier. Missing owner knowledge or subject prevents creation. Fact requires structured fact metadata; Preference requires structured preference metadata; Event uses a persisted gameplay event/action/message-event with an explicit authoritative M12-memorable category; Secret requires an explicit Secret marker; Promise requires an explicit Promise marker and structured lifecycle fields. Free text, NLP, sentiment, repetition, and AI never determine these values.
+- Subject uses a typed source-of-truth identifier. Topic uses an existing canonical topic/interest identifier or is null. A null topic contributes zero; arbitrary generated topic strings are forbidden.
+- Confidence is 100 for an authoritative structured gameplay Fact, structured Preference, structured Secret, or structured Promise; it is 90 for an explicitly memorable structured Player-authored statement or authoritative gameplay Event. Importance is Fact=60, Preference=60, Event=50, Secret=90, and Promise=90. AI cannot select either value.
+- MEM-02 is `RecallScore = 0.40*SubjectMatch + 0.30*TopicMatch + 0.20*RelationshipMatch + 0.10*Importance`. Inputs are 0-100; exact decimal arithmetic is used and the final score is rounded once to an integer with midpoint-away-from-zero. SubjectMatch is 100 for the same authoritative subject ID and otherwise 0. TopicMatch is 100 for the same non-null canonical topic ID and otherwise 0, including either side missing. For an Actor subject, RelationshipMatch is the accepted M10 RelationshipRelevance from recalling Character to subject Actor; it is 0 for a non-Actor subject.
+- Recall orders by RecallScore DESC, CreatedAtUtc DESC, Id DESC. The existing source-of-truth limit `MAX_MEMORIES_PER_AI_REQUEST=8` applies; the fallback value 5 is not used because a limit already exists.
+- Ordinary memories do not expire automatically in M12 v1. A Character has at most 100 active memories. When possible, overflow evicts a non-protected memory by Importance ASC, CreatedAtUtc ASC, Id ASC. Active Secret and Promise memories are protected. ADR-029 defines the protected-only full-cap outcome.
+- The repository-equivalent of `(WorldId, OwnerCharacterId, SourceType, SourceId, MemoryType)` is unique. Retry/replay reuses the existing memory.
+- Secret disclosure mechanics are inactive. No disclosure pressure, leakage chance, spontaneous transfer, relationship-driven disclosure, or AI-directed disclosure exists in M12 v1. Active is the only released state; Removed/Invalidated remains reserved until an explicit authoritative action is approved.
+- Promise sources include structured promise type, source Actor, optional target Actor, supported due condition, and lifecycle status. Supported conditions are exact world-game due timestamps/dates or explicit authoritative event ID/type triggers. Status is Active, Fulfilled, Cancelled, or Expired. Fulfillment requires a matching authoritative gameplay event; cancellation requires an explicit authoritative cancellation event/command; expiry requires an exact timestamp/date. Unsupported or natural-language-only conditions prevent Promise memory creation. M12 does not activate implicit Promise relationship deltas.
+- MSG-02 decides whether a Character reply exists before recall. Only an eligible reply may request M12 context, and M09 uses it for wording only. Memory cannot alter reply existence, timing, probability, Urgency, or ConflictAvoidancePenalty.
+- M12 v1 has no embeddings, vector columns/search, semantic similarity, or AI authority over memory type, subject, topic, confidence, importance, visibility, Secret state, Promise lifecycle, or recall score.
+
+**Alternatives considered**
+
+Free-text fact/promise extraction, arbitrary topics, embedding similarity, recency/emotion/recall penalties, automatic ordinary expiry, spontaneous Secret disclosure, AI-selected mechanics, Kept/Broken Promise statuses, and sending memory into MSG-02 were rejected because they are unapproved, nondeterministic, or violate milestone boundaries. A default protected-memory deletion or silent cap overflow was also rejected because neither behavior is authorized.
+
+**Consequences**
+
+Recall is deterministic and owner-private, replay cannot duplicate a source memory, and M09 remains presentation-only. ADR-029 completes the retention contract that remained open when this ADR was accepted.
+
+**Revisit when**
+
+Separate future ADRs are required before enabling Secret disclosure, new memory types/visibility, semantic retrieval, different retention, natural-language Promise conditions, or AI mechanical authority.
+
+## ADR-029 — M12 protected-only capacity rejection
+
+**Date:** 2026-10-04
+**Status:** Accepted; completes M12 mechanical planning
+
+**Context**
+
+ADR-028 caps each Character at 100 active memories, deterministically evicts an eligible non-protected memory, and protects active Secrets and Promises. It intentionally left undefined the case where all 100 active memories are protected and another authoritative memory creation is attempted. Deleting a protected memory, exceeding the cap, or failing the source gameplay/message operation would each violate an accepted boundary.
+
+**Decision**
+
+- If a Character has 100 active memories and at least one is non-protected, evict exactly one eligible row by Importance ASC, CreatedAtUtc ASC, Id ASC, then create the new memory under the normal provenance transaction.
+- If all 100 active memories are protected active Secrets/Promises, reject only the new memory creation with deterministic machine reason `memory_capacity_protected`.
+- The protected rows remain unchanged, no new memory row is created, and the active count remains exactly 100. The rule applies regardless of the incoming memory type.
+- The authoritative source event/message remains valid. Capacity rejection is a non-fatal memory outcome and must not roll back, fail, or otherwise change unrelated gameplay, messaging, M11 reply decisions, or M09 wording work that does not depend on the absent memory.
+- The rejected creation outcome is recorded/reused under the same attempted memory provenance identity. Retry, replay, and concurrent duplicate attempts return `memory_capacity_protected` without later creating a duplicate or re-evaluating the outcome against changed text/provider output.
+- Capacity selection and rejection are backend-deterministic. AI/provider output is never consulted and cannot choose a row to evict or override the result.
+
+**Alternatives considered**
+
+Evicting an active Secret, evicting an active Promise, exceeding 100, silently dropping an existing protected row, silently accepting or discarding the new memory without a machine result, failing the source gameplay/message transaction, and using AI to select an eviction were rejected.
+
+**Consequences**
+
+M12 retention has a closed deterministic outcome for both evictable and protected-only capacity. Tests can assert the 99-protected-plus-one-non-protected path, the 100-protected rejection, unchanged protected rows, strict cap enforcement, replay/concurrency behavior, source-operation independence, and absence of AI/provider involvement. M12 has no remaining mechanical planning blocker.
+
+**Revisit when**
+
+A future accepted rule introduces explicit protected-memory archival/removal, a different cap, user-visible capacity management, or a new protected memory category.
+
 ## New ADR template
 
 ### ADR-XXX — Title

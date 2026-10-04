@@ -73,6 +73,7 @@ The rest of this document references these names. Changing a value requires a re
 | `MAX_ACTIVE_GOALS` | 3 | MVP |
 | `MAX_OPINION_CHANGE_PER_DAY` | 3 ordinary; 8 major-event | MVP |
 | `MAX_MEMORIES_PER_AI_REQUEST` | 8 | MVP |
+| `MAX_ACTIVE_MEMORIES_PER_CHARACTER` | 100 | M12 v1 |
 | `MEMORY_CREATION_IMPORTANCE` | 30 | MVP |
 | `ROMANCE_FAMILIARITY_MIN` | 55 | MVP, tunable |
 | `ROMANCE_TRUST_MIN` | 45 | MVP, tunable |
@@ -488,42 +489,42 @@ These rules are inactive until PRODUCT.md release placement is decided. Initial 
 ### Rule MEM-01: create a memory
 
 - **Purpose:** Preserve meaningful knowledge without recording every trivial interaction.
-- **Inputs:** Source event, type, importance, emotional impact, subject, topic, participants, visibility, character knowledge.
-- **Preconditions:** Character witnessed/received/was told the event; released MVP types are PersonalFact, Promise, Secret, Compliment, Insult, Conflict, SharedExperience, Achievement, RomanticEvent, and Rejection. Breakup, LifeEvent, and WorldEventReaction activate only with their deferred systems.
-- **Decision:** Create when importance >= `MEMORY_CREATION_IMPORTANCE`, absolute emotional impact >=40, or a released mandatory type is Promise, Secret, or RomanticEvent. Breakup becomes mandatory only if that deferred lifecycle is activated. Merge only when same source fact and subject; do not merge distinct events.
+- **Inputs:** An authoritative structured source, owner Character, authoritative subject identifier, optional canonical topic/interest identifier, memory type, and source identity.
+- **Preconditions:** The owner Character is explicitly recorded as knowing, witnessing, receiving, or being told the source. M12 v1 supports exactly Fact, Preference, Event, Secret, and Promise. If the source does not provide both authoritative owner knowledge and an authoritative subject, no memory is created.
+- **Decision:** Fact requires a structured gameplay fact or an explicitly memorable structured Player-authored fact. Preference requires a structured preference. Event requires a persisted gameplay event/action/message-event with an explicit authoritative M12-memorable category. Secret requires an explicit Secret marker. Promise requires an explicit Promise marker and the structured lifecycle data below. Arbitrary prose never determines type, subject, topic, secrecy, or promise status.
 - **Randomness:** None.
-- **Limits:** Importance/confidence 0-100; emotional impact -100..100.
-- **Cooldown:** Trivial same-topic events within one day reinforce at most once.
-- **State changes:** Create or reinforce structured memory; never from AI text alone.
-- **Persistence:** Memory with source event, knowledge provenance, confidence, visibility, expiry, recall count.
-- **Idempotency:** Character/source-event/memory-type key.
-- **Example:** A kept promise creates one Promise memory for both involved characters; retry reinforces nothing twice.
+- **Limits:** Importance and confidence are 0-100. Type defaults are Fact=60, Preference=60, Event=50, Secret=90, and Promise=90. Confidence is 100 for an authoritative structured gameplay fact, structured Preference, structured Secret, or structured Promise; 90 for an explicitly memorable structured Player-authored statement or authoritative gameplay Event. M12 v1 visibility is always CharacterPrivate.
+- **State changes:** Create the structured memory once. M12 v1 does not infer, merge, reinforce, contradict, or expire memories from wording.
+- **Persistence:** Memory with owner, type, authoritative subject, optional canonical topic, confidence, importance, CharacterPrivate visibility, lifecycle state, creation time, and provenance identity.
+- **Idempotency:** The repository-equivalent of `(WorldId, OwnerCharacterId, SourceType, SourceId, MemoryType)` is unique; replay reuses the existing memory.
 - **Status:** MVP.
 
 ### Rule MEM-02: score and recall memories
 
 - **Purpose:** Select a small relevant context set for rules or wording.
-- **Inputs:** Importance, recency, emotional magnitude, subject/topic/relationship match, recall frequency, confidence, access restrictions.
-- **Preconditions:** Requesting character knows memory; secret visibility permits purpose/recipient; memory not expired or resolved beyond use.
-- **Decision:** `RecallScore=0.25*Importance+0.15*Recency+0.15*EmotionalMagnitude+0.15*SubjectMatch+0.10*TopicMatch+0.10*RelationshipMatch+0.10*Confidence-RecallPenalty`. Recency is `max(0,100-2*ageDays)`; penalty is `min(20,2*recallsInLast7Days)`. Sort score descending then memory ID.
+- **Inputs:** Exact authoritative request subject, optional canonical request topic, M10 directional relationship state, persisted Importance, and access restrictions.
+- **Preconditions:** The requesting Character owns the active CharacterPrivate memory. No other Character, client, public API, or Player UI receives the raw memory.
+- **Decision:** `RecallScore = 0.40*SubjectMatch + 0.30*TopicMatch + 0.20*RelationshipMatch + 0.10*Importance`. Each input is bounded 0-100. Calculate with exact decimal arithmetic and round the final score once to an integer using midpoint-away-from-zero. SubjectMatch is 100 only for the same authoritative subject identifier, otherwise 0. TopicMatch is 100 only for the same non-null canonical topic identifier, otherwise 0. For an Actor subject, RelationshipMatch is the M10 `RelationshipRelevance` from the recalling Character to that Actor; for every non-Actor subject it is 0. Sort by RecallScore DESC, CreatedAtUtc DESC, Id DESC.
 - **Randomness:** None.
 - **Limits:** At most `MAX_MEMORIES_PER_AI_REQUEST`; full conversation history is never sent.
-- **Cooldown:** Recall penalty discourages repetition.
-- **State changes:** Increment recall metadata only after context is used; reinforce importance by at most +5 for a new importance-60 related event.
+- **State changes:** Record the idempotent request/selection only; recall does not change score inputs or lifecycle.
 - **Persistence:** RecallSelection record referencing request and selected scores.
 - **Idempotency:** AI request/character/memory selection key.
-- **Example:** A high-importance recent promise outranks an old low-emotion compliment.
 - **Status:** MVP.
 
-Ordinary memories may expire after 30 days when importance <40 and never reinforced. Importance >=80, active promises, unresolved secrets/conflicts, relationship transitions, and major life events are permanent until an explicit resolution rule changes their status. Contradictory memories coexist and are marked Contested; structured confidence, provenance, and recency decide rule use. AI context may mention uncertainty but cannot resolve the contradiction.
+Ordinary memories do not expire automatically in M12 v1. Each Character may have at most `MAX_ACTIVE_MEMORIES_PER_CHARACTER` active memories. When a new memory would exceed the cap and an eligible non-protected memory exists, evict exactly one by Importance ASC, CreatedAtUtc ASC, Id ASC, then create the new memory. Active Secret and Promise memories are protected from automatic eviction. If all 100 active memories are protected, reject only the new memory creation with machine reason `memory_capacity_protected`; keep every protected memory and the count of 100 unchanged. The source event/message remains valid and unrelated gameplay or messaging continues. The rejected outcome is idempotent by the attempted memory's provenance, so replay returns the same reason without AI/provider involvement.
 
 ### Secrets
 
-A Secret records owner, subject, knowers, confidentiality 0-100, disclosure promise, provenance, and status. Disclosure eligibility requires the discloser knows it, a rule-selected recipient, and `DisclosurePressure > Confidentiality`, where pressure uses Aggression, low Honesty, low Trust toward owner, goal relevance, and event urgency. Accidental disclosure is a distinct low-intent event; deliberate disclosure is Betrayal. Both persist knowledge transfer before wording and apply the impact matrix. Secrets never cross worlds or enter logs. Secret recall excludes recipients not authorized by current knower state.
+A Secret memory is created only from an authoritative structured Secret marker and remains CharacterPrivate to its owning Character. M12 v1 implements no disclosure pressure, leakage chance, spontaneous knowledge transfer, or AI-directed disclosure. RelationshipRelevance, Trust, Conflict, and wording cannot change Secret state. The only active M12 v1 state is Active; Removed/Invalidated remains reserved until an explicit authoritative system action is separately approved. Secrets never cross worlds or enter logs. A future accepted ADR must define coefficients and transitions before disclosure gameplay is activated.
 
 ### Promise state and resolution
 
-A Promise records creator, recipient, description code/template data, due condition/date, importance, and status. States are Active, Kept, Broken, Cancelled. Kept/Broken resolution occurs once when the due condition is evaluated; Cancelled requires mutual cancellation or invalidated condition before resolution. Resolution creates memories and relationship events. AI cannot declare a promise kept or broken without the rule event.
+A Promise memory is created only from an authoritative structured Promise source containing promise type, source Actor, optional target Actor, a supported due condition identifier, and lifecycle status. Supported conditions are an explicit world-game due timestamp/date or an explicit authoritative event ID/type trigger; arbitrary natural-language conditions are unsupported and prevent creation. States are Active, Fulfilled, Cancelled, and Expired. Fulfilled requires a matching authoritative gameplay event. Cancelled requires an explicit authoritative cancellation event/command; if none exists, cancellation does not occur automatically. Expired requires an exact explicit due timestamp/date. Text and AI output cannot create, fulfill, cancel, expire, or otherwise classify a Promise. M12 v1 does not activate implicit Promise relationship deltas.
+
+### Messaging and AI boundary
+
+MSG-02 first decides whether a Character reply exists using its accepted M11 mechanics. Only after an eligible reply exists may M12 retrieve the authorized bounded memory selection for M09 wording. Memory content cannot affect reply existence, timing, probability, Urgency, or ConflictAvoidancePenalty. AI may phrase approved context but cannot determine memory type, subject, topic, confidence, importance, visibility, lifecycle, or recall score. M12 v1 uses no embeddings, vector search, semantic similarity, sentiment analysis, or free-text classification.
 
 ## 13. Reputation, influence, and followers
 
@@ -622,10 +623,10 @@ Friendship labels are not stored as authoritative state in MVP. They are derived
 
 | From | To | Allowed |
 |---|---|---|
-| Active | Kept | Due condition satisfied once |
-| Active | Broken | Due condition failed/expired once |
-| Active | Cancelled | Valid cancellation before resolution |
-| Kept/Broken/Cancelled | Any other | No; terminal |
+| Active | Fulfilled | Matching authoritative gameplay event satisfies the stored condition once |
+| Active | Expired | Exact stored due timestamp/date passes without fulfillment |
+| Active | Cancelled | Explicit authoritative cancellation event/command before resolution |
+| Fulfilled/Expired/Cancelled | Any other | No; terminal |
 
 ### Simulation-action status
 

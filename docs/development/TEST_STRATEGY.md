@@ -262,7 +262,7 @@ Character Reputation cases verify existing-row backfill and new-row default 50, 
 
 Social-action separation cases assert initial Follow, Like, Unlike, and generic Reply produce no relationship mutation or fabricated zero-delta event; Unfollow and Re-follow use their exact rows; Helpful reply requires authoritative classification; and AI wording cannot classify or map an event. FOLLOW-01 cases cover resolved Character Reputation/InterestOverlap/relationship inputs, below/exact/above threshold behavior, deterministic rolls, replay-safe server-side execution, and no implicit relationship delta. REPLY-01 resolves RelationshipRelevance but returns `mood_activation_unavailable`. REACT-01 resolves Affection and AuthorReputation, then returns `positive_mood_unavailable`, `goal_relevance_unavailable`, and `repetition_semantics_unavailable` as earlier inputs are synthetically resolved. ACT-01/POST-01 remain unchanged.
 
-MVP dating covers ROM-01 thresholds/compatibility/cooldown/candidate ordering, invitation uniqueness, ROM-02 acceptance/rejection/reason, Dating transition, canonical pair, required invitation/outcome history, and forbidden transitions. Breakup lifecycle, FormerPartner re-entry, reconciliation, engagement, marriage, separation, and divorce become test gates only when explicitly approved after MVP.
+MVP dating covers ADR-030 world romance enablement, both preference modes/defaults, exact compatibility, Player/Character RomanticOpenness sources, `GoalRelevance=50`, ROM-01 `PositiveMood=50`, ROM-02 additive `MoodModifier=0`, `ConflictPenalty=0`, reason precedence, thresholds/candidate ordering, `CasualDate`, 14-game-day cooldown, 24-game-hour expiry, invitation uniqueness, Actor-level unresolved-invitation and Dating exclusivity, concurrent competing invitations, explicit Player accept/reject, immediate deterministic Character ROM-02, Dating transition, bilateral Commitment +10/clamp/one-time replay, canonical pair, required append-only invitation/outcome history with UTC and world-game times, ownership, and AI/text/memory invariance. A persistence fixture seeds an ended episode and a later episode for the same pair and proves distinct episode identity and preservation of every prior row; this does not activate those transitions. Breakup/Dating end, FormerPartner re-entry, re-dating, reconciliation, engagement, marriage, separation, and divorce remain forbidden/deferred behavioral test cases until explicitly approved after MVP.
 
 ## 21. Memory testing
 
@@ -318,7 +318,7 @@ Test initial load, cached-first/stale data, background refresh, pull-to-refresh,
 | Feed | Loading, refresh-with-data, empty, populated, offline, error, pending/failed, paging |
 | Character | Loading, follow, message, safe relationship summary, hidden data absent |
 | Messaging | Empty/history, sending, failed/retry, reported pending reply, offline |
-| Relationship/dating | Friendship/rival/dating/former partner, history, ineligible, persisted outcome |
+| Relationship/dating | Friendship/rival/dating, invitation/history, ineligible, persisted outcome; no FormerPartner action in MVP |
 | Notifications | Empty, unread/read, pagination, safe preview, deep link |
 | Catch-up | No changes, meaningful/partial summary, related navigation |
 

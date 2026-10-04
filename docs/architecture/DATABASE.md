@@ -140,9 +140,10 @@ MVP one-world exposure is enforced by the application/idempotent creation use ca
 
 ### WorldSettings
 
-- `Id`, `WorldId`, `TimeScale`, `DisplayTimeZoneId`, action-limit values, AI budget settings, content settings, `RuleVersion`, `CreatedAt`, `UpdatedAt`, `Version`
+- `Id`, `WorldId`, `TimeScale`, `DisplayTimeZoneId`, `RomanceEnabled`, action-limit values, AI budget settings, content settings, `RuleVersion`, `CreatedAt`, `UpdatedAt`, `Version`
 - `TimeScale` is C# `decimal` and PostgreSQL `numeric(8,4)`, defaults to `1.0000`, and must be in the representable positive persisted range `0.0001` through `9999.9999`. It scales accumulated in-world time only; it does not alter canonical UTC interval duration or eligibility.
 - `DisplayTimeZoneId` maps to required column `display_time_zone_id`, stores an IANA timezone identifier, and defaults to `UTC` for new worlds. The M08 migration backfills every existing row to `UTC` before enforcing non-nullability.
+- `RomanceEnabled` is non-null and defaults/backfills to `true` for M13. It is authoritative world configuration, not a client-supplied invitation input.
 - Application validation requires a supported IANA timezone identifier. An explicitly supplied invalid non-empty value is rejected through the standard validation contract and is never silently replaced with `UTC`. Windows timezone IDs are not persisted domain values.
 - Unique `WorldId`.
 - FK `WorldId -> GameWorlds.Id ON DELETE RESTRICT`.
@@ -178,17 +179,19 @@ Constraints:
 
 ### PlayerProfiles
 
-- `Id`, `WorldId`, `DisplayName`, `Handle`, `Bio`, `Reputation`, `Influence`, `FollowersCount`, `CreatedAt`, `UpdatedAt`, `Version`
+- `Id`, `WorldId`, `DisplayName`, `Handle`, `Bio`, `RomancePreferenceMode`, `Reputation`, `Influence`, `FollowersCount`, `CreatedAt`, `UpdatedAt`, `Version`
 - Unique `WorldId` and unique `(WorldId, Id)`.
 - Unique `(WorldId, Handle)`.
 - Checks for bounded scores and non-negative cached count.
+- `RomancePreferenceMode` permits only `Disabled` and `AnyEligibleActor`, defaults/backfills to `AnyEligibleActor`, and is never overridden per invitation.
 
 ### Characters
 
-- `Id`, `WorldId`, `DisplayName`, `Handle`, `Bio`, `Age`, `Profession`, `Archetype`, `WritingStyle`, `ActivityLevel`, `Influence`, `Popularity`, `Reputation`, `CurrentMoodType`, `Status`, `CreatedAt`, `UpdatedAt`, `Version`
+- `Id`, `WorldId`, `DisplayName`, `Handle`, `Bio`, `Age`, `Profession`, `Archetype`, `WritingStyle`, `RomancePreferenceMode`, `ActivityLevel`, `Influence`, `Popularity`, `Reputation`, `CurrentMoodType`, `Status`, `CreatedAt`, `UpdatedAt`, `Version`
 - Unique `(WorldId, Id)` and `(WorldId, Handle)`.
 - Checks for non-negative age and bounded activity/influence/popularity/reputation.
 - `Reputation` is non-null, constrained from 0 through 100, and defaults/backfills to 50. It is independent from PlayerProfile Reputation. M10 adds no reputation-history table or progression rule.
+- `RomancePreferenceMode` has the same two-value constraint and `AnyEligibleActor` default as PlayerProfile. Character `RomanticOpenness` remains a separate persisted 0-100 trait used only after the mode gate passes.
 - Index `(WorldId, Status, Id)` for catalogue/simulation eligibility.
 
 Actor creation and its PlayerProfile/Character detail are one transaction. Because ordinary FKs cannot assert a referenced actor discriminator without triggers, the application validates discriminator/detail consistency and integration tests prove it; the database checks null-shape, uniqueness, and same-world identity.
@@ -314,11 +317,24 @@ Constraints and indexes:
 
 One shared pair-level current status:
 
-- `Id`, `WorldId`, `ActorAId`, `ActorBId`, `Status`, `StatusSince`, `InvitationExpiresAt` nullable, `UpdatedAt`, `Version`
+- `Id`, `WorldId`, `ActorAId`, `ActorBId`, `Status`, `StatusSinceWorldTime`, `UpdatedAtUtc`, `Version`
 - Canonical pair check `ActorAId < ActorBId` and distinct-actor check.
 - Unique `(WorldId, ActorAId, ActorBId)`.
 - Composite FKs to both Actors.
 - State values/transitions must match GAME_RULES.md; deferred states remain disabled by rule version.
+- Current M13 status is shared pair state and never copied into directional Relationship rows. Before any invitation or Dating transition, the transaction locks both participating Actor rows in ascending Actor ID, then rechecks all active romantic rows involving either Actor. Canonical-pair uniqueness prevents duplicate pair state; the ordered Actor locks serialize competing pairs and make the one-Dating-per-Actor check concurrency-safe.
+
+### RomanticInvitations
+
+Immutable invitation decision plus one terminal outcome:
+
+- `Id`, `WorldId`, `RomanticRelationshipId`, `InitiatorActorId`, `TargetActorId`, `DateType`, `Status`, `InitiationScore`, `AcceptanceScore` nullable, `SeededOffset` nullable, `ReasonCode`, `CreatedAtUtc`, `CreatedAtWorldTime`, `ExpiresAtWorldTime`, `ResolvedAtUtc` nullable, `ResolvedAtWorldTime` nullable, `RuleVersion`, `IdempotencyKey`, `Version`
+- Status permits `Pending`, `Accepted`, `Rejected`, and `Expired`; `DateType` is exactly `CasualDate` in M13 v1.
+- Unique `(WorldId, IdempotencyKey)` and one invitation identity per authoritative operation. A partial unique index prevents multiple unresolved invitations for the same canonical pair. The same ascending Actor-row locks and post-lock recheck prevent either Actor from participating in a different unresolved invitation concurrently.
+- Composite FKs target the canonical RomanticRelationship and both Actors in the same world. Initiator and target must be distinct and must equal the canonical pair members.
+- `ExpiresAtWorldTime = CreatedAtWorldTime + 24 hours`. UTC timestamps are audit fields and never decide expiry.
+- Scores, deterministic offset, reason, and outcome are server-authored. Player-target outcomes accept only the explicit Player choice; Character-target outcomes persist ROM-02 components before wording.
+- Index `(WorldId, Status, ExpiresAtWorldTime)` supports deterministic expiry processing; pair history uses `(WorldId, RomanticRelationshipId, CreatedAtWorldTime DESC, Id DESC)`.
 
 ### RelationshipEvents
 
@@ -338,10 +354,11 @@ One shared pair-level current status:
 
 ### RomanticStatusHistory
 
-- `Id`, `WorldId`, `RomanticRelationshipId`, `FromStatus`, `ToStatus`, `GameplayEventId`, `InitiatorActorId` nullable, `ReasonCode`, `OccurredAt`, `RuleVersion`, `IdempotencyKey`
+- `Id`, `WorldId`, `RomanticRelationshipId`, `EpisodeId`, `RomanticInvitationId` nullable, `FromStatus`, `ToStatus`, `GameplayEventId`, `InitiatorActorId` nullable, `ReasonCode`, `OccurredAtUtc`, `OccurredAtWorldTime`, `RuleVersion`, `IdempotencyKey`
 - Unique `(WorldId, IdempotencyKey)`.
-- Composite FKs to RomanticRelationships, GameplayEvents, and optional initiator Actor.
-- Cursor index `(WorldId, RomanticRelationshipId, OccurredAt DESC, Id DESC)`.
+- Composite FKs to RomanticRelationships, optional RomanticInvitation, GameplayEvents, and optional initiator Actor.
+- Cursor index `(WorldId, RomanticRelationshipId, OccurredAtWorldTime DESC, Id DESC)`; UTC audit time remains available separately.
+- Rows are append-only. `EpisodeId` is stable across the start and any future end transitions for one Dating episode; a future re-dating start uses a new episode identity. M13 records invitation, acceptance/rejection/expiry, and Dating start only; it does not activate breakup/end/re-entry. Persistence tests may seed future-shaped ended/re-dated episodes solely to prove earlier episode rows are preserved.
 
 RelationshipEvents and RomanticStatusHistory record different facts and do not duplicate shared status on directional rows.
 

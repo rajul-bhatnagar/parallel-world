@@ -423,7 +423,9 @@ Authoritative interaction → optional canonical relationship-event mapping with
 
 Relationships owns both directional value rows and the pair-level romantic status/history boundary. Applying an event, deltas, daily-cap ledger, and status transition occurs transactionally. A source-event/rule/direction uniqueness constraint prevents duplicate application. Derived friendship labels may be cached for reads but numerical values and history remain authoritative.
 
-The shared romantic status is never copied independently into both directional rows. MVP states and transitions follow GAME_RULES.md. Engagement, marriage, separation, and divorce remain guarded/deferred until product release placement is decided.
+For M13, structured world/profile settings gate ROM-01 before any score or deterministic roll. An invitation is a server-owned `CasualDate` record with UTC audit timestamps, game-time creation/expiry, persisted deterministic outcome inputs, and idempotency provenance. A Character target resolves ROM-02 immediately; a Player target remains pending for explicit accept/reject until its 24-game-hour expiry. The transition to Dating atomically commits the invitation outcome, canonical pair state, append-only history, and a clamped +10 Commitment delta to each existing directional relationship row exactly once. This transition is outside ordinary REL-01 repetition and daily-cap accounting. Pair and Actor locking plus database uniqueness prevent concurrent conflicting invitations or multiple Dating relationships involving one Actor.
+
+The shared romantic status is never copied independently into both directional rows. M13 ends at Dating: breakup, Dating end, FormerPartner, and re-dating are not active transitions even though append-only persistence preserves a future extension seam. Engagement, marriage, separation, and divorce remain guarded/deferred until product release placement is decided.
 
 ## 20. Feed generation and pagination
 

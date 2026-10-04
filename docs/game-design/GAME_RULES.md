@@ -430,36 +430,44 @@ Ordinary passive decay is disabled in MVP to keep changes understandable. Deferr
 ### Rule ROM-01: romantic eligibility and invitation
 
 - **Purpose:** Decide who may invite whom and select a valid candidate.
-- **Inputs:** Familiarity, Trust, Attraction, Comfort, romantic openness/preferences, active romantic state, goals, severe conflicts, cooldown, schedule.
-- **Preconditions:** Both actors romance-enabled and compatible; F/T/At/C meet constants; RomanticOpenness meets minimum; no incompatible active relationship; no unresolved severe conflict in lookback; cooldown expired.
-- **Decision:** `InitiationScore=0.30*Attraction+0.20*Trust+0.15*Comfort+0.10*Familiarity+0.10*RomanticOpenness+0.10*GoalRelevance+0.05*PositiveMood-ConflictPenalty`. Candidate with highest score at least 60 wins; ties use seeded stable tie-break. Date type is selected from shared interests and mutually available schedules.
-- **Randomness:** Seeded tie-break/date-type choice; thresholds are not random.
-- **Limits:** One pending invitation per pair and one active compatible romance per actor in MVP.
-- **Cooldown:** `DATE_INVITATION_COOLDOWN_DAYS` after invitation or rejection.
+- **Inputs:** Familiarity, Trust, Attraction, Comfort, structured world romance availability, Actor romance modes, RomanticOpenness, active romantic state, deterministic neutral GoalRelevance/PositiveMood/ConflictPenalty, and cooldown.
+- **Preconditions:** The world has `RomanceEnabled=true`; both distinct active same-world Actors use `AnyEligibleActor`; F/T/At/C meet constants; RomanticOpenness meets minimum; neither Actor has an active Dating relationship or another unresolved invitation; pair state permits invitation; cooldown expired.
+- **Decision:** `InitiationScore=0.30*Attraction+0.20*Trust+0.15*Comfort+0.10*Familiarity+0.10*RomanticOpenness+0.10*GoalRelevance+0.05*PositiveMood-ConflictPenalty`. Candidate with highest score at least 60 wins; ties use seeded stable tie-break. M13 v1 assigns `CasualDate`; shared-interest/schedule selection is deferred.
+- **Randomness:** Seeded stable candidate tie-break only; thresholds and the fixed `CasualDate` type are not random.
+- **Limits:** One unresolved invitation involving an Actor and one active Dating relationship per Actor in MVP. The sole mechanical date type is `CasualDate`; the client and AI cannot select another.
+- **Cooldown:** `DATE_INVITATION_COOLDOWN_DAYS` in authoritative game time beginning at invitation creation; the outcome does not restart it.
 - **State changes:** `None -> RomanticInterest -> InvitationPending` as needed.
-- **Persistence:** Invitation decision, candidate scores, eligibility reasons, date type, due/expiry, timeline event.
+- **Persistence:** Invitation decision, candidate scores, first eligibility reason, `CasualDate`, UTC audit creation time, world-game creation time, expiry exactly 24 game hours later, and timeline event.
 - **Idempotency:** Initiator/candidate/cooldown-window key.
-- **Example:** F60/T55/At68/C50/open70 qualifies; initiation score 64 creates a pending invitation before dialogue.
+- **Example:** F70/T60/At75/C60/open70 with the M13 neutral inputs produces initiation score 65 and creates a `CasualDate` invitation before dialogue.
 - **Status:** MVP.
+
+M13 v1 compatibility is Boolean and exact: world romance enabled, both Actors `AnyEligibleActor`, both active, same world, and distinct Actors. A compatible pair contributes `Compatibility=100` where ROM-02 requires the numeric input; an incompatible pair is rejected before scoring. `Disabled` contributes no score. A Player using `AnyEligibleActor` supplies formula `RomanticOpenness=100`; a Character uses persisted `CharacterTraits.RomanticOpenness` after its mode gate passes. ROM-01 uses `GoalRelevance=50`, `PositiveMood=50`, and `ConflictPenalty=0`. No categorical mood mapping, hidden goal, text, interest, memory, or AI inference supplies those values.
+
+ROM-01 returns one reason using this precedence: `romance_disabled`, `initiator_not_open`, `target_not_open`, `romance_incompatible`, `exclusivity_conflict`, `romantic_state_conflict`, then Familiarity, Trust, Attraction, Comfort, RomanticOpenness, initiation-score, and deterministic tie/roll failure where applicable. Equivalent repository-standard lowercase names are permitted only when they preserve this order and meaning.
 
 ### Rule ROM-02: accept or reject a date
 
 - **Purpose:** Decide the invitation outcome before text.
-- **Inputs:** Recipient Attraction, Trust, Comfort, Familiarity, openness, current mood, goal relevance, compatibility, recent positive/negative events.
+- **Inputs:** Recipient Attraction, Trust, Comfort, structured RomanticOpenness, exact compatibility, neutral GoalRelevance/MoodModifier/ConflictPenalty, and the persisted deterministic offset.
 - **Preconditions:** Pending unexpired invitation; eligibility remains valid; not already resolved.
 - **Decision:** `AcceptanceScore=0.35*Attraction+0.25*Trust+0.15*Comfort+0.10*Compatibility+0.10*RomanticOpenness+0.05*GoalRelevance+MoodModifier-ConflictPenalty+SeededOffset`, where MoodModifier is -10..10 and SeededOffset is -5..5. Accept at `DATE_ACCEPTANCE_MIN`; otherwise reject with the highest-weight deterministic reason code.
 - **Randomness:** Only bounded seeded offset/tie-break.
 - **Limits:** Score clamped 0-100; one outcome.
-- **Cooldown:** Invitation cooldown applies after either outcome.
+- **Cooldown:** The invitation-creation cooldown remains in force after either outcome and is not restarted.
 - **State changes:** Accept: `InvitationPending -> Dating`; Reject: `InvitationPending -> None`. Rejection is an event, not a durable status.
 - **Persistence:** DateAccepted/DateRejected event, score components, reason, memories, relationship impacts, timeline.
 - **Idempotency:** Invitation ID/outcome rule key.
 - **Example:** Score 58 plus seeded offset -2 rejects with LowComfort; AI phrases that recorded reason.
 - **Status:** MVP.
 
+M13 v1 uses `Compatibility=100`, `GoalRelevance=50`, additive `MoodModifier=0`, and `ConflictPenalty=0` after compatibility and state gates pass. The seeded offset uses the universal deterministic PRNG with stable invitation identity, is persisted once, and is never rerolled on retry. Threshold/formula rejection order is Attraction, Trust, Comfort, RomanticOpenness, then acceptance score; only one mechanical reason is persisted.
+
+If the target is the Player, ROM-02 waits for explicit Player Accept/Reject and expires to `None` when authoritative world time reaches the persisted expiry. If the target is a Character, ROM-02 evaluates immediately after valid invitation creation in the same authoritative processing flow. No arbitrary real-time delay or AI decision is used.
+
 ### Dating progression
 
-MVP states are `None`, `RomanticInterest`, `InvitationPending`, and `Dating`. Dating begins with Commitment raised to at least 20. Successful dates and relationship events may develop approved dimensions without activating a deeper lifecycle.
+MVP states are `None`, `RomanticInterest`, `InvitationPending`, and `Dating`. The first Dating transition for an invitation/episode adds exactly 10 Commitment to both directional M10 rows, clamps each independently to 0-100, and records deterministic transition provenance. It applies once, atomically with Dating history, and does not consume ordinary REL-01 daily caps. It does not make the directional rows equal. Successful dates and relationship events may develop only otherwise-approved dimensions without activating a deeper lifecycle.
 
 Deferred states are `FormerPartner`, `Committed`, `Engaged`, `Married`, `Separated`, and `Divorced`.
 

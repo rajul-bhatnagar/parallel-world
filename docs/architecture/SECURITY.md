@@ -275,6 +275,8 @@ Authorization layers are authentication, current user resolution, world ownershi
 
 The player can act only as the owned player actor. Clients cannot submit character-authored content, relationship values, romantic outcomes, memories, simulation actions, system events, or internal AI calls.
 
+For M13, invitation requests cannot submit romance availability/mode, compatibility, date type, rule inputs, scores, deterministic offsets, reason codes, romantic status, or Commitment deltas. A Player-target outcome accepts only the authenticated owned Player Actor's explicit `accept` or `reject` choice for an owned-world pending invitation. Server-side world/Actor state, locking, ROM rules, and PostgreSQL history remain authoritative.
+
 ## 14. World ownership
 
 Canonical rule:

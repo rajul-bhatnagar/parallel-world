@@ -660,10 +660,11 @@ All are player-visible projections. The API never accepts relationship deltas/st
 ```text
 POST /api/v1/worlds/{worldId}/relationships/{characterId}/date-invitations
 GET  /api/v1/worlds/{worldId}/date-invitations
+POST /api/v1/worlds/{worldId}/date-invitations/{invitationId}/outcome
 GET  /api/v1/worlds/{worldId}/relationships/{characterId}/romantic-history
 ```
 
-Client submits only the player's permitted choice (for example date type). Server rules decide eligibility, candidate, acceptance/rejection, status, scores, deltas, and history before AI wording. Engagement, marriage, separation, and divorce have no released endpoints.
+The invitation request carries no mechanical date type, openness, compatibility, score, offset, reason, or outcome. M13 v1 always uses `CasualDate`. Server rules decide eligibility, acceptance/rejection, status, scores, Commitment effects, and history before AI wording. A Player-target invitation is resolved only through the outcome endpoint with `accept` or `reject`; Character-target ROM-02 resolves immediately in the invitation processing flow. Engagement, marriage, separation, divorce, breakup, and re-entry have no released endpoints.
 
 **Example 11 — date invitation**
 
@@ -671,14 +672,24 @@ Client submits only the player's permitted choice (for example date type). Serve
 POST /api/v1/worlds/3aa4bd64-68c7-4db3-a3e1-91d095d1877e/relationships/72aad86b-7e46-4aba-8d33-929ee6054a1f/date-invitations
 Idempotency-Key: 908ed213-58d1-4aec-ae08-222896999aa4
 
-{"dateType":"coffee"}
+{}
 ```
 
 ```json
-{"id":"e180626b-3045-4d44-a6ad-abd1e09313af","characterId":"72aad86b-7e46-4aba-8d33-929ee6054a1f","dateType":"coffee","status":"invitationPending","createdAtUtc":"2026-07-31T18:20:00Z"}
+{"id":"e180626b-3045-4d44-a6ad-abd1e09313af","characterId":"72aad86b-7e46-4aba-8d33-929ee6054a1f","dateType":"casualDate","status":"accepted","romanticStatus":"dating","createdAtUtc":"2026-07-31T18:20:00Z","createdAtWorldTime":"2026-07-31T18:20:00Z","expiresAtWorldTime":"2026-08-01T18:20:00Z"}
 ```
 
-The response always represents persisted current state. Whether deterministic outcome evaluation finishes in this request or afterward remains an open API/product timing decision.
+The response always represents persisted current state. For a Character target, deterministic ROM-02 evaluation finishes in the invitation request. For a Player target, creation returns `invitationPending`; explicit outcome or authoritative world-time expiry updates it later. Retries use the same idempotency key and return the persisted result without rerolling.
+
+Romantic-history responses are append-only projections ordered by world-game occurrence time and stable ID and include stable episode identity. M13 exposes no operation that ends Dating or starts a later episode; the projection must nevertheless preserve all authorized persisted episodes without collapsing them into the current pair status.
+
+Player-target resolution accepts only:
+
+```json
+{"decision":"accept"}
+```
+
+or `reject`. It accepts no status, scores, relationship values, reason, or Commitment delta.
 
 ## 33. Memory endpoints
 
@@ -884,8 +895,9 @@ Response also includes `Retry-After: 30`.
 | GET | `/worlds/{worldId}/relationships` | Relationship summaries | Yes | No | Yes | MVP | 200 |
 | GET | `/worlds/{worldId}/relationships/{characterId}` | Player-visible relationship | Yes | No | No | MVP | 200 |
 | GET | `/worlds/{worldId}/relationships/{characterId}/history` | Relationship history | Yes | No | Yes | MVP | 200 |
-| POST | `/worlds/{worldId}/relationships/{characterId}/date-invitations` | Player date choice | Yes | Yes | No | MVP | 201/202 |
+| POST | `/worlds/{worldId}/relationships/{characterId}/date-invitations` | Player invitation request | Yes | Yes | No | MVP | 201 |
 | GET | `/worlds/{worldId}/date-invitations` | Invitation state | Yes | No | Yes | MVP | 200 |
+| POST | `/worlds/{worldId}/date-invitations/{invitationId}/outcome` | Player accept/reject choice | Yes | Yes | No | MVP | 200 |
 | GET | `/worlds/{worldId}/relationships/{characterId}/romantic-history` | Romantic timeline | Yes | No | Yes | MVP | 200 |
 | GET | `/worlds/{worldId}/notifications` | Released notification page | Yes | No | Yes | MVP | 200 |
 | GET | `/worlds/{worldId}/notifications/unread-count` | Basic indicator | Yes | No | No | MVP | 200 |

@@ -6,13 +6,13 @@ Read AGENTS.md, docs/milestones/M13_DATING.md, docs/product/PRODUCT.md, docs/gam
 Task: Dating and Relationship History
 
 Scope:
-Implement MVP attraction inputs, romantic eligibility, date invitation, deterministic accept/reject, Dating, the PRODUCT.md-approved MVP state machine, necessary immutable invitation/outcome history, APIs, Flutter relationship view, and exhaustive transition tests. AI writes dialogue only.
+Implement ADR-030 exactly: structured world/profile romance availability, ROM-01/02 neutral inputs and reason precedence, strict Actor-level Dating/pending-invitation exclusivity, canonical `CasualDate`, 14-game-day cooldown, 24-game-hour expiry, explicit Player accept/reject, immediate deterministic Character outcome, shared Dating state, bilateral replay-safe Commitment +10, immutable invitation/status history with UTC audit and world-game time, APIs, Flutter relationship view, and exhaustive transition tests. AI writes dialogue only after authoritative outcomes.
 
 Explicit exclusions:
-- No breakup lifecycle, FormerPartner re-entry, reconciliation/cooldowns/cycling, commitment stage beyond Dating, engagement, marriage, separation, divorce, or children/family.
+- No breakup/Dating-end lifecycle, FormerPartner re-entry, re-dating, reconciliation/cooldowns/cycling, commitment stage beyond Dating, extra preference modes/date types, engagement, marriage, separation, divorce, or children/family.
 
 Tests:
-- Exhaustively test eligibility, invitation, deterministic accept/reject, Dating, forbidden/deferred transitions, necessary immutable history, idempotency, ownership, and safe UI projection.
+- Exhaustively test romance enabled/modes/compatibility, exact neutral inputs and reason precedence, thresholds, invitation/cooldown/expiry, deterministic accept/reject, Player and Character targets, strict exclusivity and competing concurrency, `CasualDate`, Dating, bilateral Commitment +10/clamp/one-time replay, forbidden/deferred transitions, immutable history including persistence-level preservation of seeded distinct ended/re-dated episodes without activating those transitions, idempotency, ownership, AI/text/memory invariance, and safe UI projection.
 
 Before editing:
 1. List relevant existing files.

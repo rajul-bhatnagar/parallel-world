@@ -633,6 +633,39 @@ M12 retention has a closed deterministic outcome for both evictable and protecte
 
 A future accepted rule introduces explicit protected-memory archival/removal, a different cap, user-visible capacity management, or a new protected memory category.
 
+## ADR-030 — M13 deterministic romance mechanics
+
+**Date:** 2026-10-04
+**Status:** Accepted; resolves the M13 ROM-01/ROM-02 implementation blockers
+
+**Context**
+
+ROM-01 and ROM-02 require structured romance availability, compatibility, neutral inputs for mechanics not yet modeled, deterministic outcome timing, exclusivity, invitation lifecycle, and an exact Dating-start relationship effect. Those contracts were previously incomplete. Inferring them from messages, memory prose, categorical mood, AI output, interests, or hidden goals would violate the rules-before-language boundary.
+
+**Decision**
+
+- `WorldSettings.RomanceEnabled` is structured world configuration and defaults to `true`. `PlayerProfile` and `Character` each have exactly one `RomancePreferenceMode`: `Disabled` or `AnyEligibleActor`, defaulting to `AnyEligibleActor`. No gender, orientation, or additional preference dimension exists in M13 v1.
+- Two distinct active Actors are romantically compatible exactly when they share a world, world romance is enabled, and both modes are `AnyEligibleActor`. Otherwise ROM evaluation stops before scoring with one reason using this precedence: `romance_disabled`, `initiator_not_open`, `target_not_open`, `romance_incompatible`, `exclusivity_conflict`, `romantic_state_conflict`, threshold/formula failure, then deterministic-roll failure where applicable.
+- For formula inputs, a compatible pair contributes `Compatibility=100`; an incompatible pair is ineligible and is never scored. A Player with `AnyEligibleActor` contributes `RomanticOpenness=100`; `Disabled` is rejected before scoring. A Character uses persisted `CharacterTraits.RomanticOpenness` after its preference-mode gate passes.
+- M13 v1 uses `GoalRelevance=50` and ROM-01 `PositiveMood=50`, both neutral deterministic 0-100 inputs. ROM-02's existing mood term is additive, so its neutral `MoodModifier=0`. `ConflictPenalty=0`. Categorical mood, Rivalry alone, text, memory, and AI do not alter these values.
+- Threshold failures use formula/precondition order and return only the first reason: Familiarity, Trust, Attraction, Comfort, RomanticOpenness, then initiation/acceptance score. The acceptance offset is the existing deterministic PRNG applied to stable invitation identity, persisted once, and bounded to `[-5,5]`; retries never reroll.
+- M13 v1 is strictly monogamous at `Dating`: an Actor can participate in at most one active Dating pair. An Actor can participate in at most one unresolved invitation at a time. Pair rows use canonical Actor ordering, while directional M10 values remain independent. Persistence and transactions must serialize competing invitations and Dating transitions per involved Actor.
+- Every invitation uses the single mechanical date type `CasualDate`. The client cannot choose or override it. Interest-, schedule-, text-, AI-, or memory-derived date types are deferred.
+- Invitation mechanics use authoritative world-game time. A pending invitation expires exactly 24 game hours after creation. Persist UTC creation/update audit timestamps separately from world-game creation and expiry times. The 14-game-day invitation cooldown begins at invitation creation and is not restarted by its outcome.
+- When the target is the Player, the invitation remains pending until the Player explicitly accepts or rejects it, or authoritative world time reaches expiry. When the target is a Character, ROM-02 resolves immediately in the same authoritative processing flow after valid invitation creation. AI never decides or delays the outcome.
+- Acceptance transitions the shared canonical pair from `InvitationPending` to `Dating`. Rejection or expiry transitions it to `None` and remains an immutable outcome/history fact rather than a durable rejected status. Client requests never supply scores, offsets, reasons, or status.
+- The first Dating transition for an invitation/episode applies `Commitment +10` once to both M10 directional rows, independently clamped to 0-100. The two directional effects and Dating history share deterministic provenance and commit atomically. This explicit M13 effect does not consume ordinary REL-01 daily caps and replay cannot apply it twice.
+- Romantic status/history is append-only and records canonical pair, stable episode identity, transition, start/end facts where applicable, invitation/outcome source, initiator, reason, rule version, UTC audit time, and authoritative world-game time. M13 creates only the Dating-start episode; it does not activate breakup, Dating end, FormerPartner, or re-dating. Persistence-level fixtures must prove that later ended and re-dated episodes can coexist without overwriting earlier history, but no M13 API or rule may create those deferred transitions.
+- M09 wording runs only after the authoritative transition/outcome. M11 text and M12 memories cannot determine romance mode, compatibility, neutral inputs, eligibility, outcome, exclusivity, Commitment delta, or history mutation.
+
+**Consequences**
+
+M13 can implement deterministic invitation, acceptance/rejection/expiry, Dating, bilateral one-time Commitment effects, ownership-safe APIs, Flutter projections, and immutable history without inventing relationship inputs. Romance/content-rating policy remains a broad-release gate, not an M13 mechanics blocker. Breakup and re-entry remain deferred.
+
+**Revisit when**
+
+A future accepted decision introduces additional preference modes, player-configurable romance settings, non-neutral goals/mood/conflict, multiple date types, non-monogamy, breakup/re-entry, or deeper romantic states.
+
 ## New ADR template
 
 ### ADR-XXX — Title

@@ -606,22 +606,23 @@ Every listed schema change includes an EF migration, clean/previous-schema Postg
 
 - **Goal:** Add the PRODUCT.md-approved basic romantic invitation, outcome, Dating state, and necessary history.
 - **User-visible result:** Eligible player can invite a character, see persisted acceptance/rejection, Dating status, and the necessary invitation/outcome timeline.
-- **Dependencies:** M10-M12 and unresolved romance/content policy decisions required before broad release.
-- **Backend scope:** ROM-01/02, canonical pair, invitation/cooldown/outcome, shared Dating status and necessary invitation/outcome history, rule-created memories where released, wording after outcome.
-- **Database scope:** RomanticRelationships and RomanticStatusHistory plus invitation fields/records, canonical ordering, composite FKs/uniques/indexes, migration.
+- **Dependencies:** M10-M12 and accepted ADR-030. The remaining broad romance/content-rating decision is a release gate, not a blocker to implementing the bounded M13 mechanics.
+- **Backend scope:** Exact ADR-030 ROM-01/02 evaluation; structured romance modes and world feature setting; canonical pair; server-selected `CasualDate`; invitation/cooldown/expiry/outcome; strict Dating and pending-invitation exclusivity; atomic bidirectional Commitment effect; shared Dating status and necessary invitation/outcome history; rule-created memories where released; wording only after the deterministic outcome.
+- **Database scope:** `WorldSettings.RomanceEnabled`; Player/Character `RomancePreferenceMode`; RomanticRelationships, RomanticInvitations, and RomanticStatusHistory; canonical ordering; UTC audit plus game-time fields; provenance, composite FKs, canonical-pair/operation uniques, active-pair indexes, deterministic Actor-row locking, and migration.
 - **Flutter scope:** Invitation action, pending/result, safe eligibility feedback, status/timeline, loading/empty/error/offline states.
 - **Infrastructure scope:** None.
-- **Seed data:** Stable eligible, rejected, accepted, and invalid-transition scenarios.
-- **Test scope:** Thresholds, compatibility/cooldown, duplicate/concurrent invite, acceptance/rejection, Dating, canonical pair, required history/memory/ownership/UI, and rejection of deferred transitions.
+- **Seed data:** Stable eligible, incompatible, exclusivity-conflicting, roll-rejected, accepted, expired, and invalid-transition scenarios using fixed world state and seeds.
+- **Test scope:** World/mode compatibility, neutral ROM-only inputs, exact rejection precedence and thresholds, deterministic seeded ROM-02, 14-game-day cooldown from creation, 24-game-hour expiry, Player explicit outcome, Character immediate outcome, `CasualDate` authority, duplicate/concurrent invite and outcome replay, strict Dating/pending exclusivity, one-time atomic bidirectional +10 Commitment, canonical pair, append-only required history, persistence-level preservation of seeded distinct ended/re-dated episodes without enabling those transitions, memory/ownership/UI boundaries, text/AI invariance, and rejection of deferred transitions.
 - **Documentation updates:** No threshold/state change without `GAME_RULES.md`; content UX decision documented before release.
-- **Explicit exclusions:** Breakup lifecycle, FormerPartner re-entry, reconciliation/cooldowns/cycling, commitment beyond Dating, engagement, marriage, separation, divorce, children, and family simulation.
-- **Acceptance criteria:** Server rules decide one outcome and history; AI only phrases it; forbidden paths fail safely.
+- **Explicit exclusions:** Breakup or Dating-end lifecycle, FormerPartner/re-dating/re-entry, reconciliation/cycling, additional romance preference modes, additional date types, commitment progression beyond the one-time Dating transition effect, engagement, marriage, separation, divorce, children, and family simulation.
+- **Acceptance criteria:** Server-owned structured state and exact ADR-030 rules decide one replay-safe outcome and append-only history; at most one Dating relationship and one unresolved invitation involve an Actor; the Dating transition applies +10 Commitment in both directions exactly once; AI only phrases an already-decided outcome; forbidden paths fail safely.
 - **Required verification:** Rule/scenario/PostgreSQL/API/security/Flutter tests and romance-content review.
-- **Manual checks:** Eligible/ineligible/rejected/accepted path, duplicate retry, required romantic history, deferred-transition rejection, foreign character.
-- **Review focus:** Consent/content boundaries, canonical status, client mechanical fields, history consistency.
+- **Manual checks:** Disabled/incompatible/exclusivity/threshold/roll rejection, Player pending accept/reject/expiry, Character immediate result, duplicate retry, Dating Commitment effect, required romantic history, deferred-transition rejection, and foreign Character.
+- **Review focus:** Compatibility and Player authority, game-time expiry/cooldown, deterministic outcome, strict exclusivity under concurrency, canonical status, client mechanical fields, one-time Commitment effect, history consistency, and AI/text isolation.
 - **Suggested milestone commit:** `feat(dating): add rule-based invitation and history`.
 - **Exit criteria:** Basic dating vertical slice is auditable, safe, and phase-correct.
 - **Main risks:** Pacing/content safety, status duplication, AI contradicting outcome.
+- **Implementation readiness:** Unblocked by ADR-030. Broad romance/content-rating boundaries remain a release decision and do not authorize mechanics beyond this bounded M13 slice.
 - **Rollback:** Feature-gate invitations; preserve immutable history and current compatible status.
 
 ## 27. M14 World events and trends
@@ -812,7 +813,7 @@ Do not silently settle these before the affected milestone:
 11. Performance targets, load-tooling threshold, and coverage thresholds.
 12. Crash-reporting and analytics providers, disclosure, and retention.
 13. Container/isolation tooling details beyond the accepted PostgreSQL snake_case policy and M03 Actor timing.
-14. Romance/content rating boundaries before broad dating release.
+14. Romance/content rating boundaries before broad dating release; ADR-030 resolves the bounded M13 mechanics but not this release-policy decision.
 15. Topic taxonomy and whether/when to activate the full Version 1 world-events/trends scope in M14.
 16. Retention, field/cache encryption, account deletion, backup purge, and support/admin model.
 17. Release-checklist ownership and authority for accepting known High risk.
@@ -828,6 +829,7 @@ Do not silently settle these before the affected milestone:
 6. **M09 AI provider:** ADR-024 selects local Ollama with configurable preferred `qwen3:4b`, zero paid-API dependency, application validation, deterministic fallback, bounded retry/timeout, and fake/stub-only automated tests; cloud providers remain deferred.
 7. **Offline local queue wording in the planning brief:** the risk mitigation proposes a local queue broadly, while approved Flutter/product/API documents allow drafts and retry of already-submitted indeterminate operations only. This plan preserves the empty allowlist for new offline initiation. `PRODUCT.md`, `ARCHITECTURE.md`, `API_CONVENTIONS.md`, and `FLUTTER_GUIDELINES.md` would require coordinated correction before expansion.
 8. **M11 MSG-02 inputs:** ADR-027 fixes M11-v1 Player-message Urgency at neutral 50 on the 0-100 scale and ConflictAvoidancePenalty at 0. No client, text heuristic, Rivalry-only inference, or AI classification supplies either value; richer mechanics require a later accepted decision.
+9. **M13 romance mechanics:** ADR-030 fixes structured eligibility and compatibility, ROM-only neutral inputs, rejection precedence, strict Dating/pending-invitation exclusivity, game-time cooldown/expiry, Player-versus-Character outcome timing, server-selected `CasualDate`, the one-time bidirectional Commitment effect, append-only history, and AI/text/memory boundaries. Breakup, Dating end, and re-dating remain deferred.
 
 ### Final consistency checklist
 

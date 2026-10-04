@@ -121,7 +121,7 @@ class AppDatabase extends _$AppDatabase {
     : super(executor ?? driftDatabase(name: 'parallel_world_cache'));
 
   @override
-  int get schemaVersion => 4;
+  int get schemaVersion => 5;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -146,11 +146,30 @@ class AppDatabase extends _$AppDatabase {
           cachedFeedPosts.currentPlayerReaction,
         );
       }
+      if (from < 5) {
+        await _ensureMessagingTables();
+      }
     },
   );
 
   Future<void> initialize() async {
     await customSelect('SELECT 1').getSingle();
+    await _ensureMessagingTables();
+  }
+
+  Future<void> _ensureMessagingTables() async {
+    await customStatement(
+      'CREATE TABLE IF NOT EXISTS cached_m11_conversations (user_id TEXT NOT NULL, world_id TEXT NOT NULL, conversation_id TEXT NOT NULL, character_id TEXT NOT NULL, character_actor_id TEXT NOT NULL, character_display_name TEXT NOT NULL, character_handle TEXT NOT NULL, created_at_utc INTEGER NOT NULL, last_message_at_utc INTEGER NOT NULL, last_message_preview TEXT NULL, unread_count INTEGER NOT NULL, character_reply_status TEXT NULL, cached_at_utc INTEGER NOT NULL, PRIMARY KEY (user_id, world_id, conversation_id))',
+    );
+    await customStatement(
+      'CREATE TABLE IF NOT EXISTS cached_m11_conversation_list_metadata (user_id TEXT NOT NULL, world_id TEXT NOT NULL, cached_at_utc INTEGER NOT NULL, PRIMARY KEY (user_id, world_id))',
+    );
+    await customStatement(
+      'CREATE TABLE IF NOT EXISTS cached_m11_conversation_metadata (user_id TEXT NOT NULL, world_id TEXT NOT NULL, conversation_id TEXT NOT NULL, next_cursor TEXT NULL, has_more INTEGER NOT NULL, cached_at_utc INTEGER NOT NULL, PRIMARY KEY (user_id, world_id, conversation_id))',
+    );
+    await customStatement(
+      'CREATE TABLE IF NOT EXISTS cached_m11_messages (user_id TEXT NOT NULL, world_id TEXT NOT NULL, conversation_id TEXT NOT NULL, message_id TEXT NOT NULL, sender_actor_id TEXT NOT NULL, sender_type TEXT NOT NULL, body TEXT NOT NULL, created_at_utc INTEGER NOT NULL, delivery_status TEXT NOT NULL, client_message_id TEXT NULL, local_state TEXT NOT NULL, failure_message TEXT NULL, PRIMARY KEY (user_id, world_id, conversation_id, message_id))',
+    );
   }
 
   Future<void> replaceWorld({
@@ -190,6 +209,11 @@ class AppDatabase extends _$AppDatabase {
   }
 
   Future<void> clearPrivateData() => transaction(() async {
+    await _ensureMessagingTables();
+    await customStatement('DELETE FROM cached_m11_messages');
+    await customStatement('DELETE FROM cached_m11_conversation_metadata');
+    await customStatement('DELETE FROM cached_m11_conversations');
+    await customStatement('DELETE FROM cached_m11_conversation_list_metadata');
     await delete(cachedFeedPosts).go();
     await delete(cachedFeedMetadata).go();
     await delete(cachedCharacterDetails).go();

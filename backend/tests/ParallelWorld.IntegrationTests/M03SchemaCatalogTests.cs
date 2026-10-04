@@ -6,10 +6,10 @@ using ParallelWorld.Infrastructure.Persistence;
 namespace ParallelWorld.IntegrationTests;
 
 [Trait("Category", "PostgreSql")]
-public sealed class M10SchemaCatalogTests
+public sealed class M11SchemaCatalogTests
 {
     [Fact]
-    public async Task MigratedSchema_HasExactM10TablesConstraintsAndIndexes()
+    public async Task MigratedSchema_HasExactM11TablesConstraintsAndIndexes()
     {
         await using var factory = await CreateFactoryAsync();
         TestDatabaseGuard.EnsureSafe(factory.DatabaseName);
@@ -30,6 +30,7 @@ public sealed class M10SchemaCatalogTests
             "20260920133535_AddM08RuleBasedSimulation",
             "20260921173919_AddM09AiTextGeneration",
             "20261003064625_AddM10RelationshipEngine",
+            "20261003145439_AddM11PrivateMessaging",
         }, migrations);
 
         var tables = await ReadNamesAsync(db, """
@@ -49,12 +50,16 @@ public sealed class M10SchemaCatalogTests
             "character_schedules",
             "character_traits",
             "characters",
+            "conversation_participants",
+            "conversations",
             "device_installations",
             "follows",
             "game_worlds",
             "gameplay_events",
             "guest_bootstrap_operations",
             "idempotency_records",
+            "messages",
+            "planned_replies",
             "player_profiles",
             "post_reactions",
             "posts",
@@ -81,7 +86,7 @@ public sealed class M10SchemaCatalogTests
               AND c.contype <> 'n'
             ORDER BY c.conname
             """);
-        Assert.Equal(ExpectedConstraints.Concat(M10Constraints).Order(StringComparer.Ordinal), constraints);
+        Assert.Equal(ExpectedConstraints.Concat(M10Constraints).Concat(M11Constraints).Order(StringComparer.Ordinal), constraints);
 
         var indexes = await ReadNamesAsync(db, """
             SELECT indexname
@@ -90,7 +95,7 @@ public sealed class M10SchemaCatalogTests
               AND tablename <> '__EFMigrationsHistory'
             ORDER BY indexname
             """);
-        Assert.Equal(ExpectedIndexes.Concat(M10Indexes).Order(StringComparer.Ordinal), indexes);
+        Assert.Equal(ExpectedIndexes.Concat(M10Indexes).Concat(M11Indexes).Order(StringComparer.Ordinal), indexes);
     }
 
     private static readonly string[] ExpectedConstraints =
@@ -360,6 +365,30 @@ public sealed class M10SchemaCatalogTests
         "ak_relationships_world_id_id", "ix_relationship_events_game_date", "ix_relationship_events_history", "ix_relationships_world_source_updated_id",
         "pk_relationship_daily_change_ledgers", "pk_relationship_events", "pk_relationships",
         "ux_relationship_events_source_rule_direction", "ux_relationship_events_world_idempotency_key", "ux_relationships_world_source_target",
+    ];
+
+    private static readonly string[] M11Constraints =
+    [
+        "ak_conversations_world_id_id", "ak_messages_world_conversation_id", "ak_messages_world_id_id", "ak_planned_replies_world_id_id",
+        "ck_conversations_distinct_actors", "ck_conversations_type", "ck_messages_delivery_status",
+        "ck_planned_replies_conflict_penalty", "ck_planned_replies_roll", "ck_planned_replies_score", "ck_planned_replies_status", "ck_planned_replies_urgency",
+        "fk_conversation_participants_actors_world_actor", "fk_conversation_participants_conversations_world_conversation", "fk_conversation_participants_messages_read_cursor",
+        "fk_conversations_actors_world_character", "fk_conversations_actors_world_player", "fk_conversations_game_worlds_world_id",
+        "fk_messages_conversations_world_conversation", "fk_messages_gameplay_events_world_event", "fk_messages_participants_world_conversation_sender", "fk_messages_simulation_actions_world_action",
+        "fk_planned_replies_messages_source", "fk_planned_replies_participants_recipient",
+        "pk_conversation_participants", "pk_conversations", "pk_messages", "pk_planned_replies",
+    ];
+
+    private static readonly string[] M11Indexes =
+    [
+        "IX_conversation_participants_world_id_actor_id", "IX_conversation_participants_world_id_conversation_id_last_rea~",
+        "IX_conversations_world_id_character_actor_id", "IX_messages_world_id_conversation_id_sender_actor_id",
+        "IX_messages_world_id_gameplay_event_id", "IX_messages_world_id_simulation_action_id",
+        "IX_planned_replies_world_id_conversation_id_recipient_actor_id", "IX_planned_replies_world_id_conversation_id_source_message_id",
+        "ak_conversations_world_id_id", "ak_messages_world_conversation_id", "ak_messages_world_id_id", "ak_planned_replies_world_id_id",
+        "ix_conversations_world_last_message_id", "ix_messages_world_conversation_created_id", "ix_planned_replies_status_due_id",
+        "pk_conversation_participants", "pk_conversations", "pk_messages", "pk_planned_replies",
+        "ux_conversations_world_player_character_active", "ux_messages_world_sender_client_operation", "ux_planned_replies_source_recipient",
     ];
 
     private static async Task<string[]> ReadNamesAsync(ParallelWorldDbContext db, string sql)

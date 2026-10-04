@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using ParallelWorld.Application.Messaging;
 
 namespace ParallelWorld.AI;
 
@@ -32,6 +33,8 @@ public static class DependencyInjection
         services.AddSingleton<IAiOutputValidator, AiOutputValidator>();
         services.AddSingleton<IAiCanonicalInputFactory, AiCanonicalInputFactory>();
         services.AddScoped<IAiTextGenerator, AiTextGenerator>();
+        services.AddScoped<IMessageWordingGenerator, MessageWordingGenerator>();
+        services.AddHostedService<MessageWordingWorker>();
         return services;
     }
 }

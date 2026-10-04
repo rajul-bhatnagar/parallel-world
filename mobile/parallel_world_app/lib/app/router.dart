@@ -11,6 +11,8 @@ import 'package:parallel_world_app/features/characters/presentation/character_ca
 import 'package:parallel_world_app/features/characters/presentation/character_profile_screen.dart';
 import 'package:parallel_world_app/features/feed/presentation/feed_screen.dart';
 import 'package:parallel_world_app/features/feed/presentation/post_thread_screen.dart';
+import 'package:parallel_world_app/features/messaging/presentation/conversation_list_screen.dart';
+import 'package:parallel_world_app/features/messaging/presentation/chat_screen.dart';
 
 final appRouterProvider = Provider<GoRouter>((ref) {
   final refresh = _RouterRefreshNotifier();
@@ -49,6 +51,17 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           characterId: state.pathParameters['characterId']!,
         ),
       ),
+      GoRoute(
+        path: '/conversations',
+        builder: (_, _) => const ConversationListScreen(),
+      ),
+      GoRoute(
+        path: '/conversations/:conversationId',
+        builder: (_, state) => ChatScreen(
+          conversationId: state.pathParameters['conversationId']!,
+          title: state.extra as String?,
+        ),
+      ),
     ],
   );
 });
@@ -60,12 +73,16 @@ String? routeForSession(SessionState session, String location) {
       location.startsWith('/posts/') ||
       location == '/characters' ||
       location.startsWith('/characters/');
+  final isMessaging =
+      location == '/conversations' || location.startsWith('/conversations/');
   final target = switch (session.phase) {
     SessionPhase.initial || SessionPhase.initializing => '/splash',
     SessionPhase.authenticated || SessionPhase.offlineAuthenticated =>
       session.world == null
           ? '/world/create'
           : authenticatedLocation
+          ? location
+          : isMessaging
           ? location
           : '/home',
     SessionPhase.missingWorld => '/world/create',

@@ -17,6 +17,11 @@ import 'package:parallel_world_app/features/feed/application/feed_dependencies.d
 import 'package:parallel_world_app/features/feed/data/feed_api.dart';
 import 'package:parallel_world_app/features/feed/data/feed_cache.dart';
 import 'package:parallel_world_app/features/feed/data/feed_repository.dart';
+import 'package:parallel_world_app/features/messaging/application/messaging_contracts.dart';
+import 'package:parallel_world_app/features/messaging/application/messaging_dependencies.dart';
+import 'package:parallel_world_app/features/messaging/data/messaging_api.dart';
+import 'package:parallel_world_app/features/messaging/data/messaging_cache.dart';
+import 'package:parallel_world_app/features/messaging/data/messaging_repository.dart';
 import 'package:parallel_world_app/features/session/application/session_contracts.dart';
 import 'package:parallel_world_app/features/relationships/application/relationship_contracts.dart';
 import 'package:parallel_world_app/features/relationships/application/relationship_provider.dart';
@@ -142,6 +147,21 @@ final _feedRepositoryImplementationProvider = Provider<FeedRepository>(
 final _relationshipGatewayProvider = Provider<RelationshipGateway>(
   (ref) => RelationshipApi(ref.watch(authenticatedDioProvider)),
 );
+final _messagingGatewayProvider = Provider<MessagingGateway>(
+  (ref) => MessagingApi(ref.watch(authenticatedDioProvider)),
+);
+final _messagingCacheProvider = Provider<MessagingCache>(
+  (ref) => DriftMessagingCache(
+    ref.watch(appDatabaseProvider),
+    utcNow: ref.watch(utcNowProvider),
+  ),
+);
+final _messagingRepositoryProvider = Provider<MessagingRepository>(
+  (ref) => ApiCachedMessagingRepository(
+    ref.watch(_messagingGatewayProvider),
+    ref.watch(_messagingCacheProvider),
+  ),
+);
 
 Widget buildAppScope({required AppConfig config, required Widget child}) =>
     ProviderScope(
@@ -164,6 +184,9 @@ Widget buildAppScope({required AppConfig config, required Widget child}) =>
         ),
         relationshipGatewayProvider.overrideWith(
           (ref) => ref.watch(_relationshipGatewayProvider),
+        ),
+        messagingRepositoryProvider.overrideWith(
+          (ref) => ref.watch(_messagingRepositoryProvider),
         ),
       ],
       child: child,

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:parallel_world_app/app/theme.dart';
 import 'package:parallel_world_app/core/errors/app_failure.dart';
 import 'package:parallel_world_app/features/characters/application/character_details_provider.dart';
@@ -7,6 +8,7 @@ import 'package:parallel_world_app/features/characters/domain/character_models.d
 import 'package:parallel_world_app/features/relationships/application/relationship_provider.dart';
 import 'package:parallel_world_app/features/relationships/domain/relationship_models.dart';
 import 'package:parallel_world_app/features/session/application/session_controller.dart';
+import 'package:parallel_world_app/features/messaging/application/messaging_controllers.dart';
 
 class CharacterProfileScreen extends ConsumerWidget {
   const CharacterProfileScreen({required this.characterId, super.key});
@@ -28,7 +30,33 @@ class CharacterProfileScreen extends ConsumerWidget {
     );
     final details = ref.watch(characterDetailsProvider(request));
     return Scaffold(
-      appBar: AppBar(title: const Text('Character profile')),
+      appBar: AppBar(
+        title: const Text('Character profile'),
+        actions: [
+          IconButton(
+            tooltip: 'Message character',
+            icon: const Icon(Icons.message_outlined),
+            onPressed: () async {
+              try {
+                final conversation = await ref
+                    .read(conversationListControllerProvider.notifier)
+                    .openDirect(characterId);
+                if (conversation != null && context.mounted) {
+                  context.push(
+                    '/conversations/${conversation.id}',
+                    extra: conversation.character.displayName,
+                  );
+                }
+              } on AppFailure catch (error) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context)
+                      .showSnackBar(SnackBar(content: Text(error.message)));
+                }
+              }
+            },
+          ),
+        ],
+      ),
       body: SafeArea(
         child: details.when(
           loading: () => const Center(

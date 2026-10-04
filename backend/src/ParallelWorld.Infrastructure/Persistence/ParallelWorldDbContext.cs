@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore.Storage;
 using ParallelWorld.Application.Abstractions.Persistence;
 using ParallelWorld.Domain.Accounts;
 using ParallelWorld.Domain.Characters;
+using ParallelWorld.Domain.Messaging;
 using ParallelWorld.Domain.Relationships;
 using ParallelWorld.Domain.Simulation;
 using ParallelWorld.Domain.Social;
@@ -61,6 +62,10 @@ public sealed class ParallelWorldDbContext(DbContextOptions<ParallelWorldDbConte
     public DbSet<SimulationAction> SimulationActions => Set<SimulationAction>();
 
     public DbSet<AiGenerationRequest> AiGenerationRequests => Set<AiGenerationRequest>();
+    public DbSet<Conversation> Conversations => Set<Conversation>();
+    public DbSet<ConversationParticipant> ConversationParticipants => Set<ConversationParticipant>();
+    public DbSet<Message> Messages => Set<Message>();
+    public DbSet<PlannedReply> PlannedReplies => Set<PlannedReply>();
     public DbSet<Relationship> Relationships => Set<Relationship>();
     public DbSet<RelationshipEvent> RelationshipEvents => Set<RelationshipEvent>();
     public DbSet<RelationshipDailyChangeLedger> RelationshipDailyChangeLedgers => Set<RelationshipDailyChangeLedger>();

@@ -77,6 +77,18 @@ class HomeScreen extends ConsumerWidget {
             ),
             const SizedBox(height: AppSpacing.medium),
             Card(
+              child: ListTile(
+                leading: const Icon(Icons.chat_bubble_outline),
+                title: const Text('Messages'),
+                subtitle: const Text(
+                  'Continue private character conversations.',
+                ),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => context.push('/conversations'),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.medium),
+            Card(
               child: Padding(
                 padding: const EdgeInsets.all(AppSpacing.large),
                 child: Column(

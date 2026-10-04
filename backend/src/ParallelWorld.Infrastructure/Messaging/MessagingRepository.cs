@@ -233,13 +233,18 @@ internal sealed class MessagingRepository(ParallelWorldDbContext db, TimeProvide
         var row = await (from a in db.Actors.AsNoTracking()
                          join character in db.Characters.AsNoTracking() on new { a.WorldId, a.CharacterId } equals new { character.WorldId, CharacterId = (Guid?)character.Id }
                          where a.WorldId == c.WorldId && a.Id == c.CharacterActorId
-                         select new { character.DisplayName, character.CurrentMoodType, character.WritingStyle }).SingleAsync(ct);
+                         select new { character.Id, character.DisplayName, character.CurrentMoodType, character.WritingStyle }).SingleAsync(ct);
         var playerName = await (from a in db.Actors.AsNoTracking()
                                 join profile in db.PlayerProfiles.AsNoTracking() on new { a.WorldId, a.PlayerProfileId } equals new { profile.WorldId, PlayerProfileId = (Guid?)profile.Id }
                                 where a.WorldId == c.WorldId && a.Id == c.PlayerActorId
                                 select profile.DisplayName).SingleAsync(ct);
+        var sourceGameplayEventId = await db.Messages.AsNoTracking()
+            .Where(x => x.WorldId == c.WorldId && x.Id == p.SourceMessageId)
+            .Select(x => x.GameplayEventId)
+            .SingleAsync(ct);
         return new(c.WorldId, c.Id, p.Id, c.CharacterActorId, row.DisplayName, playerName,
-            row.CurrentMoodType.ToString().ToLowerInvariant(), row.WritingStyle, body, 500);
+            row.CurrentMoodType.ToString().ToLowerInvariant(), row.WritingStyle, body, 500,
+            row.Id, c.PlayerActorId, sourceGameplayEventId, []);
     }
 
     private async Task<int> UnreadCountAsync(Conversation c, ConversationParticipant participant, CancellationToken ct)

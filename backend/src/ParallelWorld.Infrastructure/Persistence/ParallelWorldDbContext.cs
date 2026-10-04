@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore.Storage;
 using ParallelWorld.Application.Abstractions.Persistence;
 using ParallelWorld.Domain.Accounts;
 using ParallelWorld.Domain.Characters;
+using ParallelWorld.Domain.Memory;
 using ParallelWorld.Domain.Messaging;
 using ParallelWorld.Domain.Relationships;
 using ParallelWorld.Domain.Simulation;
@@ -69,6 +70,13 @@ public sealed class ParallelWorldDbContext(DbContextOptions<ParallelWorldDbConte
     public DbSet<Relationship> Relationships => Set<Relationship>();
     public DbSet<RelationshipEvent> RelationshipEvents => Set<RelationshipEvent>();
     public DbSet<RelationshipDailyChangeLedger> RelationshipDailyChangeLedgers => Set<RelationshipDailyChangeLedger>();
+    public DbSet<CharacterMemory> CharacterMemories => Set<CharacterMemory>();
+    public DbSet<MemoryCreationOutcome> MemoryCreationOutcomes => Set<MemoryCreationOutcome>();
+    public DbSet<Secret> Secrets => Set<Secret>();
+    public DbSet<SecretKnower> SecretKnowers => Set<SecretKnower>();
+    public DbSet<Promise> Promises => Set<Promise>();
+    public DbSet<MemoryRecallRequest> MemoryRecallRequests => Set<MemoryRecallRequest>();
+    public DbSet<MemoryRecallSelection> MemoryRecallSelections => Set<MemoryRecallSelection>();
 
     public async Task<IApplicationTransaction> BeginTransactionAsync(
         ApplicationIsolationLevel isolationLevel,

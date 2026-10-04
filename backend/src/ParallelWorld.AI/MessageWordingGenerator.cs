@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.Extensions.Options;
 using ParallelWorld.Application.Messaging;
 
@@ -16,11 +17,18 @@ public sealed class MessageWordingGenerator(IAiTextProvider provider, IAiPromptB
         var mood = AiSensitiveText.Sanitize(request.VisibleMood);
         var style = AiSensitiveText.Sanitize(request.StyleHint);
         var untrusted = AiSensitiveText.Sanitize(request.SourceMessageBody);
+        var memories = request.MemoryContext.Select(AiSensitiveText.Sanitize).ToArray();
         var sensitive = actor.SensitiveDetected || target.SensitiveDetected || mood.SensitiveDetected
-            || style.SensitiveDetected || untrusted.SensitiveDetected;
+            || style.SensitiveDetected || untrusted.SensitiveDetected
+            || memories.Any(memory => memory.SensitiveDetected);
+        var untrustedContext = JsonSerializer.Serialize(new
+        {
+            sourceMessage = untrusted.Value,
+            selectedMemories = memories.Select(memory => memory.Value).ToArray(),
+        });
         var input = new AiCanonicalInput(AiTextKind.Reply, "reply", actor.Value ?? "Character",
             target.Value, null, mood.Value, style.Value, "responsive", "conversational",
-            "replied to the player's private message", untrusted.Value, [], [], [], sensitive,
+            "replied to the player's private message", untrustedContext, [], [], [], sensitive,
             Math.Min(request.MaxOutputLength, settings.MaxOutputLength));
         string? text = null;
         string? failure = sensitive ? "sensitive_input" : settings.Enabled ? null : "provider_disabled";

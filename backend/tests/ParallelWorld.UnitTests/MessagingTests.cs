@@ -55,7 +55,8 @@ public sealed class MessagingTests
                 PromptTemplateVersion = "m09-v1",
             }));
         var request = new MessageWordingRequest(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(),
-            "Maya", "Player", "calm", "concise", "Hello", 500);
+            "Maya", "Player", "calm", "concise", "Hello", 500, Guid.NewGuid(), Guid.NewGuid(),
+            Guid.NewGuid(), []);
 
         var result = await generator.GenerateAsync(request, CancellationToken.None);
 
@@ -63,6 +64,32 @@ public sealed class MessagingTests
         Assert.Equal("provider_disabled", result.FailureCode);
         Assert.Equal(0, provider.CallCount);
         Assert.False(string.IsNullOrWhiteSpace(result.Text));
+    }
+
+    [Fact]
+    public async Task MessageWording_UsesOnlyProvidedMemoryContextAsUntrustedWordingData()
+    {
+        var provider = new CapturingProvider();
+        var generator = new MessageWordingGenerator(provider, new AiPromptBuilder(),
+            new DeterministicAiFallbackRenderer(), new AiOutputValidator(), Options.Create(new AiGenerationOptions
+            {
+                Enabled = true,
+                BaseUrl = "http://localhost:11434",
+                Model = "qwen3:4b",
+                Timeout = TimeSpan.FromSeconds(10),
+                MaxOutputLength = 500,
+                PromptTemplateVersion = "m09-v1",
+            }));
+        var request = new MessageWordingRequest(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(),
+            "Maya", "Player", "calm", "concise", "Hello", 500, Guid.NewGuid(), Guid.NewGuid(),
+            Guid.NewGuid(), ["Met at the library."]);
+
+        var result = await generator.GenerateAsync(request, CancellationToken.None);
+
+        Assert.False(result.FallbackUsed);
+        Assert.NotNull(provider.Request);
+        Assert.Contains("Met at the library.", provider.Request!.Prompt.UserPrompt, StringComparison.Ordinal);
+        Assert.Contains("UNTRUSTED_DATA", provider.Request.Prompt.UserPrompt, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -85,6 +112,18 @@ public sealed class MessagingTests
         {
             CallCount++;
             throw new InvalidOperationException("Provider should not be called.");
+        }
+    }
+
+    private sealed class CapturingProvider : IAiTextProvider
+    {
+        public AiProviderRequest? Request { get; private set; }
+
+        public Task<AiProviderResult> GenerateAsync(AiProviderRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            Request = request;
+            return Task.FromResult(AiProviderResult.Success("Thanks."));
         }
     }
 }

@@ -1,11 +1,14 @@
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
+using ParallelWorld.Application.Memory;
+using ParallelWorld.Domain.Memory;
 
 namespace ParallelWorld.Application.Messaging;
 
 public sealed class MessagingService(IMessagingRepository repository, IConversationCursorCodec conversationCursors,
-    IMessageCursorCodec messageCursors, IMessageWordingGenerator wordingGenerator) : IMessagingService
+    IMessageCursorCodec messageCursors, IMessageWordingGenerator wordingGenerator,
+    IMemoryService memoryService) : IMessagingService
 {
     public async Task<MessagingResult<ConversationPage>> ListAsync(Guid userId, Guid worldId, int limit, string? cursor, CancellationToken ct)
     {
@@ -67,7 +70,27 @@ public sealed class MessagingService(IMessagingRepository repository, IConversat
         var status = persisted.CharacterReplyStatus;
         if (persisted.WordingRequest is not null)
         {
-            var wording = await wordingGenerator.GenerateAsync(persisted.WordingRequest, ct);
+            _ = await memoryService.CreateAsync(new CreateMemoryCommand(
+                persisted.WordingRequest.WorldId,
+                persisted.WordingRequest.CharacterId,
+                MemoryType.Event,
+                MemoryAuthorityType.GameplayEvent,
+                MemorySubjectType.Actor,
+                persisted.WordingRequest.SubjectActorId,
+                null,
+                null,
+                "Received and replied to a private message from the player.",
+                MemorySourceType.GameplayEvent,
+                persisted.WordingRequest.SourceGameplayEventId,
+                null), ct);
+            var memoryContext = await memoryService.RecallForMessageWordingAsync(
+                persisted.WordingRequest.WorldId,
+                persisted.WordingRequest.CharacterId,
+                persisted.WordingRequest.SubjectActorId,
+                persisted.WordingRequest.PlannedReplyId,
+                ct);
+            var wordingRequest = persisted.WordingRequest with { MemoryContext = memoryContext };
+            var wording = await wordingGenerator.GenerateAsync(wordingRequest, ct);
             status = await repository.FinalizeReplyAsync(userId, persisted.PlannedReplyId, wording, ct) ?? status;
         }
         return MessagingResult<SendMessageResult>.Success(new(persisted.Message, status, persisted.IsReplay));

@@ -6,10 +6,10 @@ using ParallelWorld.Infrastructure.Persistence;
 namespace ParallelWorld.IntegrationTests;
 
 [Trait("Category", "PostgreSql")]
-public sealed class M11SchemaCatalogTests
+public sealed class M12SchemaCatalogTests
 {
     [Fact]
-    public async Task MigratedSchema_HasExactM11TablesConstraintsAndIndexes()
+    public async Task MigratedSchema_HasExactM12TablesConstraintsAndIndexes()
     {
         await using var factory = await CreateFactoryAsync();
         TestDatabaseGuard.EnsureSafe(factory.DatabaseName);
@@ -31,6 +31,7 @@ public sealed class M11SchemaCatalogTests
             "20260921173919_AddM09AiTextGeneration",
             "20261003064625_AddM10RelationshipEngine",
             "20261003145439_AddM11PrivateMessaging",
+            "20261004123030_AddM12LongTermMemory",
         }, migrations);
 
         var tables = await ReadNamesAsync(db, """
@@ -46,6 +47,7 @@ public sealed class M11SchemaCatalogTests
             "actors",
             "ai_generation_requests",
             "character_interests",
+            "character_memories",
             "character_opinions",
             "character_schedules",
             "character_traits",
@@ -58,15 +60,21 @@ public sealed class M11SchemaCatalogTests
             "gameplay_events",
             "guest_bootstrap_operations",
             "idempotency_records",
+            "memory_creation_outcomes",
+            "memory_recall_requests",
+            "memory_recall_selections",
             "messages",
             "planned_replies",
             "player_profiles",
             "post_reactions",
             "posts",
+            "promises",
             "refresh_tokens",
             "relationship_daily_change_ledgers",
             "relationship_events",
             "relationships",
+            "secret_knowers",
+            "secrets",
             "simulation_actions",
             "simulation_rule_evaluations",
             "simulation_run_checkpoints",
@@ -86,7 +94,7 @@ public sealed class M11SchemaCatalogTests
               AND c.contype <> 'n'
             ORDER BY c.conname
             """);
-        Assert.Equal(ExpectedConstraints.Concat(M10Constraints).Concat(M11Constraints).Order(StringComparer.Ordinal), constraints);
+        Assert.Equal(ExpectedConstraints.Concat(M10Constraints).Concat(M11Constraints).Concat(M12Constraints).Order(StringComparer.Ordinal), constraints);
 
         var indexes = await ReadNamesAsync(db, """
             SELECT indexname
@@ -95,7 +103,7 @@ public sealed class M11SchemaCatalogTests
               AND tablename <> '__EFMigrationsHistory'
             ORDER BY indexname
             """);
-        Assert.Equal(ExpectedIndexes.Concat(M10Indexes).Concat(M11Indexes).Order(StringComparer.Ordinal), indexes);
+        Assert.Equal(ExpectedIndexes.Concat(M10Indexes).Concat(M11Indexes).Concat(M12Indexes).Order(StringComparer.Ordinal), indexes);
     }
 
     private static readonly string[] ExpectedConstraints =
@@ -389,6 +397,32 @@ public sealed class M11SchemaCatalogTests
         "ix_conversations_world_last_message_id", "ix_messages_world_conversation_created_id", "ix_planned_replies_status_due_id",
         "pk_conversation_participants", "pk_conversations", "pk_messages", "pk_planned_replies",
         "ux_conversations_world_player_character_active", "ux_messages_world_sender_client_operation", "ux_planned_replies_source_recipient",
+    ];
+
+    private static readonly string[] M12Constraints =
+    [
+        "ak_character_memories_world_id_id", "ak_memory_recall_requests_world_id_id", "ak_promises_world_id_id", "ak_secrets_world_id_id",
+        "ck_character_memories_authority", "ck_character_memories_confidence", "ck_character_memories_importance", "ck_character_memories_lifecycle", "ck_character_memories_source", "ck_character_memories_subject", "ck_character_memories_type", "ck_character_memories_visibility",
+        "ck_memory_creation_outcomes_shape", "ck_memory_creation_outcomes_source", "ck_memory_recall_requests_subject", "ck_memory_recall_selections_rank", "ck_memory_recall_selections_score",
+        "ck_promises_distinct_actors", "ck_promises_due_condition", "ck_promises_resolution", "ck_promises_status", "ck_secret_knowers_status", "ck_secrets_status",
+        "fk_character_memories_actors_world_subject", "fk_character_memories_characters_world_owner", "fk_character_memories_gameplay_events_world_source", "fk_character_memories_messages_world_source",
+        "fk_memory_creation_outcomes_characters_world_owner", "fk_memory_creation_outcomes_events_world_source", "fk_memory_creation_outcomes_memories_world_memory", "fk_memory_creation_outcomes_messages_world_source",
+        "fk_memory_recall_requests_actors_world_subject", "fk_memory_recall_requests_characters_world_character", "fk_memory_recall_selections_memories_world_memory", "fk_memory_recall_selections_requests_world_request",
+        "fk_promises_actors_world_source", "fk_promises_actors_world_target", "fk_promises_events_world_resolution", "fk_promises_memories_world_memory",
+        "fk_secret_knowers_characters_world_character", "fk_secret_knowers_secrets_world_secret", "fk_secrets_memories_world_memory",
+        "pk_character_memories", "pk_memory_creation_outcomes", "pk_memory_recall_requests", "pk_memory_recall_selections", "pk_promises", "pk_secret_knowers", "pk_secrets",
+    ];
+
+    private static readonly string[] M12Indexes =
+    [
+        "IX_character_memories_world_id_gameplay_event_id", "IX_character_memories_world_id_message_id", "IX_character_memories_world_id_subject_actor_id",
+        "IX_memory_creation_outcomes_world_id_gameplay_event_id", "IX_memory_creation_outcomes_world_id_memory_id", "IX_memory_creation_outcomes_world_id_message_id",
+        "IX_memory_recall_requests_world_id_subject_actor_id", "IX_memory_recall_selections_world_id_memory_id",
+        "IX_promises_world_id_resolution_gameplay_event_id", "IX_promises_world_id_source_actor_id", "IX_promises_world_id_target_actor_id",
+        "ak_character_memories_world_id_id", "ak_memory_recall_requests_world_id_id", "ak_promises_world_id_id", "ak_secrets_world_id_id",
+        "ix_character_memories_recall", "ix_character_memories_retention", "ix_promises_active_due", "ix_secret_knowers_world_character_status",
+        "pk_character_memories", "pk_memory_creation_outcomes", "pk_memory_recall_requests", "pk_memory_recall_selections", "pk_promises", "pk_secret_knowers", "pk_secrets",
+        "ux_character_memories_world_owner_source_type", "ux_memory_creation_outcomes_provenance", "ux_memory_recall_requests_world_character_key", "ux_memory_recall_selections_request_rank", "ux_promises_world_memory", "ux_secrets_world_memory",
     ];
 
     private static async Task<string[]> ReadNamesAsync(ParallelWorldDbContext db, string sql)

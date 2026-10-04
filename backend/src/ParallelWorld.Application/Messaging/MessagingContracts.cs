@@ -42,7 +42,8 @@ public sealed record PersistedSend(ConversationMessage Message, Guid PlannedRepl
     string CharacterReplyStatus, MessageWordingRequest? WordingRequest, bool IsReplay);
 public sealed record MessageWordingRequest(Guid WorldId, Guid ConversationId, Guid PlannedReplyId,
     Guid CharacterActorId, string CharacterDisplayName, string PlayerDisplayName, string VisibleMood,
-    string StyleHint, string SourceMessageBody, int MaxOutputLength);
+    string StyleHint, string SourceMessageBody, int MaxOutputLength, Guid CharacterId,
+    Guid SubjectActorId, Guid SourceGameplayEventId, IReadOnlyList<string> MemoryContext);
 public sealed record MessageWordingResult(string Text, bool FallbackUsed, string? FailureCode);
 public sealed record PendingMessageWordingWork(Guid OwnerUserId, MessageWordingRequest Request);
 

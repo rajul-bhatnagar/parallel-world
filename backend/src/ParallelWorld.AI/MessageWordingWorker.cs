@@ -1,7 +1,9 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using ParallelWorld.Application.Memory;
 using ParallelWorld.Application.Messaging;
+using ParallelWorld.Domain.Memory;
 
 namespace ParallelWorld.AI;
 
@@ -23,8 +25,29 @@ public sealed class MessageWordingWorker(IServiceScopeFactory scopeFactory,
                     continue;
                 }
 
+                var memoryService = scope.ServiceProvider.GetRequiredService<IMemoryService>();
+                _ = await memoryService.CreateAsync(new CreateMemoryCommand(
+                    work.Request.WorldId,
+                    work.Request.CharacterId,
+                    MemoryType.Event,
+                    MemoryAuthorityType.GameplayEvent,
+                    MemorySubjectType.Actor,
+                    work.Request.SubjectActorId,
+                    null,
+                    null,
+                    "Received and replied to a private message from the player.",
+                    MemorySourceType.GameplayEvent,
+                    work.Request.SourceGameplayEventId,
+                    null), stoppingToken);
+                var memoryContext = await memoryService.RecallForMessageWordingAsync(
+                    work.Request.WorldId,
+                    work.Request.CharacterId,
+                    work.Request.SubjectActorId,
+                    work.Request.PlannedReplyId,
+                    stoppingToken);
+                var request = work.Request with { MemoryContext = memoryContext };
                 var generator = scope.ServiceProvider.GetRequiredService<IMessageWordingGenerator>();
-                var wording = await generator.GenerateAsync(work.Request, stoppingToken);
+                var wording = await generator.GenerateAsync(request, stoppingToken);
                 await repository.FinalizeReplyAsync(
                     work.OwnerUserId, work.Request.PlannedReplyId, wording, stoppingToken);
             }

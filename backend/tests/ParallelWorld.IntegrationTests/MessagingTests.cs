@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using ParallelWorld.Domain.Memory;
 using ParallelWorld.Domain.Messaging;
 using ParallelWorld.Infrastructure.Persistence;
 
@@ -113,6 +114,21 @@ public sealed class MessagingTests
         var afterDb = afterScope.ServiceProvider.GetRequiredService<ParallelWorldDbContext>();
         Assert.Equal(before, await afterDb.RelationshipEvents.CountAsync(x => x.WorldId == guest.World.Id));
         Assert.All(await afterDb.PlannedReplies.Where(x => x.WorldId == guest.World.Id).ToListAsync(), p => { Assert.Equal(50, p.Urgency); Assert.Equal(0, p.ConflictAvoidancePenalty); });
+        var plan = await afterDb.PlannedReplies.SingleAsync(x => x.WorldId == guest.World.Id);
+        var memories = await afterDb.CharacterMemories.Where(x => x.WorldId == guest.World.Id).ToListAsync();
+        if (plan.Status == PlannedReplyStatus.NoResponse)
+        {
+            Assert.Empty(memories);
+            Assert.Empty(await afterDb.MemoryRecallRequests.Where(x => x.WorldId == guest.World.Id).ToListAsync());
+        }
+        else
+        {
+            var memory = Assert.Single(memories);
+            Assert.Equal(MemoryType.Event, memory.MemoryType);
+            Assert.Equal("Received and replied to a private message from the player.", memory.StructuredContent);
+            Assert.DoesNotContain(body, memory.StructuredContent, StringComparison.Ordinal);
+            Assert.Single(await afterDb.MemoryRecallRequests.Where(x => x.WorldId == guest.World.Id).ToListAsync());
+        }
     }
 
     private static async Task<M11Conversation> CreateConversationAsync(HttpClient client, Guid worldId, int index = 0)

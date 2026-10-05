@@ -57,7 +57,7 @@ internal sealed class RelationshipRepository(ParallelWorldDbContext db) : IRelat
         where w.Id == worldId
             && w.OwnerUserId == userId
             && source.ActorType == ActorType.Player
-            && (actorId == null || target.Id == actorId)
+            && (actorId == null || target.CharacterId == actorId)
         orderby r.UpdatedAt descending, character.Handle
         select new Row(r, target, character);
     private static RelationshipSummary Summary(Relationship r, Guid actorId, string name, string handle) => new(actorId, name, handle, RelationshipMechanics.Label(r.Values), r.UpdatedAt);

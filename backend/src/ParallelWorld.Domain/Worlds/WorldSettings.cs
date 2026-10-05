@@ -6,6 +6,7 @@ public sealed class WorldSettings
     {
         ContentSettingsJson = "{}";
         DisplayTimeZoneId = UtcTimeZoneId;
+        RomanceEnabled = true;
     }
 
     public WorldSettings(Guid id, Guid worldId, DateTimeOffset createdAt)
@@ -14,6 +15,7 @@ public sealed class WorldSettings
         WorldId = worldId;
         TimeScale = 1m;
         DisplayTimeZoneId = UtcTimeZoneId;
+        RomanceEnabled = true;
         ActionLimit = 0;
         AiBudgetTokens = 0;
         ContentSettingsJson = "{}";
@@ -29,6 +31,8 @@ public sealed class WorldSettings
     public decimal TimeScale { get; private set; }
 
     public string DisplayTimeZoneId { get; private set; }
+
+    public bool RomanceEnabled { get; private set; }
 
     public int ActionLimit { get; private set; }
 
@@ -67,6 +71,12 @@ public sealed class WorldSettings
         }
 
         DisplayTimeZoneId = displayTimeZoneId;
+        UpdatedAt = updatedAtUtc;
+    }
+
+    public void SetRomanceEnabled(bool enabled, DateTimeOffset updatedAtUtc)
+    {
+        RomanceEnabled = enabled;
         UpdatedAt = updatedAtUtc;
     }
 

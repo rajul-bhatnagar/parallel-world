@@ -70,6 +70,9 @@ public sealed class ParallelWorldDbContext(DbContextOptions<ParallelWorldDbConte
     public DbSet<Relationship> Relationships => Set<Relationship>();
     public DbSet<RelationshipEvent> RelationshipEvents => Set<RelationshipEvent>();
     public DbSet<RelationshipDailyChangeLedger> RelationshipDailyChangeLedgers => Set<RelationshipDailyChangeLedger>();
+    public DbSet<RomanticRelationship> RomanticRelationships => Set<RomanticRelationship>();
+    public DbSet<RomanticInvitation> RomanticInvitations => Set<RomanticInvitation>();
+    public DbSet<RomanticStatusHistory> RomanticStatusHistory => Set<RomanticStatusHistory>();
     public DbSet<CharacterMemory> CharacterMemories => Set<CharacterMemory>();
     public DbSet<MemoryCreationOutcome> MemoryCreationOutcomes => Set<MemoryCreationOutcome>();
     public DbSet<Secret> Secrets => Set<Secret>();

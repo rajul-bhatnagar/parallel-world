@@ -72,6 +72,8 @@ class CharacterProfileScreen extends ConsumerWidget {
           ),
           data: (view) => _ProfileBody(
             view: view,
+            request: RelationshipRequest(worldId, characterId),
+            playerActorId: session.world!.playerActorId,
             relationship: ref.watch(
               relationshipProvider(RelationshipRequest(worldId, characterId)),
             ),
@@ -82,15 +84,23 @@ class CharacterProfileScreen extends ConsumerWidget {
   }
 }
 
-class _ProfileBody extends StatelessWidget {
-  const _ProfileBody({required this.view, required this.relationship});
+class _ProfileBody extends ConsumerWidget {
+  const _ProfileBody({
+    required this.view,
+    required this.request,
+    required this.playerActorId,
+    required this.relationship,
+  });
 
   final CharacterDetailsView view;
+  final RelationshipRequest request;
+  final String playerActorId;
   final AsyncValue<RelationshipView> relationship;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final character = view.details;
+    final action = ref.watch(datingActionProvider(request));
     return ListView(
       padding: const EdgeInsets.all(AppSpacing.large),
       children: [
@@ -156,13 +166,14 @@ class _ProfileBody extends StatelessWidget {
               );
             }
             final summary = value.summary;
-            if (summary == null) {
-              return const Text('No relationship history yet.');
-            }
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(_label(summary.state.replaceAll('_', '-'))),
+                Text(
+                  summary == null
+                      ? 'No relationship history yet.'
+                      : _label(summary.state.replaceAll('_', '-')),
+                ),
                 if (value.history.isNotEmpty) ...[
                   const SizedBox(height: AppSpacing.small),
                   ...value.history
@@ -178,6 +189,73 @@ class _ProfileBody extends StatelessWidget {
                               context,
                             ).formatMediumDate(event.occurredAtUtc.toLocal()),
                           ),
+                        ),
+                      ),
+                ],
+                const SizedBox(height: AppSpacing.medium),
+                Text('Dating', style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: AppSpacing.small),
+                if (value.invitation != null)
+                  Text(
+                    value.invitation!.romanticStatus == 'dating'
+                        ? 'Dating'
+                        : 'Invitation: ${_label(value.invitation!.status)}',
+                  ),
+                if (value.invitation == null ||
+                    value.invitation!.status == 'rejected' ||
+                    value.invitation!.status == 'expired')
+                  FilledButton.icon(
+                    onPressed: action.isSubmitting
+                        ? null
+                        : () => ref
+                              .read(datingActionProvider(request).notifier)
+                              .invite(),
+                    icon: const Icon(Icons.favorite_outline),
+                    label: const Text('Invite on a casual date'),
+                  ),
+                if (value.invitation != null &&
+                    value.invitation!.status == 'pending' &&
+                    value.invitation!.targetActorId == playerActorId)
+                  Wrap(
+                    spacing: AppSpacing.small,
+                    children: [
+                      FilledButton(
+                        onPressed: action.isSubmitting
+                            ? null
+                            : () => ref
+                                  .read(datingActionProvider(request).notifier)
+                                  .resolve(value.invitation!.id, 'accept'),
+                        child: const Text('Accept'),
+                      ),
+                      OutlinedButton(
+                        onPressed: action.isSubmitting
+                            ? null
+                            : () => ref
+                                  .read(datingActionProvider(request).notifier)
+                                  .resolve(value.invitation!.id, 'reject'),
+                        child: const Text('Reject'),
+                      ),
+                    ],
+                  ),
+                if (action.isSubmitting) const LinearProgressIndicator(),
+                if (action.message case final message?)
+                  Padding(
+                    padding: const EdgeInsets.only(top: AppSpacing.small),
+                    child: Text(message),
+                  ),
+                if (value.romanticHistory.isNotEmpty) ...[
+                  const SizedBox(height: AppSpacing.small),
+                  ...value.romanticHistory
+                      .take(3)
+                      .map(
+                        (event) => ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          dense: true,
+                          leading: const Icon(Icons.favorite_outline),
+                          title: Text(
+                            '${_label(event.fromStatus)} → ${_label(event.toStatus)}',
+                          ),
+                          subtitle: Text(_label(event.reasonCode)),
                         ),
                       ),
                 ],

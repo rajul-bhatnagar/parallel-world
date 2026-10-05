@@ -1,3 +1,5 @@
+using ParallelWorld.Domain.Worlds;
+
 namespace ParallelWorld.Domain.Characters;
 
 public sealed class Character
@@ -10,6 +12,7 @@ public sealed class Character
         Profession = string.Empty;
         Archetype = string.Empty;
         WritingStyle = string.Empty;
+        RomancePreferenceMode = RomancePreferenceMode.AnyEligibleActor;
     }
 
     public Character(
@@ -49,6 +52,7 @@ public sealed class Character
         Profession = profession;
         Archetype = archetype;
         WritingStyle = writingStyle;
+        RomancePreferenceMode = RomancePreferenceMode.AnyEligibleActor;
         ActivityLevel = activityLevel;
         Influence = influence;
         Popularity = popularity;
@@ -68,6 +72,7 @@ public sealed class Character
     public string Profession { get; private set; }
     public string Archetype { get; private set; }
     public string WritingStyle { get; private set; }
+    public RomancePreferenceMode RomancePreferenceMode { get; private set; }
     public int ActivityLevel { get; private set; }
     public int Influence { get; private set; }
     public int Popularity { get; private set; }
@@ -77,6 +82,13 @@ public sealed class Character
     public DateTimeOffset CreatedAt { get; private set; }
     public DateTimeOffset UpdatedAt { get; private set; }
     public long Version { get; private set; }
+
+    public void SetRomancePreferenceMode(RomancePreferenceMode mode, DateTimeOffset updatedAtUtc)
+    {
+        if (!Enum.IsDefined(mode)) throw new ArgumentOutOfRangeException(nameof(mode));
+        RomancePreferenceMode = mode;
+        UpdatedAt = updatedAtUtc;
+    }
 
     private static void ValidateRange(int value, int minimum, int maximum, string parameterName)
     {

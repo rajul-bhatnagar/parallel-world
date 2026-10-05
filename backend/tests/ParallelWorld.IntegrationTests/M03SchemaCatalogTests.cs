@@ -6,10 +6,10 @@ using ParallelWorld.Infrastructure.Persistence;
 namespace ParallelWorld.IntegrationTests;
 
 [Trait("Category", "PostgreSql")]
-public sealed class M12SchemaCatalogTests
+public sealed class M13SchemaCatalogTests
 {
     [Fact]
-    public async Task MigratedSchema_HasExactM12TablesConstraintsAndIndexes()
+    public async Task MigratedSchema_HasExactM13TablesConstraintsAndIndexes()
     {
         await using var factory = await CreateFactoryAsync();
         TestDatabaseGuard.EnsureSafe(factory.DatabaseName);
@@ -32,6 +32,7 @@ public sealed class M12SchemaCatalogTests
             "20261003064625_AddM10RelationshipEngine",
             "20261003145439_AddM11PrivateMessaging",
             "20261004123030_AddM12LongTermMemory",
+            "20261004180419_AddM13Dating",
         }, migrations);
 
         var tables = await ReadNamesAsync(db, """
@@ -73,6 +74,9 @@ public sealed class M12SchemaCatalogTests
             "relationship_daily_change_ledgers",
             "relationship_events",
             "relationships",
+            "romantic_invitations",
+            "romantic_relationships",
+            "romantic_status_history",
             "secret_knowers",
             "secrets",
             "simulation_actions",
@@ -94,7 +98,7 @@ public sealed class M12SchemaCatalogTests
               AND c.contype <> 'n'
             ORDER BY c.conname
             """);
-        Assert.Equal(ExpectedConstraints.Concat(M10Constraints).Concat(M11Constraints).Concat(M12Constraints).Order(StringComparer.Ordinal), constraints);
+        Assert.Equal(ExpectedConstraints.Concat(M10Constraints).Concat(M11Constraints).Concat(M12Constraints).Concat(M13Constraints).Order(StringComparer.Ordinal), constraints);
 
         var indexes = await ReadNamesAsync(db, """
             SELECT indexname
@@ -103,7 +107,7 @@ public sealed class M12SchemaCatalogTests
               AND tablename <> '__EFMigrationsHistory'
             ORDER BY indexname
             """);
-        Assert.Equal(ExpectedIndexes.Concat(M10Indexes).Concat(M11Indexes).Concat(M12Indexes).Order(StringComparer.Ordinal), indexes);
+        Assert.Equal(ExpectedIndexes.Concat(M10Indexes).Concat(M11Indexes).Concat(M12Indexes).Concat(M13Indexes).Order(StringComparer.Ordinal), indexes);
     }
 
     private static readonly string[] ExpectedConstraints =
@@ -423,6 +427,28 @@ public sealed class M12SchemaCatalogTests
         "ix_character_memories_recall", "ix_character_memories_retention", "ix_promises_active_due", "ix_secret_knowers_world_character_status",
         "pk_character_memories", "pk_memory_creation_outcomes", "pk_memory_recall_requests", "pk_memory_recall_selections", "pk_promises", "pk_secret_knowers", "pk_secrets",
         "ux_character_memories_world_owner_source_type", "ux_memory_creation_outcomes_provenance", "ux_memory_recall_requests_world_character_key", "ux_memory_recall_selections_request_rank", "ux_promises_world_memory", "ux_secrets_world_memory",
+    ];
+
+    private static readonly string[] M13Constraints =
+    [
+        "ak_romantic_invitations_world_id_id", "ak_romantic_relationships_world_id_id",
+        "ck_characters_romance_preference", "ck_player_profiles_romance_preference",
+        "ck_romantic_invitations_date_type", "ck_romantic_invitations_distinct_actors", "ck_romantic_invitations_expiry", "ck_romantic_invitations_offset", "ck_romantic_invitations_scores", "ck_romantic_invitations_status",
+        "ck_romantic_relationships_canonical_pair", "ck_romantic_relationships_m13_status", "ck_romantic_status_history_from_status", "ck_romantic_status_history_to_status",
+        "fk_romantic_invitations_actors_world_initiator", "fk_romantic_invitations_actors_world_target", "fk_romantic_invitations_relationships_world_relationship",
+        "fk_romantic_relationships_actors_world_actor_a", "fk_romantic_relationships_actors_world_actor_b", "fk_romantic_relationships_worlds_world_id",
+        "fk_romantic_status_history_actors_world_initiator", "fk_romantic_status_history_invitations_world_invitation", "fk_romantic_status_history_relationships_world_relationship",
+        "pk_romantic_invitations", "pk_romantic_relationships", "pk_romantic_status_history",
+    ];
+
+    private static readonly string[] M13Indexes =
+    [
+        "IX_romantic_invitations_world_id_initiator_actor_id", "IX_romantic_invitations_world_id_target_actor_id",
+        "IX_romantic_relationships_world_id_actor_b_id", "IX_romantic_status_history_world_id_initiator_actor_id", "IX_romantic_status_history_world_id_romantic_invitation_id",
+        "ak_romantic_invitations_world_id_id", "ak_romantic_relationships_world_id_id",
+        "ix_romantic_invitations_expiry", "ix_romantic_relationships_world_status_actor_a", "ix_romantic_relationships_world_status_actor_b", "ix_romantic_status_history_pair_time_id",
+        "pk_romantic_invitations", "pk_romantic_relationships", "pk_romantic_status_history",
+        "ux_romantic_invitations_pending_pair", "ux_romantic_invitations_world_idempotency", "ux_romantic_relationships_world_pair", "ux_romantic_status_history_world_idempotency",
     ];
 
     private static async Task<string[]> ReadNamesAsync(ParallelWorldDbContext db, string sql)

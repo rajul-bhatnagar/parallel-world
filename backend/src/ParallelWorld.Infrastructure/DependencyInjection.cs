@@ -95,6 +95,8 @@ public static class DependencyInjection
         services.AddScoped<ISimulationRepository, SimulationRepository>();
         services.AddScoped<IRelationshipRepository, RelationshipRepository>();
         services.AddScoped<IRelationshipService, RelationshipService>();
+        services.AddScoped<IRomanceRepository, RomanceRepository>();
+        services.AddScoped<IRomanceService, RomanceService>();
         services.AddSingleton<IConversationCursorCodec, ConversationCursorCodec>();
         services.AddSingleton<IMessageCursorCodec, MessageCursorCodec>();
         services.AddScoped<IMessagingRepository, MessagingRepository>();

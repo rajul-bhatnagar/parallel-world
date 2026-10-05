@@ -46,6 +46,78 @@ class RelationshipApi implements RelationshipGateway {
     }
   }
 
+  @override
+  Future<DatingInvitation> invite({
+    required String worldId,
+    required String characterId,
+    required String idempotencyKey,
+  }) async {
+    try {
+      final response = await _dio.post<dynamic>(
+        '/api/v1/worlds/$worldId/relationships/$characterId/date-invitations',
+        data: const <String, Object?>{},
+        options: Options(headers: {'Idempotency-Key': idempotencyKey}),
+      );
+      return DatingInvitation.fromJson(_object(response.data));
+    } on DioException catch (error) {
+      throw mapDioException(error);
+    }
+  }
+
+  @override
+  Future<List<DatingInvitation>> invitations({required String worldId}) async {
+    try {
+      final response = await _dio.get<dynamic>(
+        '/api/v1/worlds/$worldId/date-invitations',
+      );
+      return _items(response.data)
+          .map((item) => DatingInvitation.fromJson(_object(item)))
+          .toList(growable: false);
+    } on DioException catch (error) {
+      throw mapDioException(error);
+    }
+  }
+
+  @override
+  Future<List<RomanticHistoryItem>> romanticHistory({
+    required String worldId,
+    required String characterId,
+  }) async {
+    try {
+      final response = await _dio.get<dynamic>(
+        '/api/v1/worlds/$worldId/relationships/$characterId/romantic-history',
+      );
+      return _items(response.data)
+          .map((item) => RomanticHistoryItem.fromJson(_object(item)))
+          .toList(growable: false);
+    } on DioException catch (error) {
+      throw mapDioException(error);
+    }
+  }
+
+  @override
+  Future<DatingInvitation> resolve({
+    required String worldId,
+    required String invitationId,
+    required String decision,
+  }) async {
+    try {
+      final response = await _dio.post<dynamic>(
+        '/api/v1/worlds/$worldId/date-invitations/$invitationId/outcome',
+        data: {'decision': decision},
+      );
+      return DatingInvitation.fromJson(_object(response.data));
+    } on DioException catch (error) {
+      throw mapDioException(error);
+    }
+  }
+
+  static List<Object?> _items(Object? value) {
+    final items = _object(value)['items'];
+    if (items is! List) throw const FormatException('Expected items.');
+    return items;
+  }
+
   static Map<String, Object?> _object(Object? value) {
     if (value is! Map) {
       throw const FormatException('Expected a JSON object.');

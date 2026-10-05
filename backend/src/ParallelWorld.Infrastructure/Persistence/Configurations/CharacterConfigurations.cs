@@ -16,6 +16,7 @@ public sealed class CharacterConfiguration : IEntityTypeConfiguration<Character>
             table.HasCheckConstraint("ck_characters_influence", "influence BETWEEN 0 AND 100");
             table.HasCheckConstraint("ck_characters_popularity", "popularity BETWEEN 0 AND 100");
             table.HasCheckConstraint("ck_characters_reputation", "reputation BETWEEN 0 AND 100");
+            table.HasCheckConstraint("ck_characters_romance_preference", "romance_preference_mode IN ('disabled', 'anyeligibleactor')");
         });
         builder.HasKey(entity => entity.Id).HasName("pk_characters");
         builder.Property(entity => entity.Id).HasColumnName("id");
@@ -27,6 +28,11 @@ public sealed class CharacterConfiguration : IEntityTypeConfiguration<Character>
         builder.Property(entity => entity.Profession).HasColumnName("profession").HasMaxLength(80);
         builder.Property(entity => entity.Archetype).HasColumnName("archetype").HasMaxLength(80);
         builder.Property(entity => entity.WritingStyle).HasColumnName("writing_style").HasMaxLength(120);
+        builder.Property(entity => entity.RomancePreferenceMode)
+            .HasColumnName("romance_preference_mode")
+            .HasConversion(value => value.ToString().ToLowerInvariant(), value => Enum.Parse<RomancePreferenceMode>(value, true))
+            .HasMaxLength(30)
+            .HasDefaultValue(RomancePreferenceMode.AnyEligibleActor);
         builder.Property(entity => entity.ActivityLevel).HasColumnName("activity_level");
         builder.Property(entity => entity.Influence).HasColumnName("influence");
         builder.Property(entity => entity.Popularity).HasColumnName("popularity");

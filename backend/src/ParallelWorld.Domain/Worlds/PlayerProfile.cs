@@ -7,6 +7,7 @@ public sealed class PlayerProfile
         DisplayName = string.Empty;
         Handle = string.Empty;
         Bio = string.Empty;
+        RomancePreferenceMode = RomancePreferenceMode.AnyEligibleActor;
     }
 
     public PlayerProfile(Guid id, Guid worldId, DateTimeOffset createdAt)
@@ -16,6 +17,7 @@ public sealed class PlayerProfile
         DisplayName = "Player";
         Handle = "player";
         Bio = string.Empty;
+        RomancePreferenceMode = RomancePreferenceMode.AnyEligibleActor;
         CreatedAt = createdAt;
         UpdatedAt = createdAt;
     }
@@ -29,6 +31,15 @@ public sealed class PlayerProfile
     public string Handle { get; private set; }
 
     public string Bio { get; private set; }
+
+    public RomancePreferenceMode RomancePreferenceMode { get; private set; }
+
+    public void SetRomancePreferenceMode(RomancePreferenceMode mode, DateTimeOffset updatedAtUtc)
+    {
+        if (!Enum.IsDefined(mode)) throw new ArgumentOutOfRangeException(nameof(mode));
+        RomancePreferenceMode = mode;
+        UpdatedAt = updatedAtUtc;
+    }
 
     public int Reputation { get; private set; }
 

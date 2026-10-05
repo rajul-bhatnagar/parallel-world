@@ -58,6 +58,9 @@ public sealed class WorldSettingsConfiguration : IEntityTypeConfiguration<WorldS
             .HasColumnName("display_time_zone_id")
             .HasMaxLength(100)
             .HasDefaultValue(WorldSettings.UtcTimeZoneId);
+        builder.Property(entity => entity.RomanceEnabled)
+            .HasColumnName("romance_enabled")
+            .HasDefaultValue(true);
         builder.Property(entity => entity.ActionLimit).HasColumnName("action_limit");
         builder.Property(entity => entity.AiBudgetTokens).HasColumnName("ai_budget_tokens");
         builder.Property(entity => entity.ContentSettingsJson).HasColumnName("content_settings").HasColumnType("jsonb");
@@ -109,6 +112,7 @@ public sealed class PlayerProfileConfiguration : IEntityTypeConfiguration<Player
             table.HasCheckConstraint("ck_player_profiles_reputation", "reputation BETWEEN 0 AND 100");
             table.HasCheckConstraint("ck_player_profiles_influence", "influence BETWEEN 0 AND 100");
             table.HasCheckConstraint("ck_player_profiles_followers", "followers_count >= 0");
+            table.HasCheckConstraint("ck_player_profiles_romance_preference", "romance_preference_mode IN ('disabled', 'anyeligibleactor')");
         });
         builder.HasKey(entity => entity.Id).HasName("pk_player_profiles");
         builder.Property(entity => entity.Id).HasColumnName("id");
@@ -116,6 +120,11 @@ public sealed class PlayerProfileConfiguration : IEntityTypeConfiguration<Player
         builder.Property(entity => entity.DisplayName).HasColumnName("display_name").HasMaxLength(60);
         builder.Property(entity => entity.Handle).HasColumnName("handle").HasMaxLength(30);
         builder.Property(entity => entity.Bio).HasColumnName("bio").HasMaxLength(300);
+        builder.Property(entity => entity.RomancePreferenceMode)
+            .HasColumnName("romance_preference_mode")
+            .HasConversion(value => value.ToString().ToLowerInvariant(), value => Enum.Parse<RomancePreferenceMode>(value, true))
+            .HasMaxLength(30)
+            .HasDefaultValue(RomancePreferenceMode.AnyEligibleActor);
         builder.Property(entity => entity.Reputation).HasColumnName("reputation");
         builder.Property(entity => entity.Influence).HasColumnName("influence");
         builder.Property(entity => entity.FollowersCount).HasColumnName("followers_count");

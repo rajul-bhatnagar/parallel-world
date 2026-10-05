@@ -9,6 +9,9 @@ import 'package:parallel_world_app/features/characters/application/character_con
 import 'package:parallel_world_app/features/characters/domain/character_models.dart';
 import 'package:parallel_world_app/features/characters/presentation/character_catalogue_screen.dart';
 import 'package:parallel_world_app/features/characters/presentation/character_profile_screen.dart';
+import 'package:parallel_world_app/features/relationships/application/relationship_contracts.dart';
+import 'package:parallel_world_app/features/relationships/application/relationship_provider.dart';
+import 'package:parallel_world_app/features/relationships/domain/relationship_models.dart';
 import 'package:parallel_world_app/features/session/application/session_controller.dart';
 import 'package:parallel_world_app/features/session/application/session_state.dart';
 
@@ -24,11 +27,17 @@ class _AuthenticatedSessionController extends SessionController {
   );
 }
 
-Widget _app(Widget child, FakeCharacterRepository repository) => ProviderScope(
+Widget _app(
+  Widget child,
+  FakeCharacterRepository repository, {
+  RelationshipGateway? relationships,
+}) => ProviderScope(
   key: UniqueKey(),
   overrides: [
     sessionControllerProvider.overrideWith(_AuthenticatedSessionController.new),
     characterRepositoryProvider.overrideWithValue(repository),
+    if (relationships != null)
+      relationshipGatewayProvider.overrideWithValue(relationships),
   ],
   child: MaterialApp(home: child),
 );
@@ -127,4 +136,86 @@ void main() {
     );
     expect(find.text('Retry'), findsOneWidget);
   });
+
+  testWidgets('profile exposes one server-authoritative casual-date action', (
+    tester,
+  ) async {
+    final relationships = _FakeRelationshipGateway();
+    await tester.pumpWidget(
+      _app(
+        CharacterProfileScreen(characterId: testCharacter.id),
+        FakeCharacterRepository(),
+        relationships: relationships,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(
+      find.text('Invite on a casual date'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('Invite on a casual date'), findsOneWidget);
+    expect(find.textContaining('score'), findsNothing);
+    await tester.tap(find.text('Invite on a casual date'));
+    await tester.pumpAndSettle();
+    expect(relationships.inviteCalls, 1);
+  });
 }
+
+class _FakeRelationshipGateway implements RelationshipGateway {
+  int inviteCalls = 0;
+
+  @override
+  Future<RelationshipSummary?> get({
+    required String worldId,
+    required String actorId,
+  }) async => null;
+
+  @override
+  Future<List<RelationshipHistoryItem>> history({
+    required String worldId,
+    required String actorId,
+  }) async => [];
+
+  @override
+  Future<List<DatingInvitation>> invitations({required String worldId}) async =>
+      [];
+
+  @override
+  Future<List<RomanticHistoryItem>> romanticHistory({
+    required String worldId,
+    required String characterId,
+  }) async => [];
+
+  @override
+  Future<DatingInvitation> invite({
+    required String worldId,
+    required String characterId,
+    required String idempotencyKey,
+  }) async {
+    inviteCalls++;
+    return _invitation;
+  }
+
+  @override
+  Future<DatingInvitation> resolve({
+    required String worldId,
+    required String invitationId,
+    required String decision,
+  }) async => _invitation;
+}
+
+final _invitation = DatingInvitation(
+  id: 'invitation-1',
+  episodeId: 'episode-1',
+  characterId: testCharacter.id,
+  initiatorActorId: testWorld.playerActorId,
+  targetActorId: 'character-actor-1',
+  dateType: 'CasualDate',
+  status: 'accepted',
+  romanticStatus: 'dating',
+  reasonCode: 'character_accepted',
+  createdAtWorldTime: testNow,
+  expiresAtWorldTime: testNow.add(const Duration(hours: 24)),
+);

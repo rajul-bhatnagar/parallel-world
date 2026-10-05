@@ -666,6 +666,33 @@ M13 can implement deterministic invitation, acceptance/rejection/expiry, Dating,
 
 A future accepted decision introduces additional preference modes, player-configurable romance settings, non-neutral goals/mood/conflict, multiple date types, non-monogamy, breakup/re-entry, or deeper romantic states.
 
+## ADR-031 — M15 CatchUp run granularity
+
+**Date:** 2026-10-05
+**Status:** Accepted; resolves the M15 run-granularity contradiction
+
+**Context**
+
+ADR-022 deliberately limits a normal M08 trigger to one 15-minute interval and one `SimulationRun`. M15 separately defines bounded compressed catch-up with six-hour and daily buckets, relational checkpoints, partial progress, and aggregate mechanics. An implementation wrapper incorrectly required CatchUp to reproduce one M08 `SimulationRun`, action count, and PRNG sequence for every historical 15-minute interval. That requirement conflicts with the approved compressed CatchUp model.
+
+**Decision**
+
+- Normal M08 processing is unchanged: one fixed 15-minute interval is one `SimulationRun`, and one normal trigger processes at most the single oldest due interval.
+- One bounded M15 CatchUp operation is one `SimulationRun` with `RunType=CatchUp`. It owns the bounded overdue range selected under CATCH-01 and does not create one run for every historical 15-minute interval.
+- The CatchUp run internally uses the approved newest-horizon six-hour buckets, older daily aggregate buckets, compressed selection, relational bucket checkpoints, caps, and aggregate mechanics.
+- Pending, Running, Partial, Completed, and retryable failure state belongs to that CatchUp run and its relational checkpoints. Retry resumes the same logical run after its last committed checkpoint. M15 does not introduce a second batch-run abstraction or duplicate run infrastructure.
+- CatchUp determinism means the same authorized starting snapshot, bounded CatchUp range, rule version, run seed, and persisted checkpoints produce the same bucket boundaries, bucket order, selected and aggregate mechanics, committed facts, cursor progress, and final gameplay state.
+- CatchUp is not required to reproduce the `SimulationRun` count, `SimulationAction` count, or PRNG draw sequence that would result from invoking M08 once for every missed 15-minute interval. Its equivalence target is approved deterministic gameplay-state correctness under CATCH-01 compression.
+- CatchUp does not change M08 interval identity, active-tick run identity, rule order, replay behavior, or the one-interval normal-trigger limit.
+
+**Consequences**
+
+M15 can reuse the existing `SimulationRun` model without manufacturing thousands of historical active-tick runs or adding a separate batch-run entity. Tests compare CatchUp replays and checkpoint resumes against the same CatchUp inputs and approved compressed outcomes, while existing M08 tests continue to protect exact 15-minute active-tick behavior.
+
+**Revisit when**
+
+A future accepted decision replaces bucket compression, changes CatchUp operation ownership, or requires exact active-tick replay rather than compressed catch-up.
+
 ## New ADR template
 
 ### ADR-XXX — Title

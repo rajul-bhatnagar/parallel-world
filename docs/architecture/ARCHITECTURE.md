@@ -505,7 +505,7 @@ Flutter maps codes to user-safe empty/error/offline/session-expired states, offe
 | Follow | Unique world/follower/followed active edge and state transition key |
 | Simulation interval | Unique world/rule-version/half-open interval plus run concurrency token |
 | Relationship event | Unique source-event/rule/direction key |
-| Notification | Unique user/source-event/category key |
+| Notification | Unique user/canonical-source-type/canonical-source-id/category key |
 | AI generation retry | One generation work record per action/version; attempts do not reapply mechanics |
 | Push retry | Notification/device/delivery key |
 

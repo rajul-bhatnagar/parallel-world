@@ -693,6 +693,41 @@ M15 can reuse the existing `SimulationRun` model without manufacturing thousands
 
 A future accepted decision replaces bucket compression, changes CatchUp operation ownership, or requires exact active-tick replay rather than compressed catch-up.
 
+## ADR-032 — M16 typed notification source provenance
+
+**Date:** 2026-10-10
+**Status:** Accepted; resolves the M16 Reply-recipient and CatchUpSummary-provenance blockers
+
+**Context**
+
+M16 releases Reply, PrivateMessage, and CatchUpSummary in-app notifications, but the prior contract did not identify which replies notify the Player. It also required every Notification to reference a GameplayEvent even though M15's authoritative CatchUpSummary has no GameplayEvent identity. Implementing either gap locally would risk self/noisy notifications, root-thread inference, or fabrication of a gameplay event solely to satisfy notification storage.
+
+**Decision**
+
+- A Reply notification is created for the Player only when the new reply is authored by a Character, its immediate parent post or reply is authored by the Player Actor, and every record belongs to that Player's owned world.
+- Character-to-Player-post and Character-to-Player-reply produce a notification. Character-to-Character and Player-authored replies do not. A Player-authored root elsewhere in the thread is insufficient when the immediate parent is Character-authored.
+- Recipient eligibility derives only from structured Actor authorship, immediate-parent identity, and world ownership. Text, mentions, AI output, generated wording, and root-thread ownership cannot select the recipient.
+- Notification provenance is typed with canonical `SourceType` and `SourceId`; `GameplayEventId` is optional globally and required only for GameplayEvent-backed notification types.
+- Reply and PrivateMessage notifications are GameplayEvent-backed. Their `GameplayEventId` is required and identifies the same canonical source represented by `SourceId`.
+- CatchUpSummary notifications use `SourceType=CatchUpSummary`, `SourceId=CatchUpSummary.Id`, and `GameplayEventId=null`. No GameplayEvent is created merely to satisfy notification persistence. The CatchUpSummary's existing relationship to its CatchUp SimulationRun remains authoritative and is not duplicated into Notification.
+- Logical notification uniqueness is the recipient plus canonical source type, canonical source ID, and notification category/type, scoped to the world. Retry, replay, and recovery reuse the same notification.
+- A CatchUpSummary notification is created only after the summary is finalized and durably committed. Running, a Partial checkpoint alone, FailedRetryable, and rolled-back facts do not produce the finalized summary notification. No separate partial-summary lifecycle notification is introduced.
+- Notifications remain descriptions of authoritative existing facts. They cannot create replies, summaries, gameplay events, relationship changes, or simulation actions, and AI cannot decide notification existence, type, recipient, or provenance.
+- Same-world source validation and recipient ownership remain mandatory despite the conditional GameplayEvent relationship.
+- SignalR remains deferred. M16 uses the approved PostgreSQL-backed HTTP synchronization baseline unless a later accepted decision activates realtime transport.
+
+**Alternatives considered**
+
+Notifying for any reply in a Player-rooted thread, notifying for Player-authored replies, using text/mentions to infer recipient, manufacturing a CatchUpSummary GameplayEvent, making `GameplayEventId` nullable without typed source identity, and notifying on Running/Partial/FailedRetryable catch-up state were rejected because they create noisy or unauthoritative behavior and weaken replay-safe provenance.
+
+**Consequences**
+
+M16 can implement its three released categories with exact recipient selection and canonical replay-safe provenance. Database constraints and application validation can distinguish GameplayEvent-backed sources from CatchUpSummary, while preserving world/recipient isolation. Tests must cover every immediate-parent Reply case, finalized-summary timing, conditional GameplayEvent identity, same-source duplicate rejection/reuse, and absence of fabricated gameplay events.
+
+**Revisit when**
+
+A later accepted decision releases another notification category, activates a partial-summary indicator, introduces SignalR, or requires a new authoritative source type.
+
 ## New ADR template
 
 ### ADR-XXX — Title

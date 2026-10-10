@@ -674,12 +674,12 @@ Every listed schema change includes an EF migration, clean/previous-schema Postg
 - **Goal:** Complete the MVP in-app notification subset; introduce realtime only after the open architecture/milestone choice is accepted.
 - **User-visible result:** Released reply, private-message, and catch-up-summary indicators appear through a badge/deep link and bounded minimal list; missed updates recover through HTTP. If separately approved, foreground realtime reduces delay.
 - **Dependencies:** M03, M07, M11, M13, M15.
-- **Backend scope:** Reply, PrivateMessage, and CatchUpSummary Notification categories; unread/bounded-minimal-list/cursor/read-one/read-all/dedupe. SignalR hub/group/events only under an accepted introduction decision.
-- **Database scope:** Notifications with recipient ownership/event provenance/uniques/indexes and migration; realtime remains delivery, not authority.
+- **Backend scope:** Reply, PrivateMessage, and CatchUpSummary Notification categories; unread/bounded-minimal-list/cursor/read-one/read-all/dedupe. Reply notifies only when a Character reply's immediate parent is Player-authored; finalized committed CatchUpSummary uses its own authoritative source identity. SignalR hub/group/events only under an accepted introduction decision.
+- **Database scope:** Notifications with recipient ownership, typed source provenance, conditional GameplayEvent linkage, canonical source uniqueness/indexes, and migration; realtime remains delivery, not authority.
 - **Flutter scope:** List/badge/deep links/safe previews/offline states. Optional SignalR authenticates, dedupes, reconnects, refetches, and disconnects on logout.
 - **Infrastructure scope:** None for HTTP/polling MVP; websocket hosting/config only if SignalR approved. Push remains deferred.
 - **Seed data:** Released category, duplicate, unread/read, expired, foreign-recipient, reconnect fixtures.
-- **Test scope:** Ownership/dedupe/cursor/read state/safe preview; optional hub auth/wrong-world/duplicate/reconnect/refetch/minimal payload.
+- **Test scope:** Ownership/dedupe/cursor/read state/safe preview; immediate-parent Reply eligibility/non-eligibility; finalized CatchUpSummary timing, typed provenance, replay, and absence of a fabricated GameplayEvent; optional hub auth/wrong-world/duplicate/reconnect/refetch/minimal payload.
 - **Documentation updates:** SignalR decision and contract only if introduced; notification category release labels stay synchronized.
 - **Explicit exclusions:** Follow and DatingInvitation indicators, push/FCM, rich Version 1 categories/filtering/search/history, and SignalR as mandatory MVP authority.
 - **Acceptance criteria:** Basic indicators are persisted/idempotent/private; HTTP recovers state; optional realtime never mutates gameplay.

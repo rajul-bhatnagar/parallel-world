@@ -580,16 +580,16 @@ Paused time is excluded. Archived worlds do not catch up. On ordinary app inacti
 ### Rule NOTIFY-01: create and deliver notification intent
 
 - **Purpose:** Notify the player of meaningful world activity without duplicates.
-- **Inputs:** Source event, category, importance, player involvement, read state, quiet hours, delivery settings.
-- **Preconditions:** Event belongs to player's world and category is released. MVP categories are Reply, PrivateMessage, and CatchUpSummary. Follow, DatingInvitation, mention, relationship milestone, world event, trend, reputation milestone, and push are deferred unless PRODUCT.md later approves them.
-- **Decision:** Priority is Critical for direct time-sensitive invitation, High for direct message/reply, Normal for follow/summary, Low otherwise. Aggregate same category/source family in a catch-up window. Push eligibility requires post-MVP opt-in, priority High/Critical, and daily cap.
+- **Inputs:** Authoritative typed source, category, importance, player involvement, read state, quiet hours, delivery settings.
+- **Preconditions:** The authoritative typed source belongs to the player's owned world and the category is released. MVP categories are Reply, PrivateMessage, and CatchUpSummary. A Reply notifies the Player only when a Character authors the new reply and its immediate parent post/reply is authored by the Player Actor. Character-to-Character replies, Player-authored replies, and replies elsewhere in a Player-rooted thread do not notify unless that immediate-parent rule is satisfied. Follow, DatingInvitation, mention, relationship milestone, world event, trend, reputation milestone, and push are deferred unless PRODUCT.md later approves them.
+- **Decision:** Priority is Critical for direct time-sensitive invitation, High for direct message/reply, Normal for follow/summary, Low otherwise. Reply recipient eligibility uses structured author and immediate-parent ownership only; text, mentions, root-thread ownership, AI output, and generated wording cannot select a recipient. Aggregate same category/source family in a catch-up window. Push eligibility requires post-MVP opt-in, priority High/Critical, and daily cap.
 - **Randomness:** None.
-- **Limits:** One notification per source event/category; deferred push cap.
+- **Limits:** One notification per canonical source/category; deferred push cap.
 - **Cooldown:** Quiet hours delay non-Critical push, not in-app persistence.
 - **State changes:** Unread -> Read; expiry hides but does not delete source history.
-- **Persistence:** MVP persists the in-app Notification intent with source event, priority, created/read/expiry times and deduplication key. Provider delivery attempts apply only to deferred push delivery and are not an MVP requirement.
-- **Idempotency:** Player/source-event/category key.
-- **Example:** One persisted reply creates one unread in-app notification; catch-up retry creates no duplicate.
+- **Persistence:** MVP persists the in-app Notification intent with canonical `SourceType` and `SourceId`, optional `GameplayEventId`, priority, created/read/expiry times, and deduplication key. Reply and PrivateMessage use their authoritative GameplayEvent-backed source and require `GameplayEventId`. CatchUpSummary uses `SourceType=CatchUpSummary`, `SourceId=CatchUpSummary.Id`, and `GameplayEventId=null`; no GameplayEvent is fabricated for notification provenance. A CatchUpSummary notification is created only after the summary reaches its finalized durably committed state, never for Running, a Partial checkpoint alone, FailedRetryable, or rolled-back facts.
+- **Idempotency:** Player/canonical-source-type/canonical-source-id/category key.
+- **Example:** One Character reply whose immediate parent is Player-authored creates one unread notification; a finalized committed catch-up summary creates one CatchUpSummary notification, and retry creates no duplicate.
 - **Status:** Basic in-app MVP; rich history/push deferred.
 
 ## 17. State-machine tables

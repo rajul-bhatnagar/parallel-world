@@ -6,13 +6,13 @@ Read AGENTS.md, docs/milestones/M16_NOTIFICATIONS.md, docs/product/PRODUCT.md, d
 Task: Notifications and Realtime
 
 Scope:
-Implement persisted Reply, PrivateMessage, and CatchUpSummary in-app notification intents, deduplication, read/unread state, HTTP count/read and a bounded cursor-paginated minimal list for resolving badge/deep-link indicators, HTTP synchronization/refetch, and matching Flutter states. SignalR is included only if an accepted decision activates it; otherwise HTTP remains the baseline. Do not implement Follow/DatingInvitation indicators, rich history/filtering/search, or push/FCM.
+Implement persisted Reply, PrivateMessage, and CatchUpSummary in-app notification intents, typed authoritative source provenance, deduplication, read/unread state, HTTP count/read and a bounded cursor-paginated minimal list for resolving badge/deep-link indicators, HTTP synchronization/refetch, and matching Flutter states. A Reply notifies only when authored by a Character whose immediate parent post/reply is Player-authored; root-thread ownership is insufficient. Reply and PrivateMessage use GameplayEvent-backed provenance. CatchUpSummary uses its own authoritative ID with no fabricated GameplayEvent and notifies only after finalized durable commit. SignalR is included only if an accepted decision activates it; otherwise HTTP remains the baseline. Do not implement Follow/DatingInvitation indicators, rich history/filtering/search, or push/FCM.
 
 Explicit exclusions:
 - No push/FCM. No SignalR unless separately accepted and recorded. No rich/deferred notification categories.
 
 Tests:
-- Test persisted in-app intent, deduplication, unread/read, HTTP list/count/read/refetch, ownership/privacy, and Flutter states. Test SignalR only if activated.
+- Test persisted in-app intent, canonical-source deduplication, unread/read, HTTP list/count/read/refetch, ownership/privacy, exact immediate-parent Reply eligibility/non-eligibility, finalized CatchUpSummary timing/provenance/replay, absence of fabricated GameplayEvents, and Flutter states. Test SignalR only if activated.
 
 Before editing:
 1. List relevant existing files.

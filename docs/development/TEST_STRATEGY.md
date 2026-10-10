@@ -296,7 +296,7 @@ flowchart LR
 
 ## 24. Notification and realtime testing
 
-MVP notification tests cover Reply, PrivateMessage, CatchUpSummary, deduplication, read one/all, unread count, bounded minimal-list cursor behavior, expiry visibility, safe preview/deep link, ownership, and retry. Follow, DatingInvitation, relationship/world-event/trend/mention notifications, rich history/filtering/search, and push are deferred.
+MVP notification tests cover Reply, PrivateMessage, CatchUpSummary, deduplication, read one/all, unread count, bounded minimal-list cursor behavior, expiry visibility, safe preview/deep link, ownership, and retry. Reply cases prove Character-to-Player-immediate-parent notification for both a Player post and Player reply, and no notification for Character-to-Character, Player-authored, or merely Player-rooted-thread replies. Catch-up cases prove exactly one notification only after the summary is finalized and durably committed, none for Running, a Partial checkpoint alone, FailedRetryable, or rolled-back facts, replay reuse, `SourceType=CatchUpSummary`/`SourceId=CatchUpSummary.Id`, and no fabricated GameplayEvent. Provenance tests require GameplayEventId for GameplayEvent-backed sources, require it to be null for CatchUpSummary, and reject/reuse duplicate recipient/source-type/source-id/category identity. Follow, DatingInvitation, relationship/world-event/trend/mention notifications, rich history/filtering/search, and push are deferred.
 
 When SignalR is introduced, test authorized connection/group, unauthorized and wrong-world subscription, minimal payload, duplicate event, reconnect, missed-event HTTP refetch, logout disconnect, message/simulation events, and no hidden data. Realtime remains a hint to PostgreSQL-backed HTTP truth.
 

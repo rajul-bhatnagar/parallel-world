@@ -226,7 +226,7 @@ This is an auditable source anchor, not event sourcing and not the primary repre
 - Checks for bounded importance/emotional impact and distinct actor/target.
 - Index `(WorldId, OccurredAt DESC, Id DESC)` and `(WorldId, EventType, OccurredAt DESC)`.
 
-Posts, messages, relationship events, memories, promises, secrets, notifications, and simulation effects reference a `GameplayEventId` where they require a source. This replaces unenforceable `SourceType/SourceId` polymorphic references. Current state remains in its feature tables.
+Posts, messages, relationship events, memories, promises, secrets, and simulation effects reference a `GameplayEventId` where they require an event source. This avoids unenforceable generic polymorphic references for those mechanics. Notifications are the narrow ADR-032 exception: they retain typed canonical `SourceType`/`SourceId` because CatchUpSummary is itself authoritative without a GameplayEvent, while GameplayEvent-backed notification types still require a same-world `GameplayEventId`. Current state remains in its feature tables.
 
 ## 7. Social feed
 
@@ -495,10 +495,10 @@ Both carry WorldId. Trends have normalized topic key, status, start/end, and uni
 
 ### Notifications
 
-- `Id`, `WorldId`, `RecipientUserId`, `RecipientActorId` nullable, `GameplayEventId`, `Category`, `Priority`, `CreatedAt`, `ReadAt` nullable, `ExpiresAt` nullable, `IdempotencyKey`, `Version`
-- Composite FKs to Actor and GameplayEvent.
+- `Id`, `WorldId`, `RecipientUserId`, `RecipientActorId` nullable, `SourceType`, `SourceId`, `GameplayEventId` nullable, `Category`, `Priority`, `CreatedAt`, `ReadAt` nullable, `ExpiresAt` nullable, `IdempotencyKey`, `Version`
+- Composite FK to Actor. A GameplayEvent-backed source requires `GameplayEventId`, requires it to equal `SourceId`, and uses the composite `(WorldId, GameplayEventId)` FK. A CatchUpSummary source uses `SourceType = CatchUpSummary`, `SourceId = CatchUpSummary.Id`, and `GameplayEventId = null`; application persistence validates the same-world CatchUpSummary before insert. The summary retains its own SimulationRun relationship, which is not duplicated into Notification.
 - Composite FK `(RecipientUserId, WorldId) -> GameWorlds(OwnerUserId, Id) ON DELETE RESTRICT` prevents delivery to a user who does not own the world.
-- Unique `(WorldId, IdempotencyKey)` and `(WorldId, RecipientUserId, GameplayEventId, Category)`.
+- Source-type checks reject unsupported or inconsistent source shapes. Unique `(WorldId, IdempotencyKey)` and `(WorldId, RecipientUserId, SourceType, SourceId, Category)` prevent duplicate logical notifications while permitting non-GameplayEvent authoritative sources.
 - Cursor index `(WorldId, RecipientUserId, CreatedAt DESC, Id DESC)`.
 - Unread index `(WorldId, RecipientUserId, CreatedAt DESC) WHERE ReadAt IS NULL`.
 

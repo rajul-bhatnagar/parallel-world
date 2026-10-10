@@ -15,6 +15,44 @@ public static class DeterministicSimulationIdentity
         CreateGuid(FormattableString.Invariant(
             $"m08|run|{worldId:N}|{intervalStartUtc:O}|{intervalEndUtc:O}|{ruleVersion}"));
 
+    public static Guid CreateCatchUpRunId(
+        Guid worldId,
+        DateTimeOffset intervalStartUtc,
+        DateTimeOffset intervalEndUtc,
+        int ruleVersion) =>
+        CreateGuid(FormattableString.Invariant(
+            $"m15|catchup-run|{worldId:N}|{intervalStartUtc:O}|{intervalEndUtc:O}|{ruleVersion}"));
+
+    public static Guid CreateCatchUpSummaryId(Guid worldId, Guid runId) =>
+        CreateGuid(FormattableString.Invariant($"m15|summary|{worldId:N}|{runId:N}"));
+
+    public static Guid CreateCatchUpSummaryItemId(
+        Guid worldId,
+        Guid runId,
+        int ordinal,
+        Guid gameplayEventId) =>
+        CreateGuid(FormattableString.Invariant(
+            $"m15|summary-item|{worldId:N}|{runId:N}|{ordinal}|{gameplayEventId:N}"));
+
+    public static Guid CreateCatchUpEventId(
+        Guid worldId,
+        Guid runId,
+        int bucketOrdinal,
+        Guid sourceActorId,
+        Guid targetActorId,
+        bool desiredFollowing) =>
+        CreateGuid(FormattableString.Invariant(
+            $"m15|event|{worldId:N}|{runId:N}|{bucketOrdinal}|{sourceActorId:N}|{targetActorId:N}|{desiredFollowing}"));
+
+    public static Guid CreateCatchUpFollowId(
+        Guid worldId,
+        Guid runId,
+        int bucketOrdinal,
+        Guid sourceActorId,
+        Guid targetActorId) =>
+        CreateGuid(FormattableString.Invariant(
+            $"m15|follow|{worldId:N}|{runId:N}|{bucketOrdinal}|{sourceActorId:N}|{targetActorId:N}"));
+
     public static Guid CreateEvaluationId(Guid worldId, Guid runId, string ruleCode) =>
         CreateGuid(FormattableString.Invariant(
             $"m08|evaluation|{worldId:N}|{runId:N}|{ruleCode}"));
@@ -52,6 +90,13 @@ public static class DeterministicSimulationIdentity
             ("interval-end-utc", intervalEndUtc.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture)),
             ("run-ordinal", runOrdinal.ToString(CultureInfo.InvariantCulture))));
     }
+
+    public static long CreateBucketSeed(long runSeed, Guid runId, int bucketOrdinal) =>
+        ReadPositiveInt64(HashCanonical(
+            "parallel-world.simulation.catchup-bucket-seed.v1",
+            ("run-seed", runSeed.ToString(CultureInfo.InvariantCulture)),
+            ("run-id", runId.ToString("N")),
+            ("bucket-ordinal", bucketOrdinal.ToString(CultureInfo.InvariantCulture))));
 
     internal static byte[] Hash(string value) => SHA256.HashData(Encoding.UTF8.GetBytes(value));
 

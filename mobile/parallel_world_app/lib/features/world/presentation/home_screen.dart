@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:parallel_world_app/app/theme.dart';
+import 'package:parallel_world_app/features/catch_up/application/catch_up_provider.dart';
 import 'package:parallel_world_app/features/session/application/session_controller.dart';
 import 'package:parallel_world_app/features/session/application/session_state.dart';
 
@@ -12,7 +13,11 @@ class HomeScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final session = ref.watch(sessionControllerProvider);
     final world = session.world;
+    final catchUpWorldId = world?.id;
     final isOffline = session.phase == SessionPhase.offlineAuthenticated;
+    final catchUp = catchUpWorldId == null || isOffline
+        ? null
+        : ref.watch(catchUpProvider(catchUpWorldId));
     return Scaffold(
       appBar: AppBar(
         title: const Text('Parallel World'),
@@ -53,6 +58,86 @@ class HomeScreen extends ConsumerWidget {
                   : 'Welcome, ${world.playerDisplayName}.',
             ),
             const SizedBox(height: AppSpacing.large),
+            if (catchUp != null) ...[
+              catchUp.when(
+                loading: () => const Card(
+                  child: ListTile(
+                    leading: CircularProgressIndicator(),
+                    title: Text('Catching up your world…'),
+                  ),
+                ),
+                error: (error, stackTrace) => Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.sync_problem_outlined),
+                    title: const Text('World catch-up needs another try'),
+                    trailing: IconButton(
+                      tooltip: 'Retry catch-up',
+                      onPressed: () =>
+                          ref.invalidate(catchUpProvider(catchUpWorldId!)),
+                      icon: const Icon(Icons.refresh),
+                    ),
+                  ),
+                ),
+                data: (view) {
+                  final result = view.result;
+                  if (view.isOffline || result == null) {
+                    return const SizedBox.shrink();
+                  }
+                  final summary = view.summary;
+                  if (!result.isPartial && summary == null) {
+                    return const SizedBox.shrink();
+                  }
+                  return Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(AppSpacing.large),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            result.isPartial
+                                ? 'World catch-up in progress'
+                                : 'While you were away',
+                            style: const TextStyle(fontSize: 20),
+                          ),
+                          const SizedBox(height: AppSpacing.small),
+                          if (summary != null) Text(summary.text),
+                          for (final item in summary?.items ?? const [])
+                            Padding(
+                              padding: const EdgeInsets.only(
+                                top: AppSpacing.small,
+                              ),
+                              child: Text('• ${item.wording}'),
+                            ),
+                          if (summary?.items.any(
+                                (item) => item.itemType == 'follow',
+                              ) ??
+                              false)
+                            TextButton.icon(
+                              onPressed: () => context.push('/characters'),
+                              icon: const Icon(Icons.people_outline),
+                              label: const Text('View characters'),
+                            ),
+                          if (result.isPartial) ...[
+                            const SizedBox(height: AppSpacing.small),
+                            Text(
+                              '${result.remainingIntervals} intervals remain.',
+                            ),
+                            TextButton.icon(
+                              onPressed: () => ref.invalidate(
+                                catchUpProvider(catchUpWorldId!),
+                              ),
+                              icon: const Icon(Icons.refresh),
+                              label: const Text('Continue catch-up'),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: AppSpacing.medium),
+            ],
             Card(
               child: Padding(
                 padding: const EdgeInsets.all(AppSpacing.large),

@@ -342,6 +342,27 @@ internal sealed class MemoryRepository(
         }
     }
 
+    public async Task<int> ExpireDuePromisesAsync(
+        Guid worldId,
+        DateTimeOffset worldTime,
+        CancellationToken ct)
+    {
+        var due = await db.Promises
+            .Where(promise => promise.WorldId == worldId
+                && promise.Status == PromiseStatus.Active
+                && promise.DueConditionType == PromiseDueConditionType.WorldTime
+                && promise.DueAtWorldTime <= worldTime)
+            .OrderBy(promise => promise.DueAtWorldTime)
+            .ThenBy(promise => promise.Id)
+            .ToListAsync(ct);
+        foreach (var promise in due)
+        {
+            promise.Expire(worldTime);
+        }
+        if (due.Count > 0) await db.SaveChangesAsync(ct);
+        return due.Count;
+    }
+
     private async Task<bool> ValidSourceAsync(
         CreateMemoryCommand command,
         Guid ownerActorId,

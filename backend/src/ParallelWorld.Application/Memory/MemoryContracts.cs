@@ -84,6 +84,11 @@ public interface IMemoryRepository
     Task<bool> TransitionPromiseAsync(
         TransitionPromiseCommand command,
         CancellationToken cancellationToken);
+
+    Task<int> ExpireDuePromisesAsync(
+        Guid worldId,
+        DateTimeOffset worldTime,
+        CancellationToken cancellationToken);
 }
 
 public interface IMemoryService
@@ -105,5 +110,10 @@ public interface IMemoryService
 
     Task<bool> TransitionPromiseAsync(
         TransitionPromiseCommand command,
+        CancellationToken cancellationToken = default);
+
+    Task<int> ExpireDuePromisesAsync(
+        Guid worldId,
+        DateTimeOffset worldTime,
         CancellationToken cancellationToken = default);
 }

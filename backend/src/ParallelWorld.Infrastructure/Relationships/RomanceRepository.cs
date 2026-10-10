@@ -68,7 +68,7 @@ internal sealed class RomanceRepository(ParallelWorldDbContext db, TimeProvider 
         var dueActorIds = await due.Select(x => x.InitiatorActorId).Union(due.Select(x => x.TargetActorId)).OrderBy(x => x).ToArrayAsync(ct);
         foreach (var actorId in dueActorIds)
             _ = await db.Actors.FromSqlInterpolated($"SELECT * FROM actors WHERE world_id = {worldId} AND id = {actorId} FOR UPDATE").SingleAsync(ct);
-        await ExpireDueAsync(worldId, world.CurrentWorldTime, ct);
+        await ExpireDueAsync(worldId, world.CurrentWorldTime, timeProvider.GetUtcNow(), ct);
         var playerId = await PlayerActorIdAsync(worldId, ct);
         var rows = await (from invitation in db.RomanticInvitations.AsNoTracking()
                           join pair in db.RomanticRelationships.AsNoTracking() on new { invitation.WorldId, Id = invitation.RomanticRelationshipId } equals new { pair.WorldId, pair.Id }
@@ -232,17 +232,21 @@ internal sealed class RomanceRepository(ParallelWorldDbContext db, TimeProvider 
             invitation.EpisodeId, invitation.Id, from, to, invitation.InitiatorActorId, reason, utcNow, worldTime,
             invitation.RuleVersion, $"{invitation.IdempotencyKey}:{suffix}"));
 
-    private async Task ExpireDueAsync(Guid worldId, DateTimeOffset worldTime, CancellationToken ct)
+    public async Task<int> ExpireDueAsync(
+        Guid worldId,
+        DateTimeOffset worldTime,
+        DateTimeOffset observedAtUtc,
+        CancellationToken ct)
     {
         var due = await db.RomanticInvitations.Where(x => x.WorldId == worldId && x.Status == RomanticInvitationStatus.Pending && x.ExpiresAtWorldTime <= worldTime).ToListAsync(ct);
-        if (due.Count == 0) return;
-        var utcNow = timeProvider.GetUtcNow();
+        if (due.Count == 0) return 0;
         foreach (var invitation in due)
         {
             var pair = await db.RomanticRelationships.SingleAsync(x => x.WorldId == worldId && x.Id == invitation.RomanticRelationshipId, ct);
-            Expire(invitation, pair, utcNow, worldTime);
+            Expire(invitation, pair, observedAtUtc, worldTime);
         }
         await db.SaveChangesAsync(ct);
+        return due.Count;
     }
 
     private async Task ExpireDueForActorsAsync(Guid worldId, DateTimeOffset worldTime, Guid left, Guid right, CancellationToken ct)

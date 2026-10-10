@@ -66,6 +66,14 @@ public sealed class MemoryService(IMemoryRepository repository) : IMemoryService
         return repository.TransitionPromiseAsync(command, cancellationToken);
     }
 
+    public Task<int> ExpireDuePromisesAsync(
+        Guid worldId,
+        DateTimeOffset worldTime,
+        CancellationToken cancellationToken = default) =>
+        worldId == Guid.Empty
+            ? Task.FromResult(0)
+            : repository.ExpireDuePromisesAsync(worldId, worldTime, cancellationToken);
+
     private static string? ValidateCreation(CreateMemoryCommand command)
     {
         if (command.WorldId == Guid.Empty || command.OwnerCharacterId == Guid.Empty

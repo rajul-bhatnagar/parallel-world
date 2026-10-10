@@ -6,10 +6,10 @@ using ParallelWorld.Infrastructure.Persistence;
 namespace ParallelWorld.IntegrationTests;
 
 [Trait("Category", "PostgreSql")]
-public sealed class M13SchemaCatalogTests
+public sealed class M15SchemaCatalogTests
 {
     [Fact]
-    public async Task MigratedSchema_HasExactM13TablesConstraintsAndIndexes()
+    public async Task MigratedSchema_HasExactM15TablesConstraintsAndIndexes()
     {
         await using var factory = await CreateFactoryAsync();
         TestDatabaseGuard.EnsureSafe(factory.DatabaseName);
@@ -33,6 +33,7 @@ public sealed class M13SchemaCatalogTests
             "20261003145439_AddM11PrivateMessaging",
             "20261004123030_AddM12LongTermMemory",
             "20261004180419_AddM13Dating",
+            "20261005155150_AddM15CatchUp",
         }, migrations);
 
         var tables = await ReadNamesAsync(db, """
@@ -47,6 +48,8 @@ public sealed class M13SchemaCatalogTests
         {
             "actors",
             "ai_generation_requests",
+            "catch_up_summaries",
+            "catch_up_summary_items",
             "character_interests",
             "character_memories",
             "character_opinions",
@@ -98,7 +101,7 @@ public sealed class M13SchemaCatalogTests
               AND c.contype <> 'n'
             ORDER BY c.conname
             """);
-        Assert.Equal(ExpectedConstraints.Concat(M10Constraints).Concat(M11Constraints).Concat(M12Constraints).Concat(M13Constraints).Order(StringComparer.Ordinal), constraints);
+        Assert.Equal(ExpectedConstraints.Concat(M10Constraints).Concat(M11Constraints).Concat(M12Constraints).Concat(M13Constraints).Concat(M15Constraints).Order(StringComparer.Ordinal), constraints);
 
         var indexes = await ReadNamesAsync(db, """
             SELECT indexname
@@ -107,7 +110,7 @@ public sealed class M13SchemaCatalogTests
               AND tablename <> '__EFMigrationsHistory'
             ORDER BY indexname
             """);
-        Assert.Equal(ExpectedIndexes.Concat(M10Indexes).Concat(M11Indexes).Concat(M12Indexes).Concat(M13Indexes).Order(StringComparer.Ordinal), indexes);
+        Assert.Equal(ExpectedIndexes.Concat(M10Indexes).Concat(M11Indexes).Concat(M12Indexes).Concat(M13Indexes).Concat(M15Indexes).Order(StringComparer.Ordinal), indexes);
     }
 
     private static readonly string[] ExpectedConstraints =
@@ -449,6 +452,28 @@ public sealed class M13SchemaCatalogTests
         "ix_romantic_invitations_expiry", "ix_romantic_relationships_world_status_actor_a", "ix_romantic_relationships_world_status_actor_b", "ix_romantic_status_history_pair_time_id",
         "pk_romantic_invitations", "pk_romantic_relationships", "pk_romantic_status_history",
         "ux_romantic_invitations_pending_pair", "ux_romantic_invitations_world_idempotency", "ux_romantic_relationships_world_pair", "ux_romantic_status_history_world_idempotency",
+    ];
+
+    private static readonly string[] M15Constraints =
+    [
+        "ak_catch_up_summaries_world_id_id",
+        "ck_catch_up_summaries_status", "ck_catch_up_summaries_time", "ck_catch_up_summary_items_ordinal",
+        "ck_simulation_runs_attempt_count", "ck_simulation_runs_interval_count_boundaries", "ck_simulation_runs_interval_counts", "ck_simulation_runs_lease",
+        "fk_catch_up_summaries_runs_world_run",
+        "fk_catch_up_summary_items_actors_world_actor", "fk_catch_up_summary_items_actors_world_target",
+        "fk_catch_up_summary_items_events_world_event", "fk_catch_up_summary_items_summaries_world_summary",
+        "pk_catch_up_summaries", "pk_catch_up_summary_items",
+    ];
+
+    private static readonly string[] M15Indexes =
+    [
+        "IX_catch_up_summary_items_world_id_actor_id", "IX_catch_up_summary_items_world_id_gameplay_event_id", "IX_catch_up_summary_items_world_id_target_actor_id",
+        "ak_catch_up_summaries_world_id_id",
+        "ix_catch_up_summaries_world_generated_id", "ix_simulation_runs_catchup_lease",
+        "pk_catch_up_summaries", "pk_catch_up_summary_items",
+        "ux_catch_up_summaries_world_idempotency", "ux_catch_up_summaries_world_run",
+        "ux_catch_up_summary_items_world_summary_event_type", "ux_catch_up_summary_items_world_summary_family_day", "ux_catch_up_summary_items_world_summary_ordinal",
+        "ux_simulation_runs_world_open_catchup",
     ];
 
     private static async Task<string[]> ReadNamesAsync(ParallelWorldDbContext db, string sql)

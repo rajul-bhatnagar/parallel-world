@@ -62,6 +62,10 @@ public sealed class ParallelWorldDbContext(DbContextOptions<ParallelWorldDbConte
 
     public DbSet<SimulationAction> SimulationActions => Set<SimulationAction>();
 
+    public DbSet<CatchUpSummary> CatchUpSummaries => Set<CatchUpSummary>();
+
+    public DbSet<CatchUpSummaryItem> CatchUpSummaryItems => Set<CatchUpSummaryItem>();
+
     public DbSet<AiGenerationRequest> AiGenerationRequests => Set<AiGenerationRequest>();
     public DbSet<Conversation> Conversations => Set<Conversation>();
     public DbSet<ConversationParticipant> ConversationParticipants => Set<ConversationParticipant>();

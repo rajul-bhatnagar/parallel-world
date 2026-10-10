@@ -12,6 +12,9 @@ import 'package:parallel_world_app/features/characters/application/character_dep
 import 'package:parallel_world_app/features/characters/data/character_api.dart';
 import 'package:parallel_world_app/features/characters/data/character_cache.dart';
 import 'package:parallel_world_app/features/characters/data/character_repository.dart';
+import 'package:parallel_world_app/features/catch_up/application/catch_up_contracts.dart';
+import 'package:parallel_world_app/features/catch_up/application/catch_up_provider.dart';
+import 'package:parallel_world_app/features/catch_up/data/catch_up_api.dart';
 import 'package:parallel_world_app/features/feed/application/feed_contracts.dart';
 import 'package:parallel_world_app/features/feed/application/feed_dependencies.dart';
 import 'package:parallel_world_app/features/feed/data/feed_api.dart';
@@ -112,6 +115,10 @@ final _characterGatewayProvider = Provider<CharacterGateway>(
   (ref) => CharacterApi(ref.watch(authenticatedDioProvider)),
 );
 
+final _catchUpGatewayProvider = Provider<CatchUpGateway>(
+  (ref) => CatchUpApi(ref.watch(authenticatedDioProvider)),
+);
+
 final _characterCacheProvider = Provider<CharacterCache>(
   (ref) => DriftCharacterCache(
     ref.watch(appDatabaseProvider),
@@ -178,6 +185,9 @@ Widget buildAppScope({required AppConfig config, required Widget child}) =>
         ),
         characterRepositoryProvider.overrideWith(
           (ref) => ref.watch(_characterRepositoryImplementationProvider),
+        ),
+        catchUpGatewayProvider.overrideWith(
+          (ref) => ref.watch(_catchUpGatewayProvider),
         ),
         feedRepositoryProvider.overrideWith(
           (ref) => ref.watch(_feedRepositoryImplementationProvider),

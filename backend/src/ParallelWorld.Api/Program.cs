@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using ParallelWorld.AI;
+using ParallelWorld.Api;
 using ParallelWorld.Api.Endpoints;
 using ParallelWorld.Api.Errors;
 using ParallelWorld.Api.Health;
@@ -36,6 +37,10 @@ builder.Services.AddSingleton<ISimulationRule, ReplySimulationRule>();
 builder.Services.AddSingleton<ISimulationRule, ReactSimulationRule>();
 builder.Services.AddSingleton<ISimulationRule, FollowSimulationRule>();
 builder.Services.AddScoped<ISimulationService, SimulationService>();
+if (!builder.Environment.IsEnvironment("Testing"))
+{
+    builder.Services.AddHostedService<CatchUpRecoveryWorker>();
+}
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -45,6 +50,15 @@ builder.Services.AddRateLimiter(options =>
             _ => new FixedWindowRateLimiterOptions
             {
                 PermitLimit = 5,
+                QueueLimit = 0,
+                Window = TimeSpan.FromMinutes(1),
+            }));
+    options.AddPolicy("catch-up", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            EndpointResults.GetUserId(context.User)?.ToString("N") ?? "anonymous",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 4,
                 QueueLimit = 0,
                 Window = TimeSpan.FromMinutes(1),
             }));
@@ -96,6 +110,7 @@ app.MapCharacterEndpoints();
 app.MapSocialFeedEndpoints();
 app.MapRelationshipEndpoints();
 app.MapMessagingEndpoints();
+app.MapCatchUpEndpoints();
 
 await app.RunAsync();
 

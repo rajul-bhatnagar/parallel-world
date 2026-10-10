@@ -66,5 +66,42 @@ public sealed class WorldSimulationState
         UpdatedAt = observedAtUtc;
     }
 
+    public void CompleteCatchUpRange(
+        DateTimeOffset rangeStartUtc,
+        DateTimeOffset rangeEndUtc,
+        DateTimeOffset observedAtUtc)
+    {
+        if (rangeStartUtc.Offset != TimeSpan.Zero
+            || rangeEndUtc.Offset != TimeSpan.Zero
+            || observedAtUtc.Offset != TimeSpan.Zero)
+        {
+            throw new ArgumentException("Simulation cursor timestamps must be UTC.");
+        }
+        if (rangeEndUtc <= rangeStartUtc)
+        {
+            throw new ArgumentException("A CatchUp range must advance the cursor.");
+        }
+
+        var intervalCount = checked((long)((rangeEndUtc - rangeStartUtc).Ticks
+            / ActiveIntervalDuration.Ticks));
+        if (intervalCount <= 0
+            || rangeStartUtc.AddTicks(intervalCount * ActiveIntervalDuration.Ticks) != rangeEndUtc)
+        {
+            throw new ArgumentException("A CatchUp range must contain complete 15-minute intervals.");
+        }
+
+        var expectedStart = LastCompletedIntervalEnd ?? CreatedAt;
+        if (expectedStart != rangeStartUtc || NextDueAt != rangeStartUtc.Add(ActiveIntervalDuration))
+        {
+            throw new InvalidOperationException("The CatchUp range does not start at the authoritative cursor.");
+        }
+
+        LastCompletedIntervalEnd = rangeEndUtc;
+        NextDueAt = rangeEndUtc.Add(ActiveIntervalDuration);
+        DeterministicSequence = checked(DeterministicSequence + intervalCount);
+        UpdatedAt = observedAtUtc;
+        Version++;
+    }
+
     public static readonly TimeSpan ActiveIntervalDuration = TimeSpan.FromMinutes(15);
 }

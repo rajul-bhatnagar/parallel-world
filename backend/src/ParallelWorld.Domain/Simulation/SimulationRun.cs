@@ -1,3 +1,5 @@
+using ParallelWorld.Domain.Worlds;
+
 namespace ParallelWorld.Domain.Simulation;
 
 public sealed class SimulationRun
@@ -43,6 +45,15 @@ public sealed class SimulationRun
         IntervalStart = intervalStart;
         IntervalEnd = intervalEnd;
         ProcessedThrough = intervalStart;
+        RequestedIntervalCount = checked((int)((intervalEnd - intervalStart).Ticks
+            / WorldSimulationState.ActiveIntervalDuration.Ticks));
+        if (RequestedIntervalCount <= 0
+            || intervalStart.AddTicks(
+                RequestedIntervalCount * WorldSimulationState.ActiveIntervalDuration.Ticks) != intervalEnd)
+        {
+            throw new ArgumentException("A simulation run must contain complete 15-minute logical intervals.");
+        }
+        RemainingIntervalCount = RequestedIntervalCount;
         EffectiveTimeScale = effectiveTimeScale;
         Seed = seed;
         RuleVersion = ruleVersion;
@@ -57,6 +68,9 @@ public sealed class SimulationRun
     public DateTimeOffset IntervalStart { get; private set; }
     public DateTimeOffset IntervalEnd { get; private set; }
     public DateTimeOffset ProcessedThrough { get; private set; }
+    public int RequestedIntervalCount { get; private set; }
+    public int ProcessedIntervalCount { get; private set; }
+    public int RemainingIntervalCount { get; private set; }
     public decimal EffectiveTimeScale { get; private set; }
     public long Seed { get; private set; }
     public int RuleVersion { get; private set; }
@@ -65,6 +79,9 @@ public sealed class SimulationRun
     public DateTimeOffset? CompletedAt { get; private set; }
     public string IdempotencyKey { get; private set; }
     public string? ErrorCode { get; private set; }
+    public Guid? LeaseOwnerId { get; private set; }
+    public DateTimeOffset? LeaseExpiresAt { get; private set; }
+    public int AttemptCount { get; private set; }
     public long Version { get; private set; }
 
     public void Complete(DateTimeOffset completedAt)
@@ -80,9 +97,114 @@ public sealed class SimulationRun
         }
 
         ProcessedThrough = IntervalEnd;
+        ProcessedIntervalCount = RequestedIntervalCount;
+        RemainingIntervalCount = 0;
         Status = SimulationRunStatus.Completed;
         CompletedAt = completedAt;
         ErrorCode = null;
+        LeaseOwnerId = null;
+        LeaseExpiresAt = null;
+    }
+
+    public bool TryClaim(Guid ownerId, DateTimeOffset claimedAt, TimeSpan leaseDuration)
+    {
+        if (RunType != SimulationRunType.CatchUp || leaseDuration <= TimeSpan.Zero)
+        {
+            throw new InvalidOperationException("Only CatchUp runs support bounded processing leases.");
+        }
+
+        if (Status == SimulationRunStatus.Completed || Status == SimulationRunStatus.FailedTerminal)
+        {
+            return false;
+        }
+
+        if (LeaseOwnerId is not null && LeaseExpiresAt > claimedAt && LeaseOwnerId != ownerId)
+        {
+            return false;
+        }
+
+        LeaseOwnerId = ownerId;
+        LeaseExpiresAt = claimedAt.Add(leaseDuration);
+        AttemptCount = checked(AttemptCount + 1);
+        Status = SimulationRunStatus.Running;
+        CompletedAt = null;
+        ErrorCode = null;
+        Version++;
+        return true;
+    }
+
+    public void RenewLease(Guid ownerId, DateTimeOffset renewedAt, TimeSpan leaseDuration)
+    {
+        EnsureLeaseOwner(ownerId);
+        LeaseExpiresAt = renewedAt.Add(leaseDuration);
+        Version++;
+    }
+
+    public void AdvanceCatchUp(
+        Guid ownerId,
+        DateTimeOffset bucketStart,
+        DateTimeOffset bucketEnd)
+    {
+        EnsureLeaseOwner(ownerId);
+        if (RunType != SimulationRunType.CatchUp || Status != SimulationRunStatus.Running)
+        {
+            throw new InvalidOperationException("Only a running CatchUp run can advance a bucket.");
+        }
+        if (bucketStart != ProcessedThrough || bucketEnd <= bucketStart || bucketEnd > IntervalEnd)
+        {
+            throw new InvalidOperationException("The CatchUp bucket must continue from the committed checkpoint.");
+        }
+
+        var intervalCount = checked((int)((bucketEnd - bucketStart).Ticks
+            / WorldSimulationState.ActiveIntervalDuration.Ticks));
+        if (intervalCount <= 0
+            || bucketStart.AddTicks(
+                intervalCount * WorldSimulationState.ActiveIntervalDuration.Ticks) != bucketEnd)
+        {
+            throw new ArgumentException("A CatchUp bucket must contain complete 15-minute intervals.");
+        }
+
+        ProcessedThrough = bucketEnd;
+        ProcessedIntervalCount = checked(ProcessedIntervalCount + intervalCount);
+        RemainingIntervalCount = RequestedIntervalCount - ProcessedIntervalCount;
+        Version++;
+    }
+
+    public void MarkPartial(Guid ownerId, DateTimeOffset stoppedAt)
+    {
+        EnsureLeaseOwner(ownerId);
+        if (RunType != SimulationRunType.CatchUp || ProcessedThrough >= IntervalEnd)
+        {
+            throw new InvalidOperationException("Only an incomplete CatchUp run can become Partial.");
+        }
+
+        Status = SimulationRunStatus.Partial;
+        CompletedAt = stoppedAt;
+        ErrorCode = null;
+        LeaseOwnerId = null;
+        LeaseExpiresAt = null;
+        Version++;
+    }
+
+    public void CompleteCatchUp(Guid ownerId, DateTimeOffset completedAt)
+    {
+        EnsureLeaseOwner(ownerId);
+        if (RunType != SimulationRunType.CatchUp || ProcessedThrough != IntervalEnd)
+        {
+            throw new InvalidOperationException("A CatchUp run can complete only at its requested boundary.");
+        }
+
+        Complete(completedAt);
+        Version++;
+    }
+
+    public void FailCatchUpRetryable(Guid ownerId, string errorCode, DateTimeOffset failedAt)
+    {
+        EnsureLeaseOwner(ownerId);
+        Fail(SimulationRunStatus.FailedRetryable, errorCode, failedAt);
+        LeaseOwnerId = null;
+        LeaseExpiresAt = null;
+        Version++;
     }
 
     public void Fail(
@@ -115,6 +237,14 @@ public sealed class SimulationRun
         Status = failureStatus;
         CompletedAt = failedAt;
         ErrorCode = errorCode;
+    }
+
+    private void EnsureLeaseOwner(Guid ownerId)
+    {
+        if (LeaseOwnerId != ownerId)
+        {
+            throw new InvalidOperationException("The caller does not own the CatchUp processing lease.");
+        }
     }
 }
 

@@ -39,6 +39,11 @@ public interface IRomanceRepository
         Guid userId, Guid worldId, CancellationToken cancellationToken);
     Task<RelationshipResult<IReadOnlyList<RomanticHistoryItem>>> HistoryAsync(
         Guid userId, Guid worldId, Guid otherActorId, CancellationToken cancellationToken);
+    Task<int> ExpireDueAsync(
+        Guid worldId,
+        DateTimeOffset worldTime,
+        DateTimeOffset observedAtUtc,
+        CancellationToken cancellationToken);
 }
 
 public interface IRomanceService
@@ -53,6 +58,11 @@ public interface IRomanceService
         Guid userId, Guid worldId, CancellationToken cancellationToken);
     Task<RelationshipResult<IReadOnlyList<RomanticHistoryItem>>> HistoryAsync(
         Guid userId, Guid worldId, Guid otherActorId, CancellationToken cancellationToken);
+    Task<int> ExpireDueAsync(
+        Guid worldId,
+        DateTimeOffset worldTime,
+        DateTimeOffset observedAtUtc,
+        CancellationToken cancellationToken);
 }
 
 public sealed class RomanceService(IRomanceRepository repository) : IRomanceService
@@ -83,6 +93,13 @@ public sealed class RomanceService(IRomanceRepository repository) : IRomanceServ
 
     public Task<RelationshipResult<IReadOnlyList<RomanticHistoryItem>>> HistoryAsync(
         Guid userId, Guid worldId, Guid otherActorId, CancellationToken cancellationToken) => repository.HistoryAsync(userId, worldId, otherActorId, cancellationToken);
+
+    public Task<int> ExpireDueAsync(
+        Guid worldId,
+        DateTimeOffset worldTime,
+        DateTimeOffset observedAtUtc,
+        CancellationToken cancellationToken) =>
+        repository.ExpireDueAsync(worldId, worldTime, observedAtUtc, cancellationToken);
 
     private static bool ValidKey(string value) => !string.IsNullOrWhiteSpace(value) && value.Length <= 200;
     private static Task<RelationshipResult<T>> Invalid<T>(string detail) => Task.FromResult(

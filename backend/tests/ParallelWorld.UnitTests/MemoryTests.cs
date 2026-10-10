@@ -158,5 +158,10 @@ public sealed class MemoryTests
         public Task<bool> TransitionPromiseAsync(
             TransitionPromiseCommand command,
             CancellationToken cancellationToken) => Task.FromResult(true);
+
+        public Task<int> ExpireDuePromisesAsync(
+            Guid worldId,
+            DateTimeOffset worldTime,
+            CancellationToken cancellationToken) => Task.FromResult(0);
     }
 }

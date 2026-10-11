@@ -6,10 +6,10 @@ using ParallelWorld.Infrastructure.Persistence;
 namespace ParallelWorld.IntegrationTests;
 
 [Trait("Category", "PostgreSql")]
-public sealed class M15SchemaCatalogTests
+public sealed class M16SchemaCatalogTests
 {
     [Fact]
-    public async Task MigratedSchema_HasExactM15TablesConstraintsAndIndexes()
+    public async Task MigratedSchema_HasExactM16TablesConstraintsAndIndexes()
     {
         await using var factory = await CreateFactoryAsync();
         TestDatabaseGuard.EnsureSafe(factory.DatabaseName);
@@ -34,6 +34,7 @@ public sealed class M15SchemaCatalogTests
             "20261004123030_AddM12LongTermMemory",
             "20261004180419_AddM13Dating",
             "20261005155150_AddM15CatchUp",
+            "20261011044328_AddM16Notifications",
         }, migrations);
 
         var tables = await ReadNamesAsync(db, """
@@ -68,6 +69,7 @@ public sealed class M15SchemaCatalogTests
             "memory_recall_requests",
             "memory_recall_selections",
             "messages",
+            "notifications",
             "planned_replies",
             "player_profiles",
             "post_reactions",
@@ -101,7 +103,7 @@ public sealed class M15SchemaCatalogTests
               AND c.contype <> 'n'
             ORDER BY c.conname
             """);
-        Assert.Equal(ExpectedConstraints.Concat(M10Constraints).Concat(M11Constraints).Concat(M12Constraints).Concat(M13Constraints).Concat(M15Constraints).Order(StringComparer.Ordinal), constraints);
+        Assert.Equal(ExpectedConstraints.Concat(M10Constraints).Concat(M11Constraints).Concat(M12Constraints).Concat(M13Constraints).Concat(M15Constraints).Concat(M16Constraints).Order(StringComparer.Ordinal), constraints);
 
         var indexes = await ReadNamesAsync(db, """
             SELECT indexname
@@ -110,7 +112,7 @@ public sealed class M15SchemaCatalogTests
               AND tablename <> '__EFMigrationsHistory'
             ORDER BY indexname
             """);
-        Assert.Equal(ExpectedIndexes.Concat(M10Indexes).Concat(M11Indexes).Concat(M12Indexes).Concat(M13Indexes).Concat(M15Indexes).Order(StringComparer.Ordinal), indexes);
+        Assert.Equal(ExpectedIndexes.Concat(M10Indexes).Concat(M11Indexes).Concat(M12Indexes).Concat(M13Indexes).Concat(M15Indexes).Concat(M16Indexes).Order(StringComparer.Ordinal), indexes);
     }
 
     private static readonly string[] ExpectedConstraints =
@@ -474,6 +476,23 @@ public sealed class M15SchemaCatalogTests
         "ux_catch_up_summaries_world_idempotency", "ux_catch_up_summaries_world_run",
         "ux_catch_up_summary_items_world_summary_event_type", "ux_catch_up_summary_items_world_summary_family_day", "ux_catch_up_summary_items_world_summary_ordinal",
         "ux_simulation_runs_world_open_catchup",
+    ];
+
+    private static readonly string[] M16Constraints =
+    [
+        "ak_notifications_world_id_id",
+        "ck_notifications_category", "ck_notifications_category_source",
+        "ck_notifications_expiry", "ck_notifications_priority", "ck_notifications_source_shape",
+        "fk_notifications_actors_world_recipient", "fk_notifications_events_world_event",
+        "fk_notifications_worlds_recipient_world", "pk_notifications",
+    ];
+
+    private static readonly string[] M16Indexes =
+    [
+        "IX_notifications_recipient_user_id_world_id", "IX_notifications_world_id_gameplay_event_id",
+        "IX_notifications_world_id_recipient_actor_id", "ak_notifications_world_id_id",
+        "ix_notifications_recipient_cursor", "ix_notifications_recipient_unread", "pk_notifications",
+        "ux_notifications_world_idempotency_key", "ux_notifications_world_recipient_source_category",
     ];
 
     private static async Task<string[]> ReadNamesAsync(ParallelWorldDbContext db, string sql)

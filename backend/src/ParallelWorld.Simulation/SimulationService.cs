@@ -1,5 +1,6 @@
 using ParallelWorld.Application.Abstractions.Persistence;
 using ParallelWorld.Application.Memory;
+using ParallelWorld.Application.Notifications;
 using ParallelWorld.Application.Relationships;
 using ParallelWorld.Application.Simulation;
 using ParallelWorld.Domain.Simulation;
@@ -15,6 +16,7 @@ public sealed class SimulationService(
     IRelationshipService relationshipService,
     IRomanceService romanceService,
     IMemoryService memoryService,
+    INotificationProjectionWriter notifications,
     IDeterministicRandomProvider randomProvider,
     IEnumerable<ISimulationRule> rules) : ISimulationService
 {
@@ -362,6 +364,9 @@ public sealed class SimulationService(
                         CatchUpSummaryStatus.Completed,
                         timeProvider.GetUtcNow(),
                         count);
+                    await notifications.AddCatchUpSummaryAsync(
+                        worldId, locked.World.OwnerUserId, summary.Id,
+                        summary.GeneratedAt, cancellationToken);
                     await unitOfWork.SaveChangesAsync(cancellationToken);
                     await bucketTransaction.CommitAsync(cancellationToken);
                     claimedRun = run;
@@ -506,6 +511,9 @@ public sealed class SimulationService(
                     finalWorld.World.CurrentWorldTime,
                     CatchUpSummaryStatus.Completed,
                     timeProvider.GetUtcNow(), finalCount);
+                await notifications.AddCatchUpSummaryAsync(
+                    worldId, finalWorld.World.OwnerUserId, finalSummary.Id,
+                    finalSummary.GeneratedAt, cancellationToken);
                 disposition = CatchUpDisposition.Completed;
             }
             else

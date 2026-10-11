@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using ParallelWorld.Application.Abstractions.Persistence;
 using ParallelWorld.Application.Messaging;
+using ParallelWorld.Application.Notifications;
 using ParallelWorld.Domain.Messaging;
 using ParallelWorld.Domain.Relationships;
 using ParallelWorld.Domain.Social;
@@ -10,7 +11,8 @@ using ParallelWorld.Infrastructure.Persistence;
 namespace ParallelWorld.Infrastructure.Messaging;
 
 internal sealed class MessagingRepository(ParallelWorldDbContext db, TimeProvider clock,
-    IPersistenceFailureClassifier failures) : IMessagingRepository
+    IPersistenceFailureClassifier failures,
+    INotificationProjectionWriter notifications) : IMessagingRepository
 {
     private const string DirectOperation = "messaging.create-direct";
 
@@ -168,24 +170,37 @@ internal sealed class MessagingRepository(ParallelWorldDbContext db, TimeProvide
 
     public async Task<string?> FinalizeReplyAsync(Guid userId, Guid plannedReplyId, MessageWordingResult wording, CancellationToken ct)
     {
-        await using var tx = await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, ct);
-        var planInfo = await (from p in db.PlannedReplies.AsNoTracking()
-                              join w in db.GameWorlds.AsNoTracking() on p.WorldId equals w.Id
-                              where p.Id == plannedReplyId && w.OwnerUserId == userId
-                              select new { p.WorldId, p.ConversationId }).SingleOrDefaultAsync(ct);
-        if (planInfo is null) return null;
-        var plan = await db.PlannedReplies.FromSqlInterpolated($"SELECT * FROM planned_replies WHERE world_id = {planInfo.WorldId} AND id = {plannedReplyId} FOR UPDATE").SingleAsync(ct);
-        if (plan.Status != PlannedReplyStatus.Planned) { await tx.CommitAsync(ct); return Status(plan); }
-        var conversation = await db.Conversations.FromSqlInterpolated($"SELECT * FROM conversations WHERE world_id = {plan.WorldId} AND id = {plan.ConversationId} FOR UPDATE").SingleAsync(ct);
-        var settings = await db.WorldSettings.AsNoTracking().SingleAsync(x => x.WorldId == plan.WorldId, ct);
-        var now = clock.GetUtcNow();
-        var eventId = Guid.NewGuid();
-        var reply = new Message(Guid.NewGuid(), plan.WorldId, plan.ConversationId, plan.RecipientActorId, eventId, null, null,
-            wording.Text, MessageDeliveryStatus.Delivered, now);
-        db.GameplayEvents.Add(new GameplayEvent(eventId, plan.WorldId, "private_message_reply", plan.RecipientActorId,
-            conversation.PlayerActorId, now, 50, 0, "msg_02_reply", settings.RuleVersion, $"msg-02-reply:{plan.Id:N}", now));
-        db.Messages.Add(reply); conversation.RecordMessage(now); plan.Complete(wording.FallbackUsed, now);
-        await db.SaveChangesAsync(ct); await tx.CommitAsync(ct); return Status(plan);
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            try
+            {
+                await using var tx = await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, ct);
+                var planInfo = await (from p in db.PlannedReplies.AsNoTracking()
+                                      join w in db.GameWorlds.AsNoTracking() on p.WorldId equals w.Id
+                                      where p.Id == plannedReplyId && w.OwnerUserId == userId
+                                      select new { p.WorldId, p.ConversationId, w.OwnerUserId }).SingleOrDefaultAsync(ct);
+                if (planInfo is null) return null;
+                var plan = await db.PlannedReplies.FromSqlInterpolated($"SELECT * FROM planned_replies WHERE world_id = {planInfo.WorldId} AND id = {plannedReplyId} FOR UPDATE").SingleAsync(ct);
+                if (plan.Status != PlannedReplyStatus.Planned) { await tx.CommitAsync(ct); return Status(plan); }
+                var conversation = await db.Conversations.FromSqlInterpolated($"SELECT * FROM conversations WHERE world_id = {plan.WorldId} AND id = {plan.ConversationId} FOR UPDATE").SingleAsync(ct);
+                var settings = await db.WorldSettings.AsNoTracking().SingleAsync(x => x.WorldId == plan.WorldId, ct);
+                var now = clock.GetUtcNow();
+                var eventId = Guid.NewGuid();
+                var reply = new Message(Guid.NewGuid(), plan.WorldId, plan.ConversationId, plan.RecipientActorId, eventId, null, null,
+                    wording.Text, MessageDeliveryStatus.Delivered, now);
+                db.GameplayEvents.Add(new GameplayEvent(eventId, plan.WorldId, "private_message_reply", plan.RecipientActorId,
+                    conversation.PlayerActorId, now, 50, 0, "msg_02_reply", settings.RuleVersion, $"msg-02-reply:{plan.Id:N}", now));
+                db.Messages.Add(reply); conversation.RecordMessage(now); plan.Complete(wording.FallbackUsed, now);
+                await notifications.AddPrivateMessageAsync(plan.WorldId, planInfo.OwnerUserId,
+                    conversation.PlayerActorId, eventId, now, ct);
+                await db.SaveChangesAsync(ct); await tx.CommitAsync(ct); return Status(plan);
+            }
+            catch (Exception ex) when (failures.IsRetryableConcurrency(ex))
+            {
+                db.ClearTrackedChanges();
+            }
+        }
+        return null;
     }
 
     public async Task<PendingMessageWordingWork?> GetPendingWordingWorkAsync(CancellationToken ct)

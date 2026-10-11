@@ -13,6 +13,7 @@ import 'package:parallel_world_app/features/feed/presentation/feed_screen.dart';
 import 'package:parallel_world_app/features/feed/presentation/post_thread_screen.dart';
 import 'package:parallel_world_app/features/messaging/presentation/conversation_list_screen.dart';
 import 'package:parallel_world_app/features/messaging/presentation/chat_screen.dart';
+import 'package:parallel_world_app/features/notifications/presentation/notification_screen.dart';
 
 final appRouterProvider = Provider<GoRouter>((ref) {
   final refresh = _RouterRefreshNotifier();
@@ -35,6 +36,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         builder: (_, _) => const WorldCreateScreen(),
       ),
       GoRoute(path: '/home', builder: (_, _) => const HomeScreen()),
+      GoRoute(
+        path: '/notifications',
+        builder: (_, _) => const NotificationScreen(),
+      ),
       GoRoute(path: '/feed', builder: (_, _) => const FeedScreen()),
       GoRoute(
         path: '/posts/:postId',
@@ -69,6 +74,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
 String? routeForSession(SessionState session, String location) {
   final authenticatedLocation =
       location == '/home' ||
+      location == '/notifications' ||
       location == '/feed' ||
       location.startsWith('/posts/') ||
       location == '/characters' ||

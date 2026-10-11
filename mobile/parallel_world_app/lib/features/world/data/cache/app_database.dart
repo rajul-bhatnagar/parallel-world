@@ -121,7 +121,7 @@ class AppDatabase extends _$AppDatabase {
     : super(executor ?? driftDatabase(name: 'parallel_world_cache'));
 
   @override
-  int get schemaVersion => 5;
+  int get schemaVersion => 6;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -149,12 +149,16 @@ class AppDatabase extends _$AppDatabase {
       if (from < 5) {
         await _ensureMessagingTables();
       }
+      if (from < 6) {
+        await ensureNotificationTables();
+      }
     },
   );
 
   Future<void> initialize() async {
     await customSelect('SELECT 1').getSingle();
     await _ensureMessagingTables();
+    await ensureNotificationTables();
   }
 
   Future<void> _ensureMessagingTables() async {
@@ -169,6 +173,15 @@ class AppDatabase extends _$AppDatabase {
     );
     await customStatement(
       'CREATE TABLE IF NOT EXISTS cached_m11_messages (user_id TEXT NOT NULL, world_id TEXT NOT NULL, conversation_id TEXT NOT NULL, message_id TEXT NOT NULL, sender_actor_id TEXT NOT NULL, sender_type TEXT NOT NULL, body TEXT NOT NULL, created_at_utc INTEGER NOT NULL, delivery_status TEXT NOT NULL, client_message_id TEXT NULL, local_state TEXT NOT NULL, failure_message TEXT NULL, PRIMARY KEY (user_id, world_id, conversation_id, message_id))',
+    );
+  }
+
+  Future<void> ensureNotificationTables() async {
+    await customStatement(
+      'CREATE TABLE IF NOT EXISTS cached_m16_notifications (user_id TEXT NOT NULL, world_id TEXT NOT NULL, notification_id TEXT NOT NULL, category TEXT NOT NULL, title TEXT NOT NULL, resource_id TEXT NOT NULL, is_read INTEGER NOT NULL, created_at_utc INTEGER NOT NULL, PRIMARY KEY (user_id, world_id, notification_id))',
+    );
+    await customStatement(
+      'CREATE TABLE IF NOT EXISTS cached_m16_notification_metadata (user_id TEXT NOT NULL, world_id TEXT NOT NULL, next_cursor TEXT NULL, has_more INTEGER NOT NULL, cached_at_utc INTEGER NOT NULL, PRIMARY KEY (user_id, world_id))',
     );
   }
 
@@ -210,6 +223,9 @@ class AppDatabase extends _$AppDatabase {
 
   Future<void> clearPrivateData() => transaction(() async {
     await _ensureMessagingTables();
+    await ensureNotificationTables();
+    await customStatement('DELETE FROM cached_m16_notifications');
+    await customStatement('DELETE FROM cached_m16_notification_metadata');
     await customStatement('DELETE FROM cached_m11_messages');
     await customStatement('DELETE FROM cached_m11_conversation_metadata');
     await customStatement('DELETE FROM cached_m11_conversations');

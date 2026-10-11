@@ -6,6 +6,7 @@ using ParallelWorld.Domain.Accounts;
 using ParallelWorld.Domain.Characters;
 using ParallelWorld.Domain.Memory;
 using ParallelWorld.Domain.Messaging;
+using ParallelWorld.Domain.Notifications;
 using ParallelWorld.Domain.Relationships;
 using ParallelWorld.Domain.Simulation;
 using ParallelWorld.Domain.Social;
@@ -84,6 +85,7 @@ public sealed class ParallelWorldDbContext(DbContextOptions<ParallelWorldDbConte
     public DbSet<Promise> Promises => Set<Promise>();
     public DbSet<MemoryRecallRequest> MemoryRecallRequests => Set<MemoryRecallRequest>();
     public DbSet<MemoryRecallSelection> MemoryRecallSelections => Set<MemoryRecallSelection>();
+    public DbSet<Notification> Notifications => Set<Notification>();
 
     public async Task<IApplicationTransaction> BeginTransactionAsync(
         ApplicationIsolationLevel isolationLevel,

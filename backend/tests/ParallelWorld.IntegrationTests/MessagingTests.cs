@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using ParallelWorld.Domain.Memory;
 using ParallelWorld.Domain.Messaging;
+using ParallelWorld.Domain.Notifications;
 using ParallelWorld.Infrastructure.Persistence;
 
 namespace ParallelWorld.IntegrationTests;
@@ -70,6 +71,18 @@ public sealed class MessagingTests
         var plan = await db.PlannedReplies.SingleAsync(x => x.SourceMessageId == playerMessages[0].Id);
         Assert.Equal(50, plan.Urgency);
         Assert.Equal(0, plan.ConflictAvoidancePenalty);
+        var notifications = await db.Notifications.Where(x => x.WorldId == guest.World.Id).ToListAsync();
+        if (plan.Status == PlannedReplyStatus.NoResponse)
+        {
+            Assert.Empty(notifications);
+        }
+        else
+        {
+            var notification = Assert.Single(notifications);
+            Assert.Equal(NotificationCategory.PrivateMessage, notification.Category);
+            Assert.Equal(NotificationSourceType.GameplayEvent, notification.SourceType);
+            Assert.Equal(notification.SourceId, notification.GameplayEventId);
+        }
     }
 
     [Fact]

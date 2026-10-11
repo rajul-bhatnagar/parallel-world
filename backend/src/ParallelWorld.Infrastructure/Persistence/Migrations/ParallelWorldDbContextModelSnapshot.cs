@@ -1509,6 +1509,117 @@ namespace ParallelWorld.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("ParallelWorld.Domain.Notifications.Notification", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("category");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset?>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
+                    b.Property<Guid?>("GameplayEventId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("gameplay_event_id");
+
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("idempotency_key");
+
+                    b.Property<string>("Priority")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("priority");
+
+                    b.Property<DateTimeOffset?>("ReadAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("read_at");
+
+                    b.Property<Guid?>("RecipientActorId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("recipient_actor_id");
+
+                    b.Property<Guid>("RecipientUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("recipient_user_id");
+
+                    b.Property<Guid>("SourceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("source_id");
+
+                    b.Property<string>("SourceType")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("source_type");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint")
+                        .HasColumnName("version");
+
+                    b.Property<Guid>("WorldId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("world_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_notifications");
+
+                    b.HasAlternateKey("WorldId", "Id")
+                        .HasName("ak_notifications_world_id_id");
+
+                    b.HasIndex("RecipientUserId", "WorldId");
+
+                    b.HasIndex("WorldId", "GameplayEventId");
+
+                    b.HasIndex("WorldId", "IdempotencyKey")
+                        .IsUnique()
+                        .HasDatabaseName("ux_notifications_world_idempotency_key");
+
+                    b.HasIndex("WorldId", "RecipientActorId");
+
+                    b.HasIndex("WorldId", "RecipientUserId", "CreatedAt")
+                        .IsDescending(false, false, true)
+                        .HasDatabaseName("ix_notifications_recipient_unread")
+                        .HasFilter("read_at IS NULL");
+
+                    b.HasIndex("WorldId", "RecipientUserId", "CreatedAt", "Id")
+                        .IsDescending(false, false, true, true)
+                        .HasDatabaseName("ix_notifications_recipient_cursor");
+
+                    b.HasIndex("WorldId", "RecipientUserId", "SourceType", "SourceId", "Category")
+                        .IsUnique()
+                        .HasDatabaseName("ux_notifications_world_recipient_source_category");
+
+                    b.ToTable("notifications", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_notifications_category", "category IN ('reply', 'privatemessage', 'catchupsummary')");
+
+                            t.HasCheckConstraint("ck_notifications_category_source", "(category = 'catchupsummary' AND source_type = 'catchupsummary') OR (category IN ('reply', 'privatemessage') AND source_type = 'gameplayevent')");
+
+                            t.HasCheckConstraint("ck_notifications_expiry", "expires_at IS NULL OR expires_at > created_at");
+
+                            t.HasCheckConstraint("ck_notifications_priority", "priority IN ('normal', 'high')");
+
+                            t.HasCheckConstraint("ck_notifications_source_shape", "(source_type = 'gameplayevent' AND gameplay_event_id = source_id) OR (source_type = 'catchupsummary' AND gameplay_event_id IS NULL)");
+                        });
+                });
+
             modelBuilder.Entity("ParallelWorld.Domain.Relationships.Relationship", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2756,6 +2867,11 @@ namespace ParallelWorld.Infrastructure.Persistence.Migrations
                     b.HasAlternateKey("WorldId", "Id")
                         .HasName("ak_simulation_runs_world_id_id");
 
+                    b.HasIndex("WorldId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_simulation_runs_world_open_catchup")
+                        .HasFilter("run_type = 'catchup' AND status IN ('running', 'partial', 'failedretryable')");
+
                     b.HasIndex("WorldId", "CompletedAt")
                         .IsDescending(false, true)
                         .HasDatabaseName("ix_simulation_runs_world_completed");
@@ -2763,11 +2879,6 @@ namespace ParallelWorld.Infrastructure.Persistence.Migrations
                     b.HasIndex("WorldId", "IdempotencyKey")
                         .IsUnique()
                         .HasDatabaseName("ux_simulation_runs_world_idempotency_key");
-
-                    b.HasIndex("WorldId")
-                        .IsUnique()
-                        .HasDatabaseName("ux_simulation_runs_world_open_catchup")
-                        .HasFilter("run_type = 'catchup' AND status IN ('running', 'partial', 'failedretryable')");
 
                     b.HasIndex("RunType", "Status", "LeaseExpiresAt")
                         .HasDatabaseName("ix_simulation_runs_catchup_lease")
@@ -4004,6 +4115,31 @@ namespace ParallelWorld.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_planned_replies_messages_source");
+                });
+
+            modelBuilder.Entity("ParallelWorld.Domain.Notifications.Notification", b =>
+                {
+                    b.HasOne("ParallelWorld.Domain.Worlds.GameWorld", null)
+                        .WithMany()
+                        .HasForeignKey("RecipientUserId", "WorldId")
+                        .HasPrincipalKey("OwnerUserId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_notifications_worlds_recipient_world");
+
+                    b.HasOne("ParallelWorld.Domain.Social.GameplayEvent", null)
+                        .WithMany()
+                        .HasForeignKey("WorldId", "GameplayEventId")
+                        .HasPrincipalKey("WorldId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_notifications_events_world_event");
+
+                    b.HasOne("ParallelWorld.Domain.Worlds.Actor", null)
+                        .WithMany()
+                        .HasForeignKey("WorldId", "RecipientActorId")
+                        .HasPrincipalKey("WorldId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_notifications_actors_world_recipient");
                 });
 
             modelBuilder.Entity("ParallelWorld.Domain.Relationships.Relationship", b =>

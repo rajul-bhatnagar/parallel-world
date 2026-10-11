@@ -25,6 +25,11 @@ import 'package:parallel_world_app/features/messaging/application/messaging_depe
 import 'package:parallel_world_app/features/messaging/data/messaging_api.dart';
 import 'package:parallel_world_app/features/messaging/data/messaging_cache.dart';
 import 'package:parallel_world_app/features/messaging/data/messaging_repository.dart';
+import 'package:parallel_world_app/features/notifications/application/notification_contracts.dart';
+import 'package:parallel_world_app/features/notifications/application/notification_dependencies.dart';
+import 'package:parallel_world_app/features/notifications/data/notification_api.dart';
+import 'package:parallel_world_app/features/notifications/data/notification_cache.dart';
+import 'package:parallel_world_app/features/notifications/data/notification_repository.dart';
 import 'package:parallel_world_app/features/session/application/session_contracts.dart';
 import 'package:parallel_world_app/features/relationships/application/relationship_contracts.dart';
 import 'package:parallel_world_app/features/relationships/application/relationship_provider.dart';
@@ -169,6 +174,21 @@ final _messagingRepositoryProvider = Provider<MessagingRepository>(
     ref.watch(_messagingCacheProvider),
   ),
 );
+final _notificationGatewayProvider = Provider<NotificationGateway>(
+  (ref) => NotificationApi(ref.watch(authenticatedDioProvider)),
+);
+final _notificationCacheProvider = Provider<NotificationCache>(
+  (ref) => DriftNotificationCache(
+    ref.watch(appDatabaseProvider),
+    utcNow: ref.watch(utcNowProvider),
+  ),
+);
+final _notificationRepositoryProvider = Provider<NotificationRepository>(
+  (ref) => ApiCachedNotificationRepository(
+    ref.watch(_notificationGatewayProvider),
+    ref.watch(_notificationCacheProvider),
+  ),
+);
 
 Widget buildAppScope({required AppConfig config, required Widget child}) =>
     ProviderScope(
@@ -197,6 +217,9 @@ Widget buildAppScope({required AppConfig config, required Widget child}) =>
         ),
         messagingRepositoryProvider.overrideWith(
           (ref) => ref.watch(_messagingRepositoryProvider),
+        ),
+        notificationRepositoryProvider.overrideWith(
+          (ref) => ref.watch(_notificationRepositoryProvider),
         ),
       ],
       child: child,

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:parallel_world_app/app/theme.dart';
 import 'package:parallel_world_app/features/catch_up/application/catch_up_provider.dart';
+import 'package:parallel_world_app/features/notifications/application/notification_controller.dart';
 import 'package:parallel_world_app/features/session/application/session_controller.dart';
 import 'package:parallel_world_app/features/session/application/session_state.dart';
 
@@ -22,6 +23,26 @@ class HomeScreen extends ConsumerWidget {
       appBar: AppBar(
         title: const Text('Parallel World'),
         actions: [
+          Consumer(
+            builder: (context, ref, _) {
+              final count = ref
+                  .watch(notificationUnreadCountProvider)
+                  .when(
+                    data: (value) => value,
+                    error: (_, _) => 0,
+                    loading: () => 0,
+                  );
+              return Badge(
+                isLabelVisible: count > 0,
+                label: Text(count > 99 ? '99+' : '$count'),
+                child: IconButton(
+                  tooltip: 'Notifications',
+                  onPressed: () => context.push('/notifications'),
+                  icon: const Icon(Icons.notifications_outlined),
+                ),
+              );
+            },
+          ),
           IconButton(
             tooltip: 'Sign out',
             onPressed: session.isBusy

@@ -111,6 +111,7 @@ app.MapSocialFeedEndpoints();
 app.MapRelationshipEndpoints();
 app.MapMessagingEndpoints();
 app.MapCatchUpEndpoints();
+app.MapNotificationEndpoints();
 
 await app.RunAsync();
 

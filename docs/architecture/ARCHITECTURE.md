@@ -265,9 +265,11 @@ Rules:
 
 The installation identity and bootstrap proof are never normal authentication or authorization credentials. Refresh-token rotation/revocation is server-authoritative and deliberately non-idempotent: a consumed-token retry, including after a lost response, triggers family-replay containment rather than credential-response replay.
 
-### Later registration and recovery
+### M17 registration and recovery
 
-Email/password, magic link, Google, or Apple identity may be attached to the existing guest `User`. Upgrade is transactional: credentials are added and guest status changes while `UserId`, worlds, actors, and history remain unchanged. A failed upgrade leaves the guest usable. Multiple-device sync and account recovery use registered credentials; they never merge worlds from unrelated users without an explicit future product rule.
+ADR-033 selects email/password plus a user-held recovery code. Fresh registration creates one registered `User` and the normal initial world/player aggregate, then login creates an ordinary M03 device/session family. Authenticated guest upgrade is transactional: framework-hashed credentials and a hash-only recovery-code record are added while `UserId`, worlds, actors, and every world-owned history remain unchanged. A failed upgrade leaves the guest usable. Recovery changes the password, rotates the single-use code, revokes all refresh families, and requires login; it never transfers or merges worlds.
+
+Registered sessions reuse ADR-013/ADR-014. A safe `sid` claim identifies the refresh family for session-list presentation but does not replace PostgreSQL session validation or world ownership. Magic links, email verification, external providers, phone/SMS, passkeys, MFA, and account merging remain later decisions.
 
 ## 12. Authorization and world ownership
 
@@ -632,7 +634,7 @@ Growth alone does not justify microservices.
 9. Exact PostgreSQL strategy for simulation/job claiming when more than one backend instance exists.
 10. Trigger and candidate technology for a durable scheduler/queue beyond BackgroundService.
 11. Metrics/tracing library and hosting integration; Serilog remains required for structured logs.
-12. Registered authentication and recovery methods for M17; ADR-013, ADR-014, and SECURITY.md resolve the M03 guest-bootstrap/access/refresh/session-family policy.
+12. Richer registered authentication beyond ADR-033, including email verification, magic links, providers, passkeys, MFA, or account merging; ADR-013/ADR-014 and ADR-033 resolve M17.
 13. Offline write scope and conflict UX, consistent with PRODUCT.md.
 14. Push-notification provider setup, payload policy, and introduction milestone; FCM is planned later.
 15. Group-conversation persistence model if the deferred product feature is ever approved.

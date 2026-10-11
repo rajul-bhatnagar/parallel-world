@@ -230,12 +230,13 @@ Idempotency-Key: <client-generated-value>
 - Clients persist and reuse the logical operation key across timeout/offline retries.
 - Exact retention duration remains open; it must cover the supported mobile retry window and is published operationally before offline writes ship.
 
-Required for world creation, post/reply/quote creation, message send, date invitation, world resume, account registration/upgrade, and other retryable non-credential POST actions. `PUT` reaction/repost/follow and read-state actions are naturally idempotent and return current state/no-op success on repetition.
+Required for world creation, post/reply/quote creation, message send, date invitation, world resume, authenticated guest upgrade, and other retryable non-credential POST actions. Fresh registration relies on normalized-email uniqueness and safe retry through login/regeneration because its one-time recovery code cannot be replayed. `PUT` reaction/repost/follow and read-state actions are naturally idempotent and return current state/no-op success on repetition.
 
 Credential-issuing endpoints have explicit security semantics instead of generic response replay:
 
 - `/auth/guest` uses a `GuestBootstrapProof`, not `Idempotency-Key`, to make User/world creation identity-idempotent. A valid lost-response recovery may return newly rotated credentials rather than the original token bytes.
 - `/auth/refresh` is intentionally non-idempotent and does not accept or honor `Idempotency-Key`. A consumed-token retry follows strict family replay handling.
+- `/auth/upgrade` requires `Idempotency-Key` for the identity/world mutation, but a completed replay omits the one-time plaintext recovery code. The authenticated user regenerates a code if the original response was lost.
 
 The server never stores reversible access/refresh credentials merely to replay an earlier response.
 
@@ -750,19 +751,35 @@ MVP supports an unread badge/deep-link indicators plus a bounded cursor-paginate
 
 ## 37. Account-upgrade and login endpoints
 
-Version 1:
+M17 under ADR-033:
 
 ```text
-POST /api/v1/auth/register       Shape selected by the accepted M17 auth decision
-POST /api/v1/auth/login          Shape selected by the accepted M17 auth decision
-POST /api/v1/auth/upgrade        Preserves the existing UserId
-POST /api/v1/auth/recovery       Shape selected by the accepted M17 recovery decision
-POST /api/v1/devices
-PATCH /api/v1/devices/{deviceId}
-DELETE /api/v1/devices/{deviceId}
+POST   /api/v1/auth/register
+POST   /api/v1/auth/login
+POST   /api/v1/auth/upgrade
+POST   /api/v1/auth/recovery
+POST   /api/v1/auth/password/change
+POST   /api/v1/auth/recovery-code/regenerate
+GET    /api/v1/auth/sessions
+DELETE /api/v1/auth/sessions/{sessionId}
+POST   /api/v1/auth/logout-all
 ```
 
-Upgrade attaches credentials to the existing guest user and preserves worlds, actors, profiles, posts, relationships, messages, memories, and history. It does not copy data to a new user unless a later accepted architecture decision explicitly changes that rule. Provider-token and verification shapes remain open with authentication method selection.
+Email input is trimmed and normalized with invariant uppercase. Password and recovery-code values are never trimmed. Unknown-email and wrong-password login attempts both return the same `401 invalid_credentials` ProblemDetails. Unknown-email, wrong, consumed, and revoked recovery-code attempts all return the same `400 recovery_failed` ProblemDetails. Registration and upgrade may return `409 email_unavailable` without identifying another account. Field-shape and password-policy failures use the standard `400 validation_failed` field errors.
+
+`POST /auth/register` is public and accepts only `email` and `password`. It creates one registered User plus the `My Parallel World` default initial world/player aggregate and returns `201` with safe `user`, `world`, and the plaintext `recoveryCode` exactly once. It does not create a session; the client proceeds to login. Database uniqueness is authoritative under races. A lost success response is recovered by login followed by authenticated recovery-code regeneration, not by plaintext-response replay.
+
+`POST /auth/login` is public and accepts `email`, `password`, `installationId`, `platform`, and `appVersion` using the M03 installation conventions. Success returns `200` with the existing M03 `accessToken`, access expiry, `refreshToken`, refresh expiry, safe `user`, and current `world`. The created family counts toward the existing five-family cap. M17 access tokens add the safe `sid` family identifier claim; ownership continues to derive from `sub` and PostgreSQL.
+
+`POST /auth/upgrade` requires an authenticated Guest and `Idempotency-Key`; its body contains only `email` and `password`. It transactionally mutates the current User and returns `200` with the same safe `user` and `world` plus a one-time `recoveryCode`. The current family remains valid. Exact completed replays return the same safe identity/world outcome with `recoveryCode=null`; the server never stores or replays plaintext code. Another fingerprint returns `409 idempotency_key_reused`. Registered accounts may treat an exact repeat as the completed replay but cannot change the registered email through this endpoint.
+
+`POST /auth/recovery` is public and accepts `email`, `recoveryCode`, and `newPassword`. Success returns `200` with only a newly generated one-time `recoveryCode`; it changes no User/world identity, revokes every refresh family, and does not issue tokens. The user must log in again.
+
+`POST /auth/password/change` requires an authenticated Registered user and accepts `currentPassword` and `newPassword`. Success returns `204`, revokes every family including the current family, and requires login. Guest callers are rejected. `POST /auth/recovery-code/regenerate` requires an authenticated Registered user, invalidates the prior code, and returns `200 {"recoveryCode":"<one-time-code>"}`. Neither plaintext value appears in later reads.
+
+`GET /auth/sessions` requires an authenticated Registered user and returns active families only: safe opaque `sessionId` (the rotation-family ID), approved installation identifier/label, platform, created time, last-used time when available, and `isCurrent` derived from `sid`. `DELETE /auth/sessions/{sessionId}` returns ownership-safe `404` for another user's or unknown family and idempotent `204` for an owned already-revoked family. Revoking the current family prevents refresh and Flutter clears local credentials. `POST /auth/logout-all` returns idempotent `204` after revoking every owned family.
+
+The immediate successful registration, first successful upgrade, successful recovery, and explicit regeneration responses are the only API surfaces that may contain plaintext recovery code. API logs, ProblemDetails, OpenAPI examples, later account responses, sessions, and persistence never contain it. Registration, login, recovery, and code attempts reuse the existing authentication rate-limit infrastructure.
 
 ## 38. Health and operational endpoints
 
@@ -837,7 +854,7 @@ Response also includes `Retry-After: 30`.
 
 ## 42. Open API decisions
 
-1. Registered authentication/recovery methods and their response shapes for M17. The M03 guest/token fields and semantics in sections 3 and 25 are accepted by ADR-013 and ADR-014.
+1. Richer registered authentication beyond ADR-033, including email verification, magic links, providers, passkeys, MFA, account merging, and recovery-code expiry. M17 and the M03 token/session fields are resolved by ADR-013, ADR-014, and ADR-033.
 2. ETag/`If-Match` versus explicit version fields for editable resources.
 3. Final `409` versus `412` concurrency mapping after concurrency transport is selected.
 4. **Recorded conflict:** this planning request recommends `400` only for malformed syntax and `422` for valid domain-validation failures, while approved `ARCHITECTURE.md` section 24 specifies `400` with field errors for validation. The API preserves `400`. If `422` is approved later, `docs/architecture/ARCHITECTURE.md` requires correction before this document changes.
@@ -912,10 +929,15 @@ Response also includes `Retry-After: 30`.
 | GET | `/worlds/{worldId}/events` | World-event list | Yes | No | Yes | Version 1 | 200 |
 | GET | `/worlds/{worldId}/events/{eventId}` | World-event detail | Yes | No | No | Version 1 | 200 |
 | GET | `/worlds/{worldId}/characters/{characterId}/shared-history` | Sanitized shared history | Yes | No | Yes | Version 1/open | 200 |
-| POST | `/auth/register` | Create registered account | No | Yes | No | Version 1 | 201 |
-| POST | `/auth/login` | Create registered session | No | Yes | No | Version 1 | 200 |
-| POST | `/auth/upgrade` | Upgrade current guest | Yes | Yes | No | Version 1 | 200 |
-| POST | `/auth/recovery` | Selected registered-account recovery flow | Mixed | Yes | No | Version 1/gated | 200/204 |
+| POST | `/auth/register` | Create registered account and initial world | No | Email uniqueness | No | M17 | 201/409 |
+| POST | `/auth/login` | Create M03-compatible registered session | No | No | No | M17 | 200/401 |
+| POST | `/auth/upgrade` | Upgrade current guest in place | Guest | Yes | No | M17 | 200/409 |
+| POST | `/auth/recovery` | Recover password with single-use code | No | No | No | M17 | 200/400 |
+| POST | `/auth/password/change` | Change password and revoke all sessions | Registered | No | No | M17 | 204 |
+| POST | `/auth/recovery-code/regenerate` | Replace recovery code | Registered | No | No | M17 | 200 |
+| GET | `/auth/sessions` | List owned active families | Registered | No | No | M17 | 200 |
+| DELETE | `/auth/sessions/{sessionId}` | Revoke owned family | Registered | Natural | No | M17 | 204/404 |
+| POST | `/auth/logout-all` | Revoke every owned family | Registered | Natural | No | M17 | 204 |
 | POST | `/devices` | Register push installation | Yes | Yes | No | Version 1 | 201 |
 | PATCH | `/devices/{deviceId}` | Update owned installation | Yes | No; concurrency | No | Version 1 | 200 |
 | DELETE | `/devices/{deviceId}` | Revoke owned installation | Yes | Natural | No | Version 1 | 204 |

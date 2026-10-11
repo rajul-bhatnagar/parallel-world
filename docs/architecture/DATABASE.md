@@ -79,16 +79,25 @@ These records are account-level and therefore do not carry `WorldId`.
 
 - `Id`
 - `AccountType`: Guest or Registered
-- `Email` nullable until registration
-- `NormalizedEmail` nullable
-- `PasswordHash` nullable for external-only authentication
+- `Email` nullable until registration; trimmed display form, maximum 320 characters
+- `NormalizedEmail` nullable; invariant-uppercase of the trimmed email with no provider-specific rewriting
+- `PasswordHash` nullable only for Guest accounts in M17; Registered accounts require a framework-generated hash
 - `Status`
 - `CreatedAt`, `UpdatedAt`, `Version`
 
 Indexes and constraints:
 
-- Partial unique index on `NormalizedEmail WHERE NormalizedEmail IS NOT NULL`.
-- Account type/credential consistency is validated by the Accounts use case; future external identities remain deferred.
+- Partial unique index on `NormalizedEmail WHERE NormalizedEmail IS NOT NULL` prevents concurrent duplicate registration.
+- Accounts locks/rechecks upgrade state and enforces `Guest => credential fields null` and `Registered => Email, NormalizedEmail, PasswordHash non-null`. No verification-state column is added in M17.
+
+### AccountRecoveryCodes
+
+- `Id`, `UserId`, `CodeHash`, `CreatedAt`, `ConsumedAt`, `RevokedAt`, `Version`
+- The plaintext is an unpadded base64url encoding of 256 CSPRNG bits and is never persisted. `CodeHash` is produced and verified through the approved ASP.NET Core framework hasher.
+- Partial unique index on `UserId WHERE ConsumedAt IS NULL AND RevokedAt IS NULL` enforces one active code per registered User.
+- Index `(UserId, CreatedAt DESC)` supports locked lookup and audit without exposing the code.
+- FK to Users; account deletion behavior follows the owning User policy. A code may be consumed once by successful recovery or revoked by regeneration. Failed attempts do not mutate it.
+- Successful recovery consumes the old row, creates the replacement row, changes the password hash, and revokes all refresh families in one transaction. Regeneration revokes the active row and inserts its replacement in one transaction.
 
 ### DeviceInstallations
 
@@ -597,3 +606,5 @@ Before accepting an implementation or migration, verify:
 16. Refresh rows contain hashes only; rotation permits one successor, consumed-token replay revokes only its family, and unrelated device families remain active.
 17. Expired/revoked families cannot mint access tokens; current/all-family revocation and the five-active-family limit are transactionally consistent.
 18. Guest-bootstrap rows contain proof hashes only; one proof maps to one User, installation, refresh family, world, and player bootstrap, expires 10 minutes after completion, and permits at most one successful recovery rotation.
+19. Registered Users have a database-unique normalized email, a framework password hash, and at most one active hash-only recovery code; no plaintext password or recovery code exists in PostgreSQL.
+20. Guest upgrade preserves the same User primary key and world ownership rows; recovery/password change revoke the refresh families required by ADR-033 atomically with credential mutation.

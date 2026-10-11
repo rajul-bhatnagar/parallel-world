@@ -7,19 +7,19 @@ Version 1 upgrade of the existing guest user without progress loss.
 Guest registers/logs in/recovers and uses multiple approved devices while retaining the same worlds/history.
 
 ## Dependencies
-Stable guest MVP and accepted authentication/recovery decisions.
+Stable guest MVP, ADR-013/ADR-014 session semantics, and accepted ADR-033 email/password and recovery-code contracts.
 
 ## Scope
-- **Backend:** The registered-authentication and recovery approach accepted in `docs/development/DECISIONS.md`, including its required verification/recovery flow; same-user transactional upgrade; login, logout-all, and session/device management; external identity linking only if the accepted approach requires it or it is separately approved.
-- **Database:** Registered credential/identity state and session evolution; uniqueness and integrity rules required by the accepted authentication method; migration preserving `UserId`.
-- **Flutter:** Register/login/upgrade/recovery/session devices, same-account cache preservation, account-switch clearing.
-- **Infrastructure:** Method-specific provider or recovery configuration and protected secrets only for the selected approach.
+- **Backend:** ADR-033 email/password registration and login; no email verification; hash-only single-use recovery-code lifecycle; same-user transactional upgrade; password change; login, logout-all, and minimal refresh-family session management. Magic links/providers remain deferred.
+- **Database:** Existing User credential fields plus hash-only recovery-code lifecycle, normalized-email uniqueness, account/credential consistency, and migration preserving `UserId`.
+- **Flutter:** Register/login/upgrade/recovery/code-save/password-change/session management, same-account cache preservation, account-switch clearing, and no persistent password/recovery-code storage.
+- **Infrastructure:** Existing auth rate limiter, RS256/token configuration, ASP.NET Core password hasher, and CSPRNG only; no delivery/provider dependency.
 
 ## Explicit exclusions
 MVP requirement, social discovery, account/world merging, real-user interaction, unapproved providers/MFA.
 
 ## Test scope
-Same `UserId`/world/data, atomic rollback, duplicate/parallel request, login/recovery/generic responses, revocation/devices, cache behavior, ownership regression.
+Email normalization/uniqueness and password bounds/hash-only persistence; same `UserId`/world/data; atomic upgrade rollback and replay; generic login/recovery failures; recovery-code one-time/rotation/hash-only behavior; all-family revocation after recovery/password change; owned-family listing/revoke/logout-all; cache behavior and ownership regression.
 
 ## Security and ownership considerations
 Identity proof, session rotation/reuse, enumeration, cache/data preservation. Repository-wide ownership, privacy, and secret-handling rules remain mandatory where applicable.

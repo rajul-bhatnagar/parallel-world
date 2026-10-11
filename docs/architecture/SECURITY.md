@@ -65,7 +65,7 @@ flowchart LR
 | Sensitive logs | Bodies/tokens/prompts recorded | Denylist/redaction and body logging off | Log review/scanning | Remove access, rotate exposed credentials, purge where possible | MVP |
 | Sensitive push | Body/secret on lock screen | Generic minimal payload and authenticated refetch | Delivery review/tests | Disable category/provider; revoke tokens | Version 1 |
 | Guest farming/takeover | Automated installs/token theft | Guest quotas/rate limits; installation not auth | Creation/reuse anomalies | Throttle/revoke; guest-loss warning | MVP |
-| Upgrade confusion | Email/provider linked to wrong user | Authenticated transactional same-user upgrade, uniqueness, verification | Conflict/audit events | Roll back; revoke new sessions; recovery | Version 1 |
+| Upgrade confusion | Email linked to wrong user | Authenticated transactional same-user upgrade, normalized-email uniqueness, password-policy/framework hashing | Conflict/audit events | Roll back; preserve existing guest session; recovery | M17 |
 | Password attacks | Brute force/stuffing/reset abuse | Adaptive framework hash, rate limits, generic responses, optional MFA later | Failed-login/reset signals | Temporary account-aware throttle; session revoke | Version 1 |
 | External linking error | Unverified issuer/audience/subject | Backend validation, nonce, unique provider subject, explicit linking | Link conflicts/audit | Unlink/revoke and recovery review | Later |
 | Dev endpoint exposure | Production route/config mistake | Environment gating, auth, production route/OpenAPI absence | Deployment/security tests | Disable route, rotate affected secrets, audit | Development-only |
@@ -85,14 +85,14 @@ No control assumes UUID secrecy, app obfuscation, CORS, root detection, or IP ad
 |---|---|---|---|
 | World-visible fictional: character profile, world post, fictional event | PostgreSQL; owned world only; optional Drift cache | No content logging by default; product retention | TLS; AI only when required by persisted decision |
 | Private: messages, relationships, memories, secrets, promises, email, device details | PostgreSQL; strict module/world/knowledge access; minimized cache | Bodies/secrets denied; duration open by category | TLS; AI only authorized minimal subset; email/device IDs never |
-| Sensitive operational: token/bootstrap-proof/password hashes, signing/API/database/push credentials | Protected server/secret manager; least privilege; tokens and transient bootstrap proof in secure mobile storage | Values never logged; rotate/expire by policy | Never sent to AI/push/Flutter except one-time raw session token issuance and client-originated bootstrap proof |
+| Sensitive operational: token/bootstrap-proof/password/recovery-code hashes, signing/API/database/push credentials | Protected server/secret manager; least privilege; tokens and transient bootstrap proof in secure mobile storage | Values never logged; rotate/expire by policy | Never sent to AI/push/Flutter except one-time raw session/recovery-code issuance and client-originated bootstrap proof |
 | Diagnostics: correlation/error codes, safe IDs, latency, token counts, fallback state | Protected logs/diagnostic tables | Content-free, access-controlled, duration open | Provider-neutral telemetry only; no private prompt/response |
 
 ## 5. Authentication phases
 
 - **MVP:** random installation identity, guest `User`, one exposed owned world, 15-minute RS256 JWT access tokens, rotating 30-day opaque refresh tokens, current-device logout, and server-side current/all-family revocation policy. Authentication exists for ownership/cloud persistence, not multiplayer.
-- **Version 1:** email registration/login, same-user guest upgrade, verification/recovery method, multiple devices, richer session revocation.
-- **Later:** verified Google/Apple providers, explicit account linking, stronger device management, optional MFA if risk justifies it.
+- **Version 1/M17:** email/password registration and login, same-user guest upgrade without email verification, one-time-displayed recovery codes, multiple devices, and minimal refresh-family session management under ADR-033.
+- **Later:** email verification, magic links, verified Google/Apple providers, explicit account linking, stronger device management, passkeys, and optional MFA if risk justifies it.
 
 The database may support multiple owned worlds, but PRODUCT.md/API_CONVENTIONS.md expose one playable MVP world.
 
@@ -131,33 +131,34 @@ sequenceDiagram
 
 ## 7. Registered-account authentication
 
-Version 1 supports only the registered-authentication and recovery method accepted before M17, plus appropriate verification, session revocation, and multiple devices. Email/password, magic link, or an external provider are alternatives, not preselected requirements. Responses do not reveal whether an account exists. Credentials/proofs are transmitted only over TLS and never stored reversibly or logged.
+ADR-033 selects email plus password for M17. Email is trimmed and normalized with invariant uppercase; provider-specific mailbox rewriting is forbidden. M17 does not require email verification and registered accounts are usable immediately. Passwords are 10 through 128 Unicode text elements, are never trimmed, and have no composition rule. ASP.NET Core's framework password hasher provides adaptive salted one-way hashing and verification; passwords are transmitted only over TLS and never stored reversibly, returned, or logged.
+
+Fresh registration creates one registered User and the normal initial owned world/player state but no device session; login with M03 installation metadata creates the first ordinary refresh family. Login uses the same generic failure for an unknown email and a wrong password. Magic links, social/provider login, phone/SMS login, passkeys, and MFA are not M17 features.
 
 ## 8. Guest-account upgrade
 
 Upgrade is an authenticated, idempotent, transactional mutation of the existing guest `User`:
 
-1. Revalidate the current guest session and submitted registration/provider proof.
-2. Normalize and enforce unique credential/provider identity.
+1. Revalidate the current guest session and submitted email/password proof.
+2. Normalize email and enforce its database-backed uniqueness.
 3. Lock/recheck the user and reject parallel/conflicting upgrades.
-4. Attach verified credentials and change account state without changing `UserId`.
-5. Preserve worlds, actors, posts, messages, relationships, memories, and history.
-6. Rotate current refresh credentials; other guest sessions follow the approved revocation policy.
-7. Commit completely or leave the guest account usable and unchanged.
+4. Attach framework-hashed credentials and change account state without changing `UserId`.
+5. Preserve worlds, actors, social state, simulation state, messages, relationships, memories, dating, notifications, catch-up state, and history.
+6. Preserve the current M03 refresh family; upgrade does not create a parallel session or token architecture.
+7. Create the hash-only recovery-code record and commit completely, or leave the guest account usable and unchanged.
 
-An email/provider already attached elsewhere returns a safe conflict; records are never copied or merged implicitly.
+An email already attached elsewhere returns a safe `email_unavailable` conflict; records are never copied or merged implicitly. Exact upgrade retries reuse the same account/world outcome but cannot replay plaintext recovery material. The still-authenticated upgraded user can explicitly regenerate a code after a lost response.
 
 ### Diagram 3 — guest-account upgrade
 
 ```mermaid
 flowchart TD
-    G["Authenticated guest"] --> PROOF["Validate the accepted registration proof"]
-    PROOF --> UNIQUE{"Credential identity available?"}
+    G["Authenticated guest"] --> PROOF["Validate email/password and current session"]
+    PROOF --> UNIQUE{"Normalized email available?"}
     UNIQUE -->|"No"| CONFLICT["Safe conflict; guest unchanged"]
     UNIQUE -->|"Yes"| TX["Transactionally update same UserId"]
-    TX --> ROTATE["Rotate/review sessions"]
-    ROTATE --> VERIFY{"Verification required?"}
-    VERIFY --> RESULT["Registered or verification-pending account"]
+    TX --> RECOVERY["Store recovery-code hash; preserve current family"]
+    RECOVERY --> RESULT["Registered account; one-time code response"]
     TX -.->|"Any failure"| ROLLBACK["Rollback; guest remains usable"]
 ```
 
@@ -235,7 +236,7 @@ One installation record represents one app installation and records user associa
 - Each active device/session has its own refresh-token family. A user has at most five active families; creating a sixth transactionally revokes the oldest active family before the new family becomes active.
 - Account switch/log out clears or separates local tokens, private cache, queues, and realtime subscriptions.
 - A device has one active account association unless a future multi-account design explicitly changes it.
-- Guest and registered users use the same family model. A later same-user upgrade preserves the existing `UserId` and worlds.
+- Guest and registered users use the same family model. M17 same-user upgrade preserves the existing `UserId`, worlds, and current family.
 - Push tokens rotate/update independently and never establish identity.
 - Lost-device remote management is Version 1; an unregistered guest who loses all credentials may be unrecoverable.
 
@@ -251,7 +252,7 @@ One installation record represents one app installation and records user associa
 | Revoked/logged out | Explicit current/all-device action | No refresh; access ends by expiry/session check | New authentication |
 | Suspicious/reuse | Rotated token replay/anomaly | Deny refresh | Revoke family/device; recovery |
 | Device revoked | Device/session action | No refresh/push | Reauthentication/re-registration if permitted |
-| Upgrade-pending | Credential verification incomplete | Guest-safe behavior per approved policy | Registered or rollback/expiry |
+| Upgrade transaction | Authenticated guest upgrade is in progress | No partial account state is externally visible | Registered or full rollback to usable guest |
 
 Current-device logout revokes the current refresh family. All-device logout revokes every active family for the user. Revoked or expired families cannot mint access tokens. The all-family revocation behavior and five-family cap are M03 backend invariants; M17 still owns registered authentication and public user-facing device/session management.
 
@@ -265,10 +266,10 @@ Authorization layers are authentication, current user resolution, world ownershi
 |---|---|---|
 | `/auth/guest` | Public bootstrap | Installation/IP rate limits and idempotency |
 | `/auth/refresh` | Refresh bearer in body | Device/family/rotation validation and rate limit |
-| `/auth/login`, reset, verification | Public/mixed, Version 1 | Generic responses, credential proof, stricter limits |
-| `/auth/upgrade`, `/auth/logout` | Access token | Current-user session checks and idempotency/revocation |
+| `/auth/register`, `/auth/login`, `/auth/recovery` | Public, M17 | Generic login/recovery failures, credential proof, existing auth rate-limit infrastructure |
+| `/auth/upgrade`, `/auth/password/change`, `/auth/recovery-code/regenerate`, `/auth/logout` | Access token | Current-user/account-state checks and idempotency/revocation |
+| `/auth/sessions...` | Access token, registered M17 user | Current-user family ownership; no token/hash exposure |
 | `/worlds/{worldId}/...` | Access token | Owner query plus same-world nested resources |
-| `/devices...` | Access token, Version 1 | Current-user installation ownership |
 | `/hubs/world` | Access token | Authorize every subscribed world/group |
 | `/dev/...` | Authenticated Development-only | Environment gate, strong authorization, absent in production |
 | `/health/live`, `/health/ready` | Deployment policy | Minimal output; no secrets/configuration |
@@ -332,9 +333,9 @@ Cross-user or cross-world lookup returns ownership-safe `404 resource_not_availa
 
 ## 17. Password handling
 
-Passwords are deferred from MVP. When introduced, use ASP.NET Core Identity or another reviewed framework implementation with adaptive one-way hashing, unique salts, framework verification, upgradeable parameters, sensible length/compromised-password controls, and no custom cryptography.
+M17 uses ASP.NET Core `PasswordHasher<TUser>` with adaptive one-way hashing, unique salts, framework verification, and upgradeable parameters. Passwords contain 10 through 128 Unicode text elements, are not trimmed, and have no mandatory composition rule. Custom password cryptography and timing-unsafe manual comparison are prohibited.
 
-Passwords and reset proofs travel only over TLS and are never logged, stored reversibly, returned, or sent to other providers. Avoid arbitrary composition rules that encourage weak patterns. Reset tokens are random, hashed/protected at rest, short-lived, single-use, purpose/user-bound, and invalidate according to the approved session policy.
+Passwords and recovery codes travel only over TLS and are never logged, stored reversibly, sent to another provider, or returned outside their expressly allowed one-time response. Recovery codes contain 256 CSPRNG bits encoded as unpadded base64url and are verified through an ASP.NET Core framework hash.
 
 ## 18. External identity providers
 
@@ -344,15 +345,17 @@ Linking requires an authenticated current account plus fresh provider proof, exp
 
 ## 19. Account recovery
 
-Version 1 recovery method—password reset, magic link, or both—is open. Any flow must use generic request responses, rate limits, short-lived single-use purpose-bound proof, verified destination/provider, atomic credential update, session revocation/rotation, and a safe completion notification.
+ADR-033 selects a user-held recovery code for M17; email reset links and magic links are not implemented. One active code exists per registered User. PostgreSQL stores only its framework hash and lifecycle timestamps. The plaintext appears once after registration, guest upgrade, successful recovery, or explicit authenticated regeneration and is not automatically persisted by Flutter.
 
-Recovery must not reveal account existence or transfer worlds to a new `UserId`. Guest-only accounts have no remote recovery guarantee before registration. Support/admin override is not assumed; any later override requires strong operator auth, audit, least privilege, and explicit product/privacy approval.
+Recovery normalizes email, verifies the code through the framework hasher, validates the new password, and atomically changes the password, consumes the old code, creates one replacement code, and revokes every refresh family. It does not create a session; the user logs in again. Wrong email, wrong/consumed/revoked code, and other invalid proof use the same generic failure and rate-limit path. Regeneration invalidates the prior code, failed attempts do not rotate it, and the active code has no M17 expiry. Recovery never transfers worlds to another `UserId`.
+
+Guest-only accounts still have no remote recovery guarantee before registration. Support/admin override is not assumed; any later override requires strong operator auth, audit, least privilege, and explicit product/privacy approval.
 
 ## 20. Logout and revocation
 
 Current-device logout authenticates the caller, atomically revokes the presented refresh family, unregisters/marks device delivery state as needed, and returns idempotent success. Flutter then clears secure tokens, private cache, pending operations, and realtime state. An access token may remain cryptographically valid until its 15-minute expiry unless a higher-priority rule requires an immediate server-side check.
 
-The backend session policy also supports revoking every active family for the user. M03 verifies this all-family operation; the public logout-all and user-facing session-management contracts remain Version 1/M17. Lost/compromised device response revokes that device family without revoking unrelated device families. Password/recovery/upgrade/account deletion rotate or revoke sessions per their later accepted policies.
+The backend session policy also supports revoking every active family for the user. M17 exposes registered-user family listing, owned-family revocation, and logout-all. A safe `sid` access-token claim identifies the current family for presentation only and never authorizes ownership. Password recovery and password change revoke every family, including the current family; Flutter clears its tokens and requires login again. Upgrade preserves its existing current guest family. Existing access tokens retain ADR-013's ordinary at-most-15-minute lifetime.
 
 ### Diagram 7 — logout and session revocation
 
@@ -584,7 +587,7 @@ Use real PostgreSQL-compatible integration tests for relational ownership/constr
 - Direct Flutter database/Supabase/AI/provider access or secrets in the app.
 - Raw refresh tokens in PostgreSQL/logs/analytics; reusable nonrotating refresh tokens.
 - Raw guest-bootstrap proofs in PostgreSQL/logs/analytics, installation-ID recovery, or generic idempotent response replay for refresh.
-- Tokens/private messages/prompts/secrets/passwords in logs or URLs.
+- Tokens/private messages/prompts/secrets/passwords/recovery codes in logs or URLs.
 - Full chat history/unrelated memories sent to AI.
 - AI output parsed into actions, scores, memories, relationships, or simulation state.
 - Wildcard CORS with credentials or CORS as authentication.
@@ -598,24 +601,21 @@ Use real PostgreSQL-compatible integration tests for relational ownership/constr
 
 ## 43. Open security decisions
 
-ADR-013 resolves the M03 access-token, signing-key contract, refresh lifetime/family/replay policy, five-family limit, current/all-family revocation behavior, and initial authentication rate limits.
+ADR-013 resolves the M03 access-token, signing-key contract, refresh lifetime/family/replay policy, five-family limit, current/all-family revocation behavior, and initial authentication rate limits. ADR-033 resolves M17 email/password, recovery-code, guest-upgrade, and minimal session-management behavior.
 
-1. Password versus magic-link registration/recovery and email-verification requirements for M17.
-2. External-provider order, linking UX, and MFA trigger if ever justified.
-3. Guest-loss and account-recovery UX before/after registration.
-4. Production secret-management provider and hosting-specific key custody/rotation operations for M18.
-5. User-facing device/session-management contracts for M17.
-6. Production tuning and distributed coordination for rate limits if observed traffic/topology requires it; later authentication/content/AI endpoint values and temporary restriction behavior.
-7. IP/device metadata collection and retention.
-8. Guest-bootstrap proof audit retention beyond its recovery need, plus message, memory/history, notification, AI diagnostic, idempotency, work, log, and backup retention.
-9. Private-message field encryption and Drift encryption.
-10. Account-deletion reauthentication, delay, backup purge, and confirmation policy.
-11. Push preview/category/quiet-hours policy.
-12. Admin/support access model; none exists by default.
-13. Dependency, SAST/DAST, secret-scanning, SBOM, and vulnerability-scanning tools.
-14. Hosting/provider-specific TLS, encryption, audit, backup, and incident contacts.
-15. Whether selected high-risk requests require immediate access-token rejection, and whether sender-constrained mechanisms such as DPoP or mTLS are justified.
-16. Broader conversational AI context; blocked by the recorded GAME_RULES.md conflict until corrected.
+1. External-provider order, linking UX, and MFA trigger if ever justified.
+2. Production secret-management provider and hosting-specific key custody/rotation operations for M18.
+3. Production tuning and distributed coordination for rate limits if observed traffic/topology requires it; later endpoint values and temporary restriction behavior.
+4. IP/device metadata collection and retention.
+5. Guest-bootstrap proof audit retention beyond its recovery need, plus message, memory/history, notification, AI diagnostic, idempotency, work, log, and backup retention.
+6. Private-message field encryption and Drift encryption.
+7. Account-deletion reauthentication, delay, backup purge, and confirmation policy.
+8. Push preview/category/quiet-hours policy.
+9. Admin/support access model; none exists by default.
+10. Dependency, SAST/DAST, secret-scanning, SBOM, and vulnerability-scanning tools.
+11. Hosting/provider-specific TLS, encryption, audit, backup, and incident contacts.
+12. Whether selected high-risk requests require immediate access-token rejection, and whether sender-constrained mechanisms such as DPoP or mTLS are justified.
+13. Broader conversational AI context; blocked by the recorded GAME_RULES.md conflict until corrected.
 
 ### Matrix 7 — MVP versus deferred security controls
 
@@ -625,7 +625,7 @@ ADR-013 resolves the M03 access-token, signing-key contract, refresh lifetime/fa
 | Server world/resource ownership and database constraints | Required | Same invariant for every new module |
 | Rate/size/idempotency/AI budgets and safe fallback | Required | Tune/expand based on abuse telemetry |
 | Secure storage, cache isolation/clearing, sanitized logs | Required | Optional approved cache encryption |
-| Password/login/verification/recovery | Not implemented | Version 1 after decisions |
+| Password/login/recovery | Not implemented | M17 under ADR-033; email verification remains later |
 | Guest same-user upgrade | Contract/control defined, not MVP endpoint | Version 1 implementation |
 | Google/Apple linking/MFA | Deferred | Later after decisions |
 | SignalR | Milestone open; HTTP fallback | Authorized groups and resync when introduced |

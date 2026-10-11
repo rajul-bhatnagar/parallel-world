@@ -5,16 +5,16 @@ Read AGENTS.md, docs/milestones/M17_AUTH.md, docs/product/PRODUCT.md, docs/archi
 
 Task: Registration and Login
 
-Prerequisite: Resolve and record the accepted registered-authentication and recovery approach in docs/development/DECISIONS.md before implementation.
+Prerequisite: ADR-033 is accepted and committed. Implement its email/password, in-place guest-upgrade, recovery-code, and minimal session-management contracts without reopening them.
 
 Scope:
-Implement guest account upgrade, registration/login/recovery using the selected accepted approach, refresh rotation, logout/revoke, Flutter auth screens, preservation of the same UserId and all existing worlds/history, and security/integration tests. Single-player isolation remains unchanged.
+Implement guest account upgrade, email/password registration/login, ADR-033 recovery-code/password-change flows, existing refresh rotation, logout/revoke/session listing, Flutter auth screens, preservation of the same UserId and all existing worlds/history, and security/integration tests. Single-player isolation remains unchanged.
 
 Explicit exclusions:
-- Do not implement until registered authentication and recovery are accepted in DECISIONS.md. Do not assume email/password, password reset, or a provider.
+- Do not add email verification, magic links, social/provider login, phone/SMS login, passkeys, MFA, account merging, or a second token/session architecture.
 
 Tests:
-- Test the selected method, recovery, enumeration/privacy defenses, transactional same-UserId guest upgrade, preservation of all worlds/history, rollback/concurrency, isolation, and Flutter auth flows.
+- Test ADR-033 email/password normalization/policy and framework hashes, one-time recovery-code lifecycle, enumeration/privacy defenses, transactional same-UserId guest upgrade, preservation of all worlds/history, rollback/concurrency, existing session-family semantics, isolation, and Flutter auth flows.
 
 Before editing:
 1. List relevant existing files.

@@ -187,9 +187,11 @@ Cover auth bypass, token expiry/modification/claims, refresh reuse, guest-bootst
 | Session-family limit | At most five active families per user | Sixth creation revokes oldest active family; revoked/expired family cannot refresh | MVP/M03 |
 | Logout/device revoke | Current-family and all-family backend revocation block refresh; short-lived access limitation tested | Repetition safe; unrelated family survives current-family logout | MVP/M03; public all-device management M17 |
 | Auth rate limit | M03 guest/refresh/invalid-refresh/logout windows return standard `429` when exceeded | Limits cannot authenticate an installation ID or disclose/log tokens | MVP/M03 |
-| Registration/login | Generic safe credential flow | Duplicate email/invalid password/enumeration | Version 1 |
-| Guest upgrade | Same user and all data | M03 proves identity/world continuity; M17 proves parallel/partial/duplicate-identity rollback end to end | M03 invariant; Version 1 endpoint |
-| Recovery/providers/devices | Approved proof/session policy | Replay, bad claims, silent merge denied | Later |
+| Registration/login | ADR-033 email/password; framework hash; normalized unique email; ordinary M03 session family on login | Concurrent duplicate email, password bounds, wrong/unknown generic response, plaintext absence | M17 |
+| Guest upgrade | Same UserId, world, player, and all M03-M16 data; one-time recovery-code result | Parallel/replay/partial/conflicting-email rollback; no duplicate account/world or plaintext replay | M17 |
+| Recovery code/password | One active hash-only 256-bit code; recovery/change revoke required families and require login | Wrong/used/revoked code, concurrent single-use, old password/code failure, no enumeration/log/persistence leakage | M17 |
+| Registered sessions | Existing family list, owned-family revoke, logout-all, five-family cap | Foreign family hidden; revoked refresh denied; safe metadata only | M17 |
+| Providers/MFA | Not released | Bad claims, linking conflicts, silent merge denied when later approved | Later |
 
 ### M03 authentication and session gate
 
@@ -210,6 +212,24 @@ M03 automated coverage explicitly includes:
 13. Session and world operations preserve the guest `UserId` and owned world identity needed for later same-user upgrade. M03 does not implement the M17 upgrade endpoint; M17 adds the full transactional upgrade test.
 14. Each M03 auth limit returns standard `429` ProblemDetails at the accepted boundary: guest creation 10/IP/10 minutes, refresh 30/family/10 minutes, invalid refresh/replay 10/IP/10 minutes, and logout 30/authenticated user/10 minutes.
 15. Installation-ID-only, client-supplied `UserId`, cross-user refresh/logout, and other cross-user/session ownership attacks fail without disclosure.
+
+### M17 registered authentication gate
+
+M17 automated coverage explicitly includes:
+
+1. Fresh registration succeeds with trimmed/invariant-uppercase email normalization, creates one User/world/player aggregate, returns one recovery code, and stores only framework password/recovery hashes.
+2. Passwords of 10 and 128 Unicode text elements succeed; shorter, longer, null, and empty values fail; whitespace is not silently trimmed and no composition rule is added.
+3. Normalized-email duplicates and synchronized concurrent registration produce one account/world effect; the losing result is the safe `email_unavailable` conflict.
+4. Correct login creates a standard ADR-013/ADR-014 device/session family. Wrong password and unknown email return indistinguishable `invalid_credentials` responses and do not leak through captured logs.
+5. Guest upgrade preserves the exact UserId, WorldId, PlayerProfile, Player Actor, Characters, social/feed state, simulation/catch-up state, relationships, messages, memories, dating, and notifications. No data is copied to a replacement account/world.
+6. Upgrade replay returns the same safe identity/world without replaying plaintext recovery code; a changed fingerprint conflicts; synchronized upgrade and conflicting-email attempts leave one complete registered outcome or the original usable guest.
+7. Recovery accepts one active code once, changes the password, consumes the old code, creates one replacement code, revokes every family, and issues no session. The old password/code fail and the new password succeeds only through a later login.
+8. Explicit regeneration invalidates the old code and returns one replacement once. Wrong/unknown/consumed/revoked code attempts use one generic failure and never rotate state.
+9. Authenticated password change requires the current password, rejects Guest callers, revokes every family including current, and requires login; unrelated account state remains unchanged.
+10. Session listing exposes safe owned-family/device metadata only, marks current from `sid`, and never returns tokens/hashes. Owned revoke and logout-all block refresh; another user's family is ownership-safe hidden.
+11. Registration, login, recovery, and recovery-code attempts use the existing auth rate limiter without permanent IP-only lockout.
+12. Flutter tests cover register/login/upgrade/recovery/code-save/change-password/session states, registered restart/refresh, one-time code non-persistence, same-account cache preservation, and account-switch/logout cache clearing.
+13. Captured PostgreSQL rows, API errors, and logs contain no plaintext password, recovery code, access/refresh token, or authorization header.
 
 ## 16. Authorization and ownership testing
 
@@ -520,7 +540,7 @@ A feature is complete only when acceptance criteria are met; sources/existing co
 | M14 Events/trends | Deferred-feature tests only when intentionally activated |
 | M15 Catch-up | Compression/caps/summary/partial retry/concurrent resume |
 | M16 Notifications | Released category/dedupe/read/cursor/ownership; realtime if introduced |
-| M17 Auth | Registration/login/recovery, guest-upgrade preservation/rollback |
+| M17 Auth | ADR-033 email/password normalization/policy/hash-only storage; registration/login generic errors; recovery-code single-use/rotation/hash-only/redaction; same-user guest-upgrade preservation/replay/rollback/concurrency; M03 session semantics, revoke/list/logout-all ownership; Flutter one-time-code/session/cache flows |
 | M18 Production | CI, migration, security scans, performance/recovery, staging smoke |
 
 ## 47. Explicitly rejected testing patterns

@@ -728,6 +728,41 @@ M16 can implement its three released categories with exact recipient selection a
 
 A later accepted decision releases another notification category, activates a partial-summary indicator, introduces SignalR, or requires a new authoritative source type.
 
+## ADR-033 — M17 email/password authentication and recovery-code policy
+
+**Date:** 2026-10-11
+**Status:** Accepted; resolves the M17 registered-authentication, recovery, and session-management blockers
+
+**Context**
+
+M17 must add registered accounts without replacing the M03 guest, RS256 access-token, rotating refresh-token, device/session-family, or world-ownership architecture. The repository had not selected a registered credential, verification, recovery, password, or public session-management contract. Choosing those mechanics during implementation would risk account enumeration, plaintext recovery material, incompatible sessions, or loss/duplication of guest-owned state.
+
+**Decision**
+
+- M17 uses email plus password only. Magic links, social/provider login, phone/SMS login, passkeys, MFA, and account merging remain deferred.
+- Email is trimmed, retained in trimmed display form, and normalized with invariant uppercase for comparison and storage. No provider-specific dot removal, plus-alias removal, or other mailbox rewriting is allowed. `NormalizedEmail` has a database-enforced partial unique index and registration/upgrade rechecks uniqueness transactionally.
+- M17 does not verify email and introduces no speculative verification-state field or delivery provider. A registered account is usable immediately.
+- Passwords contain 10 through 128 Unicode text elements. They are not trimmed, and no uppercase/lowercase/digit/symbol composition rule is imposed. ASP.NET Core `PasswordHasher<TUser>` performs adaptive salted one-way hashing and framework verification; plaintext passwords are never persisted, returned, logged, or sent to another provider.
+- Fresh registration accepts only `email` and `password`, creates one registered `User` and the normal initial owned world/player state using the existing `My Parallel World` default, returns the safe account/world identity plus a one-time recovery code, and does not create a session. The client then logs in with installation metadata to create an M03-compatible session family.
+- Authenticated guest upgrade accepts `email` and `password`, mutates the existing guest `User` in place, and preserves its `UserId`, worlds, PlayerProfile, Player Actor, Characters, social data, simulation state, relationships, messages, memories, dating, notifications, and catch-up state. It creates no replacement account or world. The current guest family remains the current session; no parallel token system or second family is created solely by upgrade.
+- Upgrade is identity-idempotent under its required idempotency key and exact request fingerprint. A completed retry returns the same safe registered identity/world state but cannot replay the plaintext recovery code. An authenticated user who lost that one-time response uses explicit recovery-code regeneration. A different fingerprint conflicts. An email owned by another account returns a safe conflict and never merges accounts.
+- Login accepts normalized `email`, the exact untrimmed `password`, and the existing M03 installation metadata. Successful login creates a standard device/session family and returns the existing access/refresh/session contract. Unknown email and wrong password have the same status, code, body shape, and materially equivalent verification path.
+- ADR-013 and ADR-014 remain authoritative: RS256, issuer/audience, 15-minute access lifetime, 30-day hash-only refresh tokens, atomic rotation, replay containment, five active families, device association, current-family logout, and all-family revocation are unchanged. M17 access tokens add only a safe `sid` family identifier claim so session listing can identify the current family; it does not authorize ownership or replace server-side family checks.
+- Each registered user has one active recovery code. A code contains 256 random bits encoded as unpadded base64url, is returned only in the immediate successful registration, upgrade, recovery, or explicit-regeneration response, and is never automatically persisted by Flutter. PostgreSQL stores only an ASP.NET Core framework hash plus created/consumed/revoked timestamps. Codes do not expire while active, but are single-use and are invalidated by recovery or regeneration.
+- Recovery accepts `email`, `recoveryCode`, and `newPassword`. Unknown email, wrong code, consumed code, and revoked code return the same generic failure. Success atomically updates the password hash, consumes the old code, creates and returns a new one once, and revokes every refresh family. It does not log the user in; the user must log in again.
+- Authenticated password change requires the current password and a valid new password. Guests cannot use it. Success updates the hash and revokes every family including the current family; Flutter clears its tokens and requires login. Existing access tokens retain ADR-013's ordinary at-most-15-minute cryptographic lifetime.
+- Authenticated recovery-code regeneration revokes the prior code and returns one new code once. Failed recovery/change/regeneration attempts never rotate credentials.
+- Minimal registered session management lists owned active refresh families using a safe opaque family ID, approved device metadata, created/last-used timestamps, and `isCurrent` derived from the `sid` claim. A registered user may revoke one owned family and may logout all. No refresh token/hash is exposed, no separate device registry is created, and guest access to these M17 management endpoints is rejected.
+- Registration, login, and recovery reuse the existing auth rate-limiting infrastructure; recovery-code attempts are limited without permanent IP-only account lockout. Registration may return generic `email_unavailable` conflict. Login and recovery never distinguish unknown identity from invalid proof.
+
+**Consequences**
+
+M17 can extend the existing Accounts module and Flutter secure-token flow without external email infrastructure or new auth architecture. Registration and one-time recovery-code delivery are deliberately not byte-for-byte replayable because plaintext credentials are never retained. A lost registration response can be recovered by login followed by authenticated code regeneration; a lost upgrade response leaves the existing authenticated session usable for regeneration. Database and integration tests must prove uniqueness, hash-only persistence, same-user upgrade rollback/idempotency, session-family continuity/revocation, enumeration resistance, and world/data preservation.
+
+**Revisit when**
+
+Email verification, magic links, external providers, passkeys, MFA, account merging, recovery-code expiry, immediate access-token revocation, or richer device/session controls are approved through a later decision.
+
 ## New ADR template
 
 ### ADR-XXX — Title

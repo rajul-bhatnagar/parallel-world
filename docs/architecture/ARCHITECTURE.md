@@ -78,7 +78,7 @@ No real-user discovery, messaging, feed, relationship, or shared-world path exis
 - One hosted ASP.NET Core service and managed PostgreSQL initially
 - Object storage only after media is introduced
 
-The accepted baseline, checked on 2026-08-25, is .NET 10 LTS/`net10.0`, stable Flutter 3.47 with bundled Dart 3.13, Android API 24 minimum, and Android as the initial launch platform. M01 pins the accepted toolchain and latest stable compatible patches within those lines. Future Flutter/Dart minor or major upgrades require explicit review. Providers and hosting vendors remain open. No additional distributed technology is implied.
+The accepted baseline, checked on 2026-08-25, is .NET 10 LTS/`net10.0`, stable Flutter 3.47 with bundled Dart 3.13, Android API 24 minimum, and Android as the initial launch platform. M01 pins the accepted toolchain and latest stable compatible patches within those lines. Future Flutter/Dart minor or major upgrades require explicit review. ADR-034 selects Render and Neon for the M18 deployment; AI and any later infrastructure providers remain separately governed. No additional distributed technology is implied.
 
 ## 5. Repository structure
 
@@ -525,7 +525,9 @@ Initial deployment assumes one backend instance. Multiple instances require a re
 
 Serilog produces structured, sanitized logs with correlation ID, route/use case, safe user/world identifiers, duration, outcome, reason/error code, and deployment version. Metrics/diagnostics cover request duration/error rate, simulation run duration/action counts/partial failures, catch-up lag, AI latency/failure/fallback/token usage, database query duration, background queue depth/lease failures/retries, SignalR connections, and notification delivery outcomes.
 
-Never log access/refresh tokens, raw guest-bootstrap proofs, signing keys, API keys, full private-message bodies, full AI prompts containing personal data, secret memories, passwords, or provider raw responses containing private context. Exact metrics/tracing library is open; observability must not introduce a distributed platform by default.
+Never log access/refresh tokens, raw guest-bootstrap proofs, signing keys, API keys, full private-message bodies, full AI prompts containing personal data, secret memories, passwords, or provider raw responses containing private context. ADR-034 resolves M18 observability without introducing a distributed platform; later tracing/library expansion remains open.
+
+For M18, ADR-034 selects Render CPU/memory/request metrics, PostgreSQL liveness/readiness, correlation IDs, structured logs, and Render/Neon built-in notifications. Full distributed tracing and a paid external observability platform remain deferred. Production alerts cover service health/restarts/deploy failures, database connectivity, supported sustained error-rate signals, and resource exhaustion.
 
 ## 28. Security boundaries
 
@@ -569,6 +571,8 @@ Environment-specific configuration covers PostgreSQL connection, token issuer/au
 
 Non-secret defaults may live in committed configuration. Secrets are injected at runtime. Flutter receives only public API base URL/build environment and public platform configuration. Startup validates required configuration and fails safely; diagnostics name missing keys without printing values.
 
+ADR-034 defines Development, Staging, and Production. Staging and Production have isolated services, Neon projects/databases, configuration, secrets, and JWT keys. Render runtime environment variables supply the database connection and operational settings; the RSA private key is mounted from a Render Secret File. Production Flutter builds require an explicit HTTPS API URL and reject localhost or Development/Staging defaults. Production and Staging Host/CORS allowlists are distinct.
+
 ## 31. Deployment topology
 
 ```mermaid
@@ -582,9 +586,11 @@ flowchart TD
     CI["GitHub Actions"] -->|"build, test, controlled deploy"| API
 ```
 
-Initial production uses one backend deployment containing API and BackgroundService plus managed PostgreSQL. Deployment provides HTTPS/WSS, environment/secret injection, liveness/readiness checks, controlled EF migrations, database backups/restore testing, and versioned artifacts.
+Initial production uses one non-Free Render Web Service containing API and BackgroundService plus a separate Neon Production project/database. Staging uses an isolated Render service and Neon project/database. Render terminates public TLS; Kestrel uses only minimal bounded forwarded-header processing and never trusts forwarded client IP for authorization. Deployment provides environment/secret injection, liveness/readiness checks, controlled EF migrations, database backups/restore testing, and versioned artifacts.
 
 Migrations run as a controlled deployment step, not concurrently from every instance. Rollback prefers redeploying the prior compatible artifact; destructive schema changes require expand/migrate/contract planning and backup recovery. No hosting vendor is architectural authority.
+
+The release flow is CI on `dev`, PR to `main`, Staging deployment, smoke/migration/security verification, project-owner approval, Production deployment, and safe post-deploy checks. The project owner is the release owner and High-risk acceptance authority; Critical risk blocks release. ADR-034 defines the backup, restore, performance, scanning, and rotation requirements.
 
 ## 32. Scaling path
 
@@ -626,14 +632,14 @@ Growth alone does not justify microservices.
 
 1. Exact patch pins within the accepted .NET 10 LTS and Flutter 3.47/Dart 3.13 baseline (M01 responsibility).
 2. Freezed usage scope versus handwritten immutable models.
-4. Initial hosting provider and managed PostgreSQL vendor.
+4. Initial hosting provider and managed PostgreSQL vendor. **Resolved for M18 by ADR-034: Render Web Service and Neon PostgreSQL.**
 5. Choice of EF naming-convention package versus explicit mappings; PostgreSQL `snake_case` itself is accepted.
 6. First milestone that introduces SignalR versus API refresh/polling.
 7. Whether feed impressions are persisted and, if so, at what release stage.
 8. Whether the physical Actor abstraction is present in the first schema or introduced incrementally behind stable IDs/contracts.
 9. Exact PostgreSQL strategy for simulation/job claiming when more than one backend instance exists.
 10. Trigger and candidate technology for a durable scheduler/queue beyond BackgroundService.
-11. Metrics/tracing library and hosting integration; Serilog remains required for structured logs.
+11. Metrics/tracing library and hosting integration. **Resolved for M18 by ADR-034: Render metrics, health, structured Serilog logs, and correlation IDs; full distributed tracing is deferred.**
 12. Richer registered authentication beyond ADR-033, including email verification, magic links, providers, passkeys, MFA, or account merging; ADR-013/ADR-014 and ADR-033 resolve M17.
 13. Offline write scope and conflict UX, consistent with PRODUCT.md.
 14. Push-notification provider setup, payload policy, and introduction milestone; FCM is planned later.

@@ -377,7 +377,9 @@ New offline initiation remains disabled until the approved product/API decisions
 
 Measure backend feed, message, pending-action, relationship, memory, notification, catch-up, and AI-work queries; and Flutter startup, feed/chat scrolling, large cache, notification list, and realtime bursts. Record environment, data size, and warm/cold state.
 
-Targets remain provisional until measured: reasonable common-API p95, bounded first-page latency, catch-up bounded by action limits, and smooth scrolling on a representative mid-range Android device. Large load tests are deferred until usage justifies them; initial staging scenarios are concurrent launches/resumes, feed reads, message bursts, AI slowdown, and later push backlog.
+ADR-034 sets M18 MVP engineering targets: normal non-AI CRUD/read p95 <= 500 ms; bounded simulation/catch-up synchronous API p95 <= 5 seconds; unexpected server errors below 1%; and normal readiness within 60 seconds. These are not customer SLA guarantees. The representative profile is 25 concurrent active users over 100 registered one-world accounts with representative feed, message, memory, relationship, dating, notification, background-worker, simulation, and catch-up state. The mix covers authentication, feed, Character profiles, messaging, notification reads, and catch-up without including external Ollama latency in core throughput acceptance.
+
+M18 provides one reproducible lightweight load definition. Release requires no Critical/High correctness failure, no obvious unbounded memory growth, and either meeting p95 targets or a documented project-owner acceptance of the deviation. A large performance platform remains deferred until usage justifies it.
 
 ## 32. Reliability and recovery testing
 
@@ -409,11 +411,13 @@ Prefer a fake clock, seeded random source, fake AI generator, stub AI HTTP serve
 | Backend fast | Restore, format, build, unit, architecture | Backend foundation |
 | Backend integration | Ephemeral PostgreSQL, API/integration, migration | Relevant backend milestone |
 | Flutter | Pub get, format, analyze, unit/provider/widget, later build smoke | Flutter foundation |
-| Security | Secret/dependency scan; selected static analysis | As tools arrive; mandatory by production |
+| Security | NuGet and Dart/Flutter dependency checks; existing secret scan; one free SAST path; backend/container SBOM; one container vulnerability scan | M18 / ADR-034 |
 | Infrastructure | Docker and workflow validation | Files exist |
 | Release | Artifact, migration, staging smoke/acceptance | Production milestone |
 
 A required failed check blocks merge. A check whose project/tool does not exist is reported Not applicable or Unavailable, not silently skipped.
+
+M18 selects repository-native/free tooling without requiring paid GitHub Advanced Security: existing CodeQL first, existing Semgrep second, otherwise one narrowly scoped accepted scanner. CI must not add redundant SAST or container scanners. Production accepts no unaccepted Critical vulnerability and no unaccepted reachable High vulnerability; written exceptions follow ADR-034.
 
 ```mermaid
 flowchart LR
@@ -463,9 +467,13 @@ Exploratory sessions assess character distinctiveness, dialogue repetition, rela
 
 Before production: apply migrations; check liveness/readiness; create guest/world; load feed; post; message; force AI fallback; resume/read summary; read/mark notification; rotate token; perform ownership-negative and log-redaction checks; verify backup/restore access; and confirm Development-only routes are absent from production routing/OpenAPI. Any approved real-AI manual wording check uses fictional data and strict budget.
 
+ADR-034 requires an isolated Render Staging service, Neon database, secrets, JWT key, and configuration. A release candidate reaches Staging only after CI succeeds on `dev` and the `dev -> main` PR checks pass. Before public Production, perform a restore drill in Staging or an isolated recovery database and verify schema, representative User/World data, and application connectivity.
+
 ## 40. Release acceptance
 
 Block release for any Critical security issue, cross-user/world access, data loss, non-idempotent/non-deterministic mechanics, broken guest auth/refresh, failed migration, AI cost runaway, sensitive logs, unusable core flow, or failed required CI. A known High requires documented acceptance, owner, mitigation, and target date.
+
+The project owner is the Production release owner and final High-risk acceptance authority. Critical risk blocks release. The approved sequence is automated checks, Staging deploy, smoke/migration/security checklist, project-owner approval, Production deploy, and post-deploy health/smoke checks. Migrations are explicit pre-traffic deployment steps; failure stops deployment and no automatic EF downgrade is performed.
 
 ```mermaid
 flowchart LR
@@ -567,13 +575,13 @@ A feature is complete only when acceptance criteria are met; sources/existing co
 5. Coverage tooling/thresholds after a baseline.
 6. Golden scope and rendering platform.
 7. Flutter device/OS matrix and CI operating systems.
-8. Measured performance targets and representative profiles.
+8. Measured performance targets and representative profiles. **Resolved for M18 by ADR-034 and section 31.**
 9. Load tooling and activation threshold.
-10. Secret/dependency/SAST/DAST/SBOM scanning tools.
-11. Previous-version migration fixture and rollback approach.
-12. Staging reset/retention and real-AI manual policy.
+10. Secret/dependency/SAST/DAST/SBOM scanning tools. **Resolved for M18 by ADR-034's free dependency/secret/single-SAST/SBOM/single-container-scanner baseline; DAST remains deferred.**
+11. Previous-version migration fixture and rollback approach. **Resolved for M18 deployment by ADR-034: explicit forward migration, prior compatible application rollback, no automatic EF downgrade, and backup/restore or forward-fix for incompatible schema. A reusable historical fixture remains future test tooling.**
+12. Staging reset/retention and real-AI manual policy. **Resolved for M18: isolated Staging, fictional smoke data, optional strictly budgeted Ollama check, and no Production data. Exact routine Staging data retention remains operational.**
 13. Flaky tracking/quarantine ownership.
-14. Release checklist owner and High-risk acceptance authority.
+14. Release checklist owner and High-risk acceptance authority. **Resolved for M18 by ADR-034: project owner.**
 15. Concurrency tests after ETag/version and `409`/`412` decisions.
 16. SignalR/push test environments when released.
 17. New-offline-write tests after product/API decisions.

@@ -608,3 +608,11 @@ Before accepting an implementation or migration, verify:
 18. Guest-bootstrap rows contain proof hashes only; one proof maps to one User, installation, refresh family, world, and player bootstrap, expires 10 minutes after completion, and permits at most one successful recovery rotation.
 19. Registered Users have a database-unique normalized email, a framework password hash, and at most one active hash-only recovery code; no plaintext password or recovery code exists in PostgreSQL.
 20. Guest upgrade preserves the same User primary key and world ownership rows; recovery/password change revoke the refresh families required by ADR-033 atomically with credential mutation.
+
+## 18. M18 production database operations
+
+ADR-034 selects isolated Neon projects/databases for Staging and Production. Development, automated tests, and Staging never use Production data or credentials. Production connections require Neon-compatible TLS, keep normal bounded Npgsql pooling, and do not broadly replay non-idempotent transactions.
+
+EF migrations are applied by an explicit idempotent deployment step before the dependent application receives traffic. Migration failure stops deployment. Application rollback uses the previous compatible Render artifact; migrations are not automatically downgraded. Destructive or incompatible schema work requires expand/migrate/contract planning and a verified backup/restore path.
+
+Production recovery uses at least seven days of Neon point-in-time restore/history where supported plus an encrypted weekly logical backup retained for four weeks outside the service/database. The engineering targets are RPO <= 24 hours outside PITR and RTO <= 4 hours. Before public release, and at least quarterly or before a major schema-risk release, restore into Staging or an isolated recovery database and verify the schema, representative User/World ownership data, and application connectivity. Backup credentials and destinations are private operations configuration.

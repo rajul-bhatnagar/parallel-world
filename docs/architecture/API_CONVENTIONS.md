@@ -790,6 +790,8 @@ GET /health/ready
 
 Liveness reveals process availability only. Readiness checks required dependencies with minimal sanitized output. Neither returns configuration, secrets, connection strings, provider details, user data, or stack traces. Administrative gameplay endpoints are not part of MVP.
 
+For M18, liveness checks only the application process. Readiness checks PostgreSQL connectivity; optional Ollama never makes the service unready. Production responses remain minimal and sanitized. Production accepts only its explicit Render/custom host allowlist, uses a separate explicit CORS allowlist with no wildcard-plus-credentials configuration, and requires HTTPS at the Render-managed public boundary. Development-only simulation/test/debug routes and OpenAPI remain absent in Production. Production ProblemDetails never include stack traces, SQL, filesystem paths, or unsafe raw exception text.
+
 ## 39. OpenAPI conventions
 
 - Document every production route, request/response schema, status, ProblemDetails variant, auth rule, pagination parameter, enum, idempotency header, and example.

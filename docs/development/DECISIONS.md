@@ -763,6 +763,47 @@ M17 can extend the existing Accounts module and Flutter secure-token flow withou
 
 Email verification, magic links, external providers, passkeys, MFA, account merging, recovery-code expiry, immediate access-token revocation, or richer device/session controls are approved through a later decision.
 
+## ADR-034 — M18 production operations and release contract
+
+**Date:** 2026-10-12
+**Status:** Accepted; resolves the M18 production-operations blockers
+
+**Context**
+
+M18 must produce an operable staging and production release without selecting infrastructure, security tooling, performance targets, backup objectives, or release authority during implementation. The architecture requires one modular-monolith deployment and managed PostgreSQL, but the concrete production contract remained open.
+
+**Decision**
+
+- Environments are Development, Staging, and Production. Staging and Production use isolated API services, Neon databases/projects, secrets, JWT keys, and configuration. Neither automated tests nor Development/Staging may use Production data.
+- The API deploys as the existing Docker image to a Render Web Service. Development/private beta may use Render Free; public Production uses a non-Free plan. M18 adds no Kubernetes, microservices, or second proxy layer.
+- Render terminates public TLS with managed certificates. Production API traffic is HTTPS-only. Kestrel processes only the minimum forwarded scheme/client information, uses bounded forwarding depth, and never treats forwarded client IP as authorization. Arbitrary forwarded headers are not trusted. Production and Staging use separate explicit Host and CORS allowlists; Flutter mobile requires no browser origin.
+- Runtime environment variables hold the Neon connection string and non-file operational configuration. Render Secret Files hold the current RSA private key. Secrets are absent from source, images, `render.yaml`, Flutter, build arguments, logs, diagnostics, and tracked appsettings. The Neon production connection requires TLS and uses normal bounded Npgsql pooling without replaying non-idempotent transactions.
+- RS256 and ADR-013 semantics remain unchanged. Existing `kid` support is used for rotation: deploy old+new public verification keys, switch signing to the new secret-file private key, retain the old public key for at least the 15-minute access-token lifetime plus 30-second clock skew, then remove it and destroy the old private key. Ordinary rotation does not revoke refresh families; an incident may require all-family revocation.
+- Production enables at least seven days of Neon point-in-time restore/history where supported. An encrypted logical backup runs weekly, is stored outside the application container/database, and retains four weekly copies. The external backup-storage provider is operational configuration, not an application dependency. Targets are RPO at most 24 hours outside PITR and RTO at most four hours; they are engineering objectives, not SLAs.
+- Before public Production, restore one backup into Staging or an isolated recovery database and verify schema, representative User/World data, and application connectivity. Repeat before major schema-risk releases or at least quarterly during public operation.
+- `/health/live` checks only the process. `/health/ready` checks PostgreSQL connectivity with sanitized output. Optional Ollama never affects readiness. Render/Neon built-in notifications cover unhealthy service/restart/deploy failure, database connectivity, supported sustained error-rate signals, and resource exhaustion.
+- Observability uses Render CPU/memory/request metrics, health/readiness, correlation IDs, and existing structured sanitized logs. Full distributed tracing and external paid metrics/tracing products are deferred. Logs include timestamp, severity, correlation/request ID, safe endpoint/event identity, and safe failure code, never private content or credentials.
+- CI uses free/repository-native security checks: NuGet vulnerability audit, the appropriate existing Dart/Flutter dependency check, the existing secret scan, one supported free SAST path (existing CodeQL first, existing Semgrep second, otherwise one narrowly selected scanner), a backend/container SBOM artifact, and one established free container vulnerability scanner. Redundant scanners and a paid GitHub Advanced Security prerequisite are rejected.
+- Production has zero unaccepted Critical vulnerabilities and zero unaccepted High vulnerabilities on reachable paths. A High/Critical acceptance records the issue, component, exposure, mitigation, owner, and review/expiry date. Critical risk blocks release. The project owner is the Production release owner and final High-risk acceptance authority.
+- MVP engineering targets under representative steady load are: normal non-AI CRUD/read p95 at most 500 ms, bounded simulation/catch-up synchronous API p95 at most five seconds, unexpected server errors below 1%, and normal readiness within 60 seconds. The representative profile is 25 concurrent active users over 100 registered one-world accounts with representative social, message, memory, relationship, dating, notification, simulation, and catch-up data. External Ollama latency is excluded. M18 supplies one reproducible lightweight load definition; correctness failures or obvious unbounded memory growth block release, while target deviations require explicit written acceptance.
+- The release path is CI on `dev`, PR `dev -> main`, automated release gates, staging deploy, smoke/migration/security checklist, project-owner approval, Production deploy, and post-deploy health/smoke verification. No feature development occurs directly on `main`.
+- EF migrations run as an explicit idempotent deployment step before the application version receives traffic. Migration failure stops deployment. Application rollback uses Render's previous known-good deployment where schema-compatible; EF migrations are not automatically downgraded. Destructive/incompatible changes require an approved backup/restore plan and forward-fix or provider restore.
+- Production ProblemDetails omit stack traces, SQL, filesystem paths, and unsafe raw exception text. Development-only simulation/test/debug routes and OpenAPI remain absent in Production.
+- Ollama remains optional with deterministic fallback and no paid provider. A Production Flutter release requires an explicit HTTPS API base URL and fails validation for missing, localhost, Development, or Staging defaults. No backend secret is embedded.
+- M14 remains deferred.
+
+**Alternatives considered**
+
+An unselected provider-neutral deployment, Render Free for public Production, a self-managed PostgreSQL/container, a second TLS proxy, Kubernetes, mandatory OpenTelemetry/paid monitoring, mandatory paid GitHub security features, automatic application-start migrations, automatic migration downgrade, and required Ollama/cloud AI were rejected as unsafe, undefined, or excessive for the one-service MVP.
+
+**Consequences**
+
+M18 may now implement provider-compatible configuration validation, health probes, deployment/runbook artifacts, release CI gates, production Flutter endpoint validation, and lightweight performance verification without inventing operational policy. Provider account IDs, domains, credentials, proxy ranges, and backup-storage credentials remain runtime operations values and are never committed. Staging deployment, restore rehearsal, platform alert activation, and Production approval remain manual operational evidence that cannot be truthfully completed by repository tests alone.
+
+**Revisit when**
+
+Traffic requires multiple API instances, Render/Neon no longer meet operational needs, a distributed worker/trace topology is introduced, recovery objectives change, public risk ownership changes, or an approved paid provider/tool replaces an M18 baseline.
+
 ## New ADR template
 
 ### ADR-XXX — Title

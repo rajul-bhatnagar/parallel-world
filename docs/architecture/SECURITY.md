@@ -441,6 +441,8 @@ Secrets include database connection string, JWT signing material, AI/push/object
 
 Never commit, print, return, package, or place secret values in examples. Document names only. Rotate on schedule/incident, validate presence without value, separate environments, minimize principals, and remove unused credentials.
 
+ADR-034 selects isolated Render runtime environment variables and Secret Files for M18 Staging/Production. The Neon connection string is an environment secret; the current RSA private key is a Secret File. `kid` rotation first deploys old+new public verification keys, then changes the signing key, retains the old public key for at least the maximum access-token lifetime plus clock skew, and finally removes it and destroys the old private key. Ordinary rotation does not revoke refresh families; incident response may.
+
 ## 26. Logging and telemetry
 
 Use structured sanitized events and production-appropriate levels. Correlation ID is not authentication. User/world identifiers are pseudonymized or included only when operationally necessary and protected.
@@ -480,11 +482,15 @@ AI retrieval applies world, owner, active-state, and CharacterPrivate restrictio
 
 Private-message field-level encryption and Drift encryption are deferred security decisions. Field encryption would reduce database/backup/operator exposure but complicates querying, generation, key rotation, and recovery; it does not replace authorization.
 
+M18 Production uses Neon restore history of at least seven days where supported plus an encrypted weekly logical backup retained for four weeks outside the application container/database. A restore drill is required before public release and at least quarterly or before major schema-risk releases. Backup-storage credentials are runtime operations secrets.
+
 ## 30. Data in transit
 
 Production requires HTTPS and WSS with valid certificates. Plain HTTP is local-development-only and environment-bound. Use TLS to managed PostgreSQL and AI/push/object providers where supported/required. Never put tokens or private text in URLs/query parameters. Do not follow redirects that could forward authorization to an untrusted host.
 
 Certificate pinning is not initially required because rotation/operational risk may exceed benefit; revisit only with a threat/risk decision.
+
+For M18, Render-managed certificates terminate public TLS and Production API traffic is HTTPS-only. Neon connections require provider-compatible TLS. The application does not manage public certificates or add a second proxy layer.
 
 ## 31. Mobile-client security
 
@@ -521,6 +527,8 @@ Do not design video or public media delivery for MVP.
 Flutter mobile does not rely on CORS. Configure only environment-specific trusted origins needed by approved browser/tooling clients; never wildcard origins with credentials. Preflight and CORS do not authenticate users. A future web client requires explicit CSRF/cookie/storage review; bearer mobile contracts must not be assumed safe unchanged.
 
 Production applies TLS/WSS, secure headers appropriate to any browser surface, host/proxy forwarding validation, and no HTTP downgrade. Exact hosting/proxy policy is environment configuration.
+
+ADR-034 requires separate explicit Staging/Production Host and CORS allowlists. No wildcard origin is permitted with credentials, and no browser origin is added solely for Flutter mobile. Kestrel processes only minimal forwarded scheme/client information with bounded forwarding depth. Arbitrary client-forwarded headers and forwarded IP are never authorization inputs; Render-specific proxy ranges are pinned only when they can be maintained safely as runtime configuration.
 
 ## 37. Error handling and information disclosure
 
@@ -567,6 +575,8 @@ For one developer, maintain a concise runbook and contact inventory. On suspecte
 
 Do not destroy evidence casually or keep excess private data “just in case.” Prioritize credential revocation and world isolation. Record who/what/when for material actions without placing secrets in the incident record.
 
+The project owner is the M18 release owner and final High-risk acceptance authority. Critical risk blocks Production. High/Critical acceptance must record the issue, affected component, exposure, mitigation, owner, and review/expiry date. Render/Neon built-in notifications provide the initial operational contact path; provider-specific incident contacts remain in the private operations inventory.
+
 ## 41. Security testing
 
 Required automated/integration coverage:
@@ -604,7 +614,7 @@ Use real PostgreSQL-compatible integration tests for relational ownership/constr
 ADR-013 resolves the M03 access-token, signing-key contract, refresh lifetime/family/replay policy, five-family limit, current/all-family revocation behavior, and initial authentication rate limits. ADR-033 resolves M17 email/password, recovery-code, guest-upgrade, and minimal session-management behavior.
 
 1. External-provider order, linking UX, and MFA trigger if ever justified.
-2. Production secret-management provider and hosting-specific key custody/rotation operations for M18.
+2. Production secret-management provider and hosting-specific key custody/rotation operations. **Resolved for M18 by ADR-034: Render environment variables/Secret Files and staged `kid` rotation.**
 3. Production tuning and distributed coordination for rate limits if observed traffic/topology requires it; later endpoint values and temporary restriction behavior.
 4. IP/device metadata collection and retention.
 5. Guest-bootstrap proof audit retention beyond its recovery need, plus message, memory/history, notification, AI diagnostic, idempotency, work, log, and backup retention.
@@ -612,8 +622,8 @@ ADR-013 resolves the M03 access-token, signing-key contract, refresh lifetime/fa
 7. Account-deletion reauthentication, delay, backup purge, and confirmation policy.
 8. Push preview/category/quiet-hours policy.
 9. Admin/support access model; none exists by default.
-10. Dependency, SAST/DAST, secret-scanning, SBOM, and vulnerability-scanning tools.
-11. Hosting/provider-specific TLS, encryption, audit, backup, and incident contacts.
+10. Dependency, SAST/DAST, secret-scanning, SBOM, and vulnerability-scanning tools. **Resolved for M18 by ADR-034's free repository-native dependency/secret/single-SAST/SBOM/single-container-scanner baseline; DAST remains future work.**
+11. Hosting/provider-specific TLS, encryption, audit, backup, and incident contacts. **Resolved for M18 by ADR-034 for Render/Neon TLS, backups, alerts, and project-owner response; private provider contacts remain operational data.**
 12. Whether selected high-risk requests require immediate access-token rejection, and whether sender-constrained mechanisms such as DPoP or mTLS are justified.
 13. Broader conversational AI context; blocked by the recorded GAME_RULES.md conflict until corrected.
 

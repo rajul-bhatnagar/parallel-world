@@ -803,7 +803,7 @@ Probability and impact are initial qualitative ratings and must be reviewed at t
 Do not silently settle these before the affected milestone:
 
 1. Hosting provider, managed PostgreSQL vendor, and production topology details.
-4. Production secret-management provider and hosting-specific signing-key custody/rotation operations for M18; ADR-013 resolves the M03 token/session contract.
+4. Production secret management and hosting-specific signing-key custody/rotation are resolved for M18 by ADR-034; ADR-013 remains authoritative for the M03 token/session contract.
 5. Registration/recovery method and email verification for Version 1.
 6. Exact CI runner operating systems beyond the accepted GitHub Actions M01 checks.
 7. Release cadence, staging timing, first beta size, and app-store order.

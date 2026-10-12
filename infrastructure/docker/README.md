@@ -2,6 +2,8 @@
 
 The local stack provides PostgreSQL 18.6 and the containerized ASP.NET Core API. M03 migrations are applied explicitly rather than during API startup.
 
+This Compose stack is Development-only. ADR-034 selects isolated Render Web Services and Neon databases for Staging/Production; see `infrastructure/render/README.md`. Do not deploy this local PostgreSQL service or its Development settings to Production.
+
 Set a local-only password in the current shell before using Compose. Do not put it in a committed file. Use a generated value containing only ASCII letters, digits, `.`, `_`, and `-`; connection-string delimiters such as `;` are intentionally excluded because Compose injects the password into the API's Npgsql connection string.
 
 ```powershell

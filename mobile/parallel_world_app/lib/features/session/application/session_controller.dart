@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:parallel_world_app/core/auth/session_credentials.dart';
 import 'package:parallel_world_app/core/errors/app_failure.dart';
 import 'package:parallel_world_app/features/session/application/session_dependencies.dart';
+import 'package:parallel_world_app/features/session/application/session_contracts.dart';
 import 'package:parallel_world_app/features/session/application/session_state.dart';
 
 final sessionControllerProvider =
@@ -104,6 +105,67 @@ class SessionController extends Notifier<SessionState> {
     } on AppFailure catch (failure) {
       state = state.copyWith(isBusy: false, message: failure.message);
     }
+  }
+
+  Future<String?> register(String email, String password) async =>
+      (await ref.read(sessionLifecycleProvider).register(email, password))
+          .recoveryCode;
+
+  Future<String?> upgrade(String email, String password) async {
+    final result = await ref
+        .read(sessionLifecycleProvider)
+        .upgrade(
+          email,
+          password,
+          ref.read(secretGeneratorProvider).newIdempotencyKey(),
+        );
+    state = state.copyWith(
+      userId: result.userId,
+      world: result.world,
+      clearMessage: true,
+    );
+    return result.recoveryCode;
+  }
+
+  Future<void> login(String email, String password) async {
+    final previous = state.userId;
+    final result = await ref
+        .read(sessionLifecycleProvider)
+        .login(email, password);
+    if (previous != result.userId) await ref.read(worldCacheProvider).clear();
+    await ref.read(worldCacheProvider).write(result.userId, result.world);
+    state = SessionState(
+      phase: SessionPhase.authenticated,
+      userId: result.userId,
+      world: result.world,
+    );
+  }
+
+  Future<String> recover(String email, String code, String password) =>
+      ref.read(sessionLifecycleProvider).recover(email, code, password);
+
+  Future<void> changePassword(String current, String next) async {
+    await ref.read(sessionLifecycleProvider).changePassword(current, next);
+    await ref.read(worldCacheProvider).clear();
+    state = const SessionState(
+      phase: SessionPhase.sessionExpired,
+      message: 'Password changed. Log in again.',
+    );
+  }
+
+  Future<String> regenerateRecoveryCode() =>
+      ref.read(sessionLifecycleProvider).regenerateRecoveryCode();
+  Future<List<AccountSession>> listSessions() =>
+      ref.read(sessionLifecycleProvider).listSessions();
+  Future<void> revokeSession(String id) =>
+      ref.read(sessionLifecycleProvider).revokeSession(id);
+  Future<void> logoutAll() async {
+    await ref.read(sessionLifecycleProvider).logoutAll();
+    await ref.read(worldCacheProvider).clear();
+    state = const SessionState(
+      phase: SessionPhase.sessionExpired,
+      message: 'All sessions were signed out.',
+    );
   }
 
   Future<void> _initialize() async {

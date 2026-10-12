@@ -22,6 +22,51 @@ namespace ParallelWorld.Infrastructure.Persistence.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("ParallelWorld.Domain.Accounts.AccountRecoveryCode", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("CodeHash")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)")
+                        .HasColumnName("code_hash");
+
+                    b.Property<DateTimeOffset?>("ConsumedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("consumed_at");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset?>("RevokedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("revoked_at");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint")
+                        .HasColumnName("version");
+
+                    b.HasKey("Id")
+                        .HasName("pk_account_recovery_codes");
+
+                    b.HasIndex("UserId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_account_recovery_codes_active_user")
+                        .HasFilter("consumed_at IS NULL AND revoked_at IS NULL");
+
+                    b.ToTable("account_recovery_codes", (string)null);
+                });
+
             modelBuilder.Entity("ParallelWorld.Domain.Accounts.DeviceInstallation", b =>
                 {
                     b.Property<Guid>("Id")
@@ -69,9 +114,9 @@ namespace ParallelWorld.Infrastructure.Persistence.Migrations
                     b.HasAlternateKey("UserId", "Id")
                         .HasName("ak_device_installations_user_id_id");
 
-                    b.HasIndex("InstallationPublicId")
+                    b.HasIndex("UserId", "InstallationPublicId")
                         .IsUnique()
-                        .HasDatabaseName("ux_device_installations_public_id");
+                        .HasDatabaseName("ux_device_installations_user_public_id");
 
                     b.HasIndex("UserId", "LastSeenAt")
                         .IsDescending(false, true)
@@ -266,7 +311,10 @@ namespace ParallelWorld.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("ux_users_normalized_email")
                         .HasFilter("normalized_email IS NOT NULL");
 
-                    b.ToTable("users", (string)null);
+                    b.ToTable("users", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_users_account_credentials", "(account_type = 'guest' AND email IS NULL AND normalized_email IS NULL AND password_hash IS NULL) OR (account_type = 'registered' AND email IS NOT NULL AND normalized_email IS NOT NULL AND password_hash IS NOT NULL)");
+                        });
                 });
 
             modelBuilder.Entity("ParallelWorld.Domain.Characters.Character", b =>
@@ -3742,6 +3790,16 @@ namespace ParallelWorld.Infrastructure.Persistence.Migrations
                         {
                             t.HasCheckConstraint("ck_world_simulation_states_sequence", "deterministic_sequence >= 0");
                         });
+                });
+
+            modelBuilder.Entity("ParallelWorld.Domain.Accounts.AccountRecoveryCode", b =>
+                {
+                    b.HasOne("ParallelWorld.Domain.Accounts.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_account_recovery_codes_users_user_id");
                 });
 
             modelBuilder.Entity("ParallelWorld.Domain.Accounts.DeviceInstallation", b =>

@@ -14,7 +14,7 @@ internal sealed class AccessTokenIssuer(
 {
     private readonly AuthenticationOptions _options = optionsAccessor.Value;
 
-    public IssuedAccessToken Issue(Guid userId)
+    public IssuedAccessToken Issue(Guid userId, Guid familyId)
     {
         var now = timeProvider.GetUtcNow();
         var expiresAt = now.AddMinutes(_options.AccessTokenLifetimeMinutes);
@@ -22,6 +22,7 @@ internal sealed class AccessTokenIssuer(
         [
             new Claim(JwtRegisteredClaimNames.Sub, userId.ToString()),
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+            new Claim("sid", familyId.ToString()),
         ]);
         var descriptor = new SecurityTokenDescriptor
         {

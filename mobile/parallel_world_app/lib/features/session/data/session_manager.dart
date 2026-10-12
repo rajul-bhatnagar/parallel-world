@@ -56,6 +56,102 @@ class SessionManager implements SessionLifecycle {
   }
 
   @override
+  Future<AccountResponse> register(String email, String password) =>
+      _authApi.register(email: email, password: password);
+
+  @override
+  Future<GuestSessionResponse> login(String email, String password) async {
+    final previous = await _sessionStore.readCredentials();
+    final response = await _authApi.login(
+      email: email,
+      password: password,
+      installationId: await _sessionStore.loadOrCreateInstallationId(),
+      appVersion: _config.appVersion,
+    );
+    await _sessionStore.writeCredentials(
+      SessionCredentials(
+        userId: response.userId,
+        accessToken: response.tokens.accessToken,
+        accessTokenExpiresAtUtc: response.tokens.accessTokenExpiresAtUtc,
+        refreshToken: response.tokens.refreshToken,
+        refreshTokenExpiresAtUtc: response.tokens.refreshTokenExpiresAtUtc,
+      ),
+    );
+    if (previous?.userId != response.userId) {
+      await _sessionStore.discardBootstrapProof();
+    }
+    return response;
+  }
+
+  @override
+  Future<AccountResponse> upgrade(
+    String email,
+    String password,
+    String idempotencyKey,
+  ) async {
+    final credentials = await _sessionStore.readCredentials();
+    if (credentials == null) {
+      throw const AuthenticationFailure(code: 'authentication_required');
+    }
+    return _authApi.upgrade(
+      email: email,
+      password: password,
+      accessToken: credentials.accessToken,
+      idempotencyKey: idempotencyKey,
+    );
+  }
+
+  @override
+  Future<String> recover(
+    String email,
+    String recoveryCode,
+    String newPassword,
+  ) => _authApi.recover(
+    email: email,
+    recoveryCode: recoveryCode,
+    newPassword: newPassword,
+  );
+
+  Future<SessionCredentials> _requiredCredentials() async =>
+      await _sessionStore.readCredentials() ??
+      (throw const AuthenticationFailure(code: 'authentication_required'));
+
+  @override
+  Future<void> changePassword(
+    String currentPassword,
+    String newPassword,
+  ) async {
+    final credentials = await _requiredCredentials();
+    await _authApi.changePassword(
+      accessToken: credentials.accessToken,
+      currentPassword: currentPassword,
+      newPassword: newPassword,
+    );
+    await _sessionStore.clearSession();
+  }
+
+  @override
+  Future<String> regenerateRecoveryCode() async => _authApi
+      .regenerateRecoveryCode((await _requiredCredentials()).accessToken);
+
+  @override
+  Future<List<AccountSession>> listSessions() async =>
+      _authApi.listSessions((await _requiredCredentials()).accessToken);
+
+  @override
+  Future<void> revokeSession(String sessionId) async => _authApi.revokeSession(
+    (await _requiredCredentials()).accessToken,
+    sessionId,
+  );
+
+  @override
+  Future<void> logoutAll() async {
+    final credentials = await _requiredCredentials();
+    await _authApi.logoutAll(credentials.accessToken);
+    await _sessionStore.clearSession();
+  }
+
+  @override
   Future<String?> readAccessToken() async =>
       (await _sessionStore.readCredentials())?.accessToken;
 

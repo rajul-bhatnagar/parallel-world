@@ -8,7 +8,9 @@ public sealed class UserConfiguration : IEntityTypeConfiguration<User>
 {
     public void Configure(EntityTypeBuilder<User> builder)
     {
-        builder.ToTable("users");
+        builder.ToTable("users", table => table.HasCheckConstraint(
+            "ck_users_account_credentials",
+            "(account_type = 'guest' AND email IS NULL AND normalized_email IS NULL AND password_hash IS NULL) OR (account_type = 'registered' AND email IS NOT NULL AND normalized_email IS NOT NULL AND password_hash IS NOT NULL)"));
         builder.HasKey(entity => entity.Id).HasName("pk_users");
         builder.Property(entity => entity.Id).HasColumnName("id");
         builder.Property(entity => entity.AccountType)
@@ -48,9 +50,9 @@ public sealed class DeviceInstallationConfiguration : IEntityTypeConfiguration<D
         builder.Property(entity => entity.LastSeenAt).HasColumnName("last_seen_at");
         builder.Property(entity => entity.CreatedAt).HasColumnName("created_at");
         builder.Property(entity => entity.RevokedAt).HasColumnName("revoked_at");
-        builder.HasIndex(entity => entity.InstallationPublicId)
+        builder.HasIndex(entity => new { entity.UserId, entity.InstallationPublicId })
             .IsUnique()
-            .HasDatabaseName("ux_device_installations_public_id");
+            .HasDatabaseName("ux_device_installations_user_public_id");
         builder.HasAlternateKey(entity => new { entity.UserId, entity.Id })
             .HasName("ak_device_installations_user_id_id");
         builder.HasIndex(entity => new { entity.UserId, entity.LastSeenAt })
@@ -156,5 +158,27 @@ public sealed class RefreshTokenConfiguration : IEntityTypeConfiguration<Refresh
             .HasForeignKey<RefreshToken>(entity => entity.ReplacedByTokenId)
             .OnDelete(DeleteBehavior.Restrict)
             .HasConstraintName("fk_refresh_tokens_replacement");
+    }
+}
+
+public sealed class AccountRecoveryCodeConfiguration : IEntityTypeConfiguration<AccountRecoveryCode>
+{
+    public void Configure(EntityTypeBuilder<AccountRecoveryCode> builder)
+    {
+        builder.ToTable("account_recovery_codes");
+        builder.HasKey(x => x.Id).HasName("pk_account_recovery_codes");
+        builder.Property(x => x.Id).HasColumnName("id");
+        builder.Property(x => x.UserId).HasColumnName("user_id");
+        builder.Property(x => x.CodeHash).HasColumnName("code_hash").HasMaxLength(512);
+        builder.Property(x => x.CreatedAt).HasColumnName("created_at");
+        builder.Property(x => x.ConsumedAt).HasColumnName("consumed_at");
+        builder.Property(x => x.RevokedAt).HasColumnName("revoked_at");
+        builder.Property(x => x.Version).HasColumnName("version").IsConcurrencyToken();
+        builder.HasIndex(x => x.UserId).IsUnique()
+            .HasFilter("consumed_at IS NULL AND revoked_at IS NULL")
+            .HasDatabaseName("ux_account_recovery_codes_active_user");
+        builder.HasOne<User>().WithMany().HasForeignKey(x => x.UserId)
+            .OnDelete(DeleteBehavior.Cascade)
+            .HasConstraintName("fk_account_recovery_codes_users_user_id");
     }
 }

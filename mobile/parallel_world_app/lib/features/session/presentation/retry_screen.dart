@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:parallel_world_app/app/theme.dart';
 import 'package:parallel_world_app/features/session/application/session_controller.dart';
 import 'package:parallel_world_app/features/session/application/session_state.dart';
@@ -51,6 +52,10 @@ class RetryScreen extends ConsumerWidget {
                                   .retry(),
                   icon: const Icon(Icons.refresh),
                   label: Text(needsNewGuest ? 'Start new session' : 'Retry'),
+                ),
+                TextButton(
+                  onPressed: session.isBusy ? null : () => context.go('/auth'),
+                  child: const Text('Log in or recover account'),
                 ),
               ],
             ),

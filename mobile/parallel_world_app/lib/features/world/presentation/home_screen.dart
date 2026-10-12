@@ -23,6 +23,11 @@ class HomeScreen extends ConsumerWidget {
       appBar: AppBar(
         title: const Text('Parallel World'),
         actions: [
+          IconButton(
+            tooltip: 'Account',
+            onPressed: () => context.push('/auth'),
+            icon: const Icon(Icons.manage_accounts_outlined),
+          ),
           Consumer(
             builder: (context, ref, _) {
               final count = ref

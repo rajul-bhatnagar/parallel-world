@@ -91,6 +91,56 @@ class FakeAuthGateway implements AuthGateway {
   String? lastLogoutRefreshToken;
   final proofs = <String>[];
   final logoutErrors = <Object?>[];
+  @override
+  Future<void> changePassword({
+    required String accessToken,
+    required String currentPassword,
+    required String newPassword,
+  }) async {}
+  @override
+  Future<String> regenerateRecoveryCode(String accessToken) async =>
+      'rotated-code';
+  @override
+  Future<List<AccountSession>> listSessions(String accessToken) async =>
+      const [];
+  @override
+  Future<void> revokeSession(String accessToken, String sessionId) async {}
+  @override
+  Future<void> logoutAll(String accessToken) async {}
+
+  @override
+  Future<AccountResponse> register({
+    required String email,
+    required String password,
+  }) async => AccountResponse(
+    userId: testGuestResponse.userId,
+    world: testWorld,
+    recoveryCode: 'recovery-code',
+  );
+  @override
+  Future<GuestSessionResponse> login({
+    required String email,
+    required String password,
+    required String installationId,
+    required String appVersion,
+  }) async => guestResponse;
+  @override
+  Future<AccountResponse> upgrade({
+    required String email,
+    required String password,
+    required String accessToken,
+    required String idempotencyKey,
+  }) async => AccountResponse(
+    userId: testGuestResponse.userId,
+    world: testWorld,
+    recoveryCode: 'recovery-code',
+  );
+  @override
+  Future<String> recover({
+    required String email,
+    required String recoveryCode,
+    required String newPassword,
+  }) async => 'rotated-code';
 
   @override
   Future<GuestSessionResponse> bootstrapGuest({
@@ -149,6 +199,46 @@ class FakeSessionLifecycle implements SessionLifecycle {
   int clearCalls = 0;
   int installationCalls = 0;
   int guestCalls = 0;
+  @override
+  Future<void> changePassword(
+    String currentPassword,
+    String newPassword,
+  ) async {}
+  @override
+  Future<String> regenerateRecoveryCode() async => 'rotated-code';
+  @override
+  Future<List<AccountSession>> listSessions() async => const [];
+  @override
+  Future<void> revokeSession(String sessionId) async {}
+  @override
+  Future<void> logoutAll() async {}
+
+  @override
+  Future<AccountResponse> register(String email, String password) async =>
+      AccountResponse(
+        userId: guestResponse.userId,
+        world: testWorld,
+        recoveryCode: 'recovery-code',
+      );
+  @override
+  Future<GuestSessionResponse> login(String email, String password) async =>
+      guestResponse;
+  @override
+  Future<AccountResponse> upgrade(
+    String email,
+    String password,
+    String idempotencyKey,
+  ) async => AccountResponse(
+    userId: guestResponse.userId,
+    world: testWorld,
+    recoveryCode: 'recovery-code',
+  );
+  @override
+  Future<String> recover(
+    String email,
+    String recoveryCode,
+    String newPassword,
+  ) async => 'rotated-code';
 
   @override
   Future<String> ensureInstallationId() async {

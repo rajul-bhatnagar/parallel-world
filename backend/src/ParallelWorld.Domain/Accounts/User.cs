@@ -32,4 +32,33 @@ public sealed class User
     public DateTimeOffset UpdatedAt { get; private set; }
 
     public long Version { get; private set; }
+
+    public bool IsRegistered => AccountType == AccountType.Registered;
+
+    public void Register(string email, string normalizedEmail, string passwordHash, DateTimeOffset now)
+    {
+        if (IsRegistered)
+        {
+            throw new InvalidOperationException("The account is already registered.");
+        }
+
+        AccountType = AccountType.Registered;
+        Email = email;
+        NormalizedEmail = normalizedEmail;
+        PasswordHash = passwordHash;
+        UpdatedAt = now;
+        Version++;
+    }
+
+    public void ChangePassword(string passwordHash, DateTimeOffset now)
+    {
+        if (!IsRegistered)
+        {
+            throw new InvalidOperationException("Only registered accounts have passwords.");
+        }
+
+        PasswordHash = passwordHash;
+        UpdatedAt = now;
+        Version++;
+    }
 }

@@ -28,6 +28,60 @@ const guestJson = {
 
 void main() {
   test(
+    'registration sends only email/password and returns one-time recovery code',
+    () async {
+      late RequestOptions captured;
+      final adapter = TestHttpClientAdapter((options, body) {
+        captured = options;
+        return ResponseBody.fromString(
+          jsonEncode({
+            'user': guestJson['user'],
+            'world': guestJson['world'],
+            'recoveryCode': 'one-time-code',
+          }),
+          201,
+          headers: {
+            Headers.contentTypeHeader: [Headers.jsonContentType],
+          },
+        );
+      });
+      final dio = Dio(BaseOptions(baseUrl: 'https://api.example.test'))
+        ..httpClientAdapter = adapter;
+      final result = await AuthApi(dio)
+          .register(email: 'player@example.com', password: 'long-password');
+      expect(captured.path, '/api/v1/auth/register');
+      expect(captured.data, {
+        'email': 'player@example.com',
+        'password': 'long-password',
+      });
+      expect(result.recoveryCode, 'one-time-code');
+    },
+  );
+
+  test('guest upgrade carries bearer and idempotency authority', () async {
+    late RequestOptions captured;
+    final adapter = TestHttpClientAdapter((options, body) {
+      captured = options;
+      return ResponseBody.fromString(
+        jsonEncode({...guestJson, 'recoveryCode': 'one-time-code'}),
+        200,
+        headers: {
+          Headers.contentTypeHeader: [Headers.jsonContentType],
+        },
+      );
+    });
+    final dio = Dio(BaseOptions(baseUrl: 'https://api.example.test'))
+      ..httpClientAdapter = adapter;
+    await AuthApi(dio).upgrade(
+      email: 'player@example.com',
+      password: 'long-password',
+      accessToken: 'access',
+      idempotencyKey: 'upgrade-1',
+    );
+    expect(captured.headers['Authorization'], 'Bearer access');
+    expect(captured.headers['Idempotency-Key'], 'upgrade-1');
+  });
+  test(
     'guest request matches the M03 contract and has no idempotency key',
     () async {
       late RequestOptions captured;

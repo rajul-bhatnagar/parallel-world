@@ -25,6 +25,8 @@ public sealed class ParallelWorldDbContext(DbContextOptions<ParallelWorldDbConte
 
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
 
+    public DbSet<AccountRecoveryCode> AccountRecoveryCodes => Set<AccountRecoveryCode>();
+
     public DbSet<GameWorld> GameWorlds => Set<GameWorld>();
 
     public DbSet<WorldSettings> WorldSettings => Set<WorldSettings>();

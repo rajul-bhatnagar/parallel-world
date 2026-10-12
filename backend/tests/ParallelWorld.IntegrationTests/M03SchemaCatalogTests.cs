@@ -6,10 +6,10 @@ using ParallelWorld.Infrastructure.Persistence;
 namespace ParallelWorld.IntegrationTests;
 
 [Trait("Category", "PostgreSql")]
-public sealed class M16SchemaCatalogTests
+public sealed class M17SchemaCatalogTests
 {
     [Fact]
-    public async Task MigratedSchema_HasExactM16TablesConstraintsAndIndexes()
+    public async Task MigratedSchema_HasExactM17TablesConstraintsAndIndexes()
     {
         await using var factory = await CreateFactoryAsync();
         TestDatabaseGuard.EnsureSafe(factory.DatabaseName);
@@ -35,6 +35,7 @@ public sealed class M16SchemaCatalogTests
             "20261004180419_AddM13Dating",
             "20261005155150_AddM15CatchUp",
             "20261011044328_AddM16Notifications",
+            "20261012040544_AddM17Authentication",
         }, migrations);
 
         var tables = await ReadNamesAsync(db, """
@@ -47,6 +48,7 @@ public sealed class M16SchemaCatalogTests
             """);
         Assert.Equal(new[]
         {
+            "account_recovery_codes",
             "actors",
             "ai_generation_requests",
             "catch_up_summaries",
@@ -103,7 +105,7 @@ public sealed class M16SchemaCatalogTests
               AND c.contype <> 'n'
             ORDER BY c.conname
             """);
-        Assert.Equal(ExpectedConstraints.Concat(M10Constraints).Concat(M11Constraints).Concat(M12Constraints).Concat(M13Constraints).Concat(M15Constraints).Concat(M16Constraints).Order(StringComparer.Ordinal), constraints);
+        Assert.Equal(ExpectedConstraints.Concat(M10Constraints).Concat(M11Constraints).Concat(M12Constraints).Concat(M13Constraints).Concat(M15Constraints).Concat(M16Constraints).Concat(M17Constraints).Order(StringComparer.Ordinal), constraints);
 
         var indexes = await ReadNamesAsync(db, """
             SELECT indexname
@@ -112,7 +114,7 @@ public sealed class M16SchemaCatalogTests
               AND tablename <> '__EFMigrationsHistory'
             ORDER BY indexname
             """);
-        Assert.Equal(ExpectedIndexes.Concat(M10Indexes).Concat(M11Indexes).Concat(M12Indexes).Concat(M13Indexes).Concat(M15Indexes).Concat(M16Indexes).Order(StringComparer.Ordinal), indexes);
+        Assert.Equal(ExpectedIndexes.Concat(M10Indexes).Concat(M11Indexes).Concat(M12Indexes).Concat(M13Indexes).Concat(M15Indexes).Concat(M16Indexes).Concat(M17Indexes).Order(StringComparer.Ordinal), indexes);
     }
 
     private static readonly string[] ExpectedConstraints =
@@ -338,7 +340,7 @@ public sealed class M16SchemaCatalogTests
         "ux_character_opinions_world_character_topic",
         "ux_character_traits_world_character",
         "ux_characters_world_handle",
-        "ux_device_installations_public_id",
+        "ux_device_installations_user_public_id",
         "ux_follows_world_follower_followed_active",
         "ux_follows_world_idempotency_key",
         "ux_gameplay_events_world_idempotency_key",
@@ -493,6 +495,16 @@ public sealed class M16SchemaCatalogTests
         "IX_notifications_world_id_recipient_actor_id", "ak_notifications_world_id_id",
         "ix_notifications_recipient_cursor", "ix_notifications_recipient_unread", "pk_notifications",
         "ux_notifications_world_idempotency_key", "ux_notifications_world_recipient_source_category",
+    ];
+
+    private static readonly string[] M17Constraints =
+    [
+        "ck_users_account_credentials", "fk_account_recovery_codes_users_user_id", "pk_account_recovery_codes",
+    ];
+
+    private static readonly string[] M17Indexes =
+    [
+        "pk_account_recovery_codes", "ux_account_recovery_codes_active_user",
     ];
 
     private static async Task<string[]> ReadNamesAsync(ParallelWorldDbContext db, string sql)

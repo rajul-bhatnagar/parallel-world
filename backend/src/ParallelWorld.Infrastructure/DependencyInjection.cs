@@ -70,6 +70,7 @@ public static class DependencyInjection
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<JwtKeyMaterial>();
         services.AddSingleton<IOpaqueSecretService, OpaqueSecretService>();
+        services.AddSingleton<IPasswordService, PasswordService>();
         services.AddSingleton<IAccessTokenIssuer, AccessTokenIssuer>();
         services.AddSingleton<IAuthenticationRateLimiter, AuthenticationRateLimiter>();
         services.AddSingleton(serviceProvider =>

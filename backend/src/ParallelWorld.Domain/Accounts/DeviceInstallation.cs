@@ -43,4 +43,11 @@ public sealed class DeviceInstallation
     public DateTimeOffset? RevokedAt { get; private set; }
 
     public void Revoke(DateTimeOffset revokedAt) => RevokedAt ??= revokedAt;
+
+    public void Touch(string platform, string appVersion, DateTimeOffset seenAt)
+    {
+        Platform = platform;
+        AppVersion = appVersion;
+        LastSeenAt = seenAt;
+    }
 }

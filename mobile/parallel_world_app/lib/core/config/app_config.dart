@@ -136,9 +136,10 @@ class AppConfig {
 
   static bool _isNonProductionHost(String host) {
     final lowerCaseHost = host.toLowerCase();
-    final normalized = lowerCaseHost.endsWith('.')
-        ? lowerCaseHost.substring(0, lowerCaseHost.length - 1)
-        : lowerCaseHost;
+    final normalized =
+        lowerCaseHost.endsWith('.')
+            ? lowerCaseHost.substring(0, lowerCaseHost.length - 1)
+            : lowerCaseHost;
     final address = InternetAddress.tryParse(normalized);
     final labels = normalized.split('.');
     const reservedTopLevelDomains = {

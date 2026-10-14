@@ -11,8 +11,11 @@ import '../../support/fakes.dart';
 
 class _SessionController extends SessionController {
   @override
-  SessionState build() =>
-      SessionState(phase: SessionPhase.authenticated, userId: 'user', world: testWorld);
+  SessionState build() => SessionState(
+    phase: SessionPhase.authenticated,
+    userId: 'user',
+    world: testWorld,
+  );
 }
 
 void main() {

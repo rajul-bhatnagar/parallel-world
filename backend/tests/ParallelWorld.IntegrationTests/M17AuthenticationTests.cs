@@ -363,6 +363,8 @@ public sealed class M17AuthenticationTests
 
     private static async Task<M03ApiFactory> CreateFactoryAsync()
     {
-        var cs=Environment.GetEnvironmentVariable("ConnectionStrings__Default"); Assert.False(string.IsNullOrWhiteSpace(cs)); return await M03ApiFactory.CreateAsync(cs);
+        var cs = Environment.GetEnvironmentVariable("ConnectionStrings__Default");
+        Assert.False(string.IsNullOrWhiteSpace(cs));
+        return await M03ApiFactory.CreateAsync(cs);
     }
 }

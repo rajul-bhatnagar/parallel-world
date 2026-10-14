@@ -26,10 +26,7 @@ void main() {
       status: 'Partial',
       text: 'Your world moved forward while you were away.',
       items: [
-        CatchUpSummaryItem(
-          itemType: 'follow',
-          wording: 'Ava followed Rowan.',
-        ),
+        CatchUpSummaryItem(itemType: 'follow', wording: 'Ava followed Rowan.'),
       ],
     );
     const result = CatchUpResult(
@@ -43,8 +40,7 @@ void main() {
         overrides: [
           sessionControllerProvider.overrideWith(_SessionController.new),
           catchUpProvider(testWorld.id).overrideWith(
-            (ref) async =>
-                const CatchUpView(result: result, summary: summary),
+            (ref) async => const CatchUpView(result: result, summary: summary),
           ),
         ],
         child: const MaterialApp(home: HomeScreen()),

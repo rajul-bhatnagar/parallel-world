@@ -41,7 +41,7 @@ public sealed class M17AuthenticationTests
         using var bootResponse = await client.BootstrapAsync(M03TestClient.NewSecret());
         var boot = await bootResponse.Content.ReadFromJsonAsync<M03GuestResponse>(); Assert.NotNull(boot);
         client.Authenticate(boot.AccessToken);
-        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/auth/upgrade") { Content = JsonContent.Create(new { email="guest@example.com", password="guest-password-1" }) };
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/auth/upgrade") { Content = JsonContent.Create(new { email = "guest@example.com", password = "guest-password-1" }) };
         request.Headers.Add("Idempotency-Key", "upgrade-1");
         using var upgraded = await client.SendAsync(request); Assert.Equal(HttpStatusCode.OK, upgraded.StatusCode);
         var first = await upgraded.Content.ReadFromJsonAsync<JsonElement>();
@@ -49,14 +49,14 @@ public sealed class M17AuthenticationTests
         Assert.Equal(boot.World.Id, first.GetProperty("world").GetProperty("id").GetGuid());
         Assert.False(string.IsNullOrWhiteSpace(first.GetProperty("recoveryCode").GetString()));
 
-        using var replayRequest = new HttpRequestMessage(HttpMethod.Post, "/api/v1/auth/upgrade") { Content = JsonContent.Create(new { email="guest@example.com", password="guest-password-1" }) };
+        using var replayRequest = new HttpRequestMessage(HttpMethod.Post, "/api/v1/auth/upgrade") { Content = JsonContent.Create(new { email = "guest@example.com", password = "guest-password-1" }) };
         replayRequest.Headers.Add("Idempotency-Key", "upgrade-1");
         using var replay = await client.SendAsync(replayRequest); Assert.Equal(HttpStatusCode.OK, replay.StatusCode);
-        var replayJson=await replay.Content.ReadFromJsonAsync<JsonElement>(); Assert.Equal(JsonValueKind.Null,replayJson.GetProperty("recoveryCode").ValueKind);
-        using var changedRequest = new HttpRequestMessage(HttpMethod.Post, "/api/v1/auth/upgrade") { Content = JsonContent.Create(new { email="guest@example.com", password="different-password-1" }) };
+        var replayJson = await replay.Content.ReadFromJsonAsync<JsonElement>(); Assert.Equal(JsonValueKind.Null, replayJson.GetProperty("recoveryCode").ValueKind);
+        using var changedRequest = new HttpRequestMessage(HttpMethod.Post, "/api/v1/auth/upgrade") { Content = JsonContent.Create(new { email = "guest@example.com", password = "different-password-1" }) };
         changedRequest.Headers.Add("Idempotency-Key", "upgrade-1");
         using var changed = await client.SendAsync(changedRequest); Assert.Equal(HttpStatusCode.Conflict, changed.StatusCode);
-        using var refresh=await client.RefreshAsync(boot.RefreshToken); Assert.Equal(HttpStatusCode.OK,refresh.StatusCode);
+        using var refresh = await client.RefreshAsync(boot.RefreshToken); Assert.Equal(HttpStatusCode.OK, refresh.StatusCode);
 
         await using var scope = factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<ParallelWorldDbContext>();
@@ -73,17 +73,17 @@ public sealed class M17AuthenticationTests
     [Fact]
     public async Task Recovery_IsGenericSingleUse_RotatesCode_AndRevokesEveryFamily()
     {
-        await using var factory=await CreateFactoryAsync(); using var client=factory.CreateClient();
-        using var register=await client.PostAsJsonAsync("/api/v1/auth/register",new{email="recover@example.com",password="old-password-1"});
-        var registered=await register.Content.ReadFromJsonAsync<JsonElement>(); var code=registered.GetProperty("recoveryCode").GetString()!;
-        using var login=await client.PostAsJsonAsync("/api/v1/auth/login",new{email="RECOVER@example.com",password="old-password-1",installationId=Guid.NewGuid(),platform="android",appVersion="1.0.0"});
-        var session=await login.Content.ReadFromJsonAsync<M03GuestResponse>(); Assert.NotNull(session);
-        using var recovery=await client.PostAsJsonAsync("/api/v1/auth/recovery",new{email="recover@example.com",recoveryCode=code,newPassword="new-password-1"});
-        Assert.Equal(HttpStatusCode.OK,recovery.StatusCode); var next=(await recovery.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("recoveryCode").GetString(); Assert.NotEqual(code,next);
-        using var revoked=await client.RefreshAsync(session.RefreshToken); Assert.Equal(HttpStatusCode.Unauthorized,revoked.StatusCode);
-        using var replay=await client.PostAsJsonAsync("/api/v1/auth/recovery",new{email="recover@example.com",recoveryCode=code,newPassword="another-pass-1"});
-        using var unknown=await client.PostAsJsonAsync("/api/v1/auth/recovery",new{email="unknown@example.com",recoveryCode=code,newPassword="another-pass-1"});
-        Assert.Equal(HttpStatusCode.BadRequest,replay.StatusCode); Assert.Equal(HttpStatusCode.BadRequest,unknown.StatusCode);
+        await using var factory = await CreateFactoryAsync(); using var client = factory.CreateClient();
+        using var register = await client.PostAsJsonAsync("/api/v1/auth/register", new { email = "recover@example.com", password = "old-password-1" });
+        var registered = await register.Content.ReadFromJsonAsync<JsonElement>(); var code = registered.GetProperty("recoveryCode").GetString()!;
+        using var login = await client.PostAsJsonAsync("/api/v1/auth/login", new { email = "RECOVER@example.com", password = "old-password-1", installationId = Guid.NewGuid(), platform = "android", appVersion = "1.0.0" });
+        var session = await login.Content.ReadFromJsonAsync<M03GuestResponse>(); Assert.NotNull(session);
+        using var recovery = await client.PostAsJsonAsync("/api/v1/auth/recovery", new { email = "recover@example.com", recoveryCode = code, newPassword = "new-password-1" });
+        Assert.Equal(HttpStatusCode.OK, recovery.StatusCode); var next = (await recovery.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("recoveryCode").GetString(); Assert.NotEqual(code, next);
+        using var revoked = await client.RefreshAsync(session.RefreshToken); Assert.Equal(HttpStatusCode.Unauthorized, revoked.StatusCode);
+        using var replay = await client.PostAsJsonAsync("/api/v1/auth/recovery", new { email = "recover@example.com", recoveryCode = code, newPassword = "another-pass-1" });
+        using var unknown = await client.PostAsJsonAsync("/api/v1/auth/recovery", new { email = "unknown@example.com", recoveryCode = code, newPassword = "another-pass-1" });
+        Assert.Equal(HttpStatusCode.BadRequest, replay.StatusCode); Assert.Equal(HttpStatusCode.BadRequest, unknown.StatusCode);
         Assert.Equal(await ReadFailureCodeAsync(replay), await ReadFailureCodeAsync(unknown));
         await using (var scope = factory.Services.CreateAsyncScope())
         {
@@ -101,18 +101,18 @@ public sealed class M17AuthenticationTests
     [Fact]
     public async Task SessionAdministration_IsOwnerScoped_AndPasswordChangeRevokesCurrentFamily()
     {
-        await using var factory=await CreateFactoryAsync(); using var owner=factory.CreateClient(); using var other=factory.CreateClient();
-        _=await owner.PostAsJsonAsync("/api/v1/auth/register",new{email="owner@example.com",password="owner-password-1"});
-        _=await other.PostAsJsonAsync("/api/v1/auth/register",new{email="other@example.com",password="other-password-1"});
-        using var ownerLogin=await owner.PostAsJsonAsync("/api/v1/auth/login",new{email="owner@example.com",password="owner-password-1",installationId=Guid.NewGuid(),platform="android",appVersion="1"});
-        using var otherLogin=await other.PostAsJsonAsync("/api/v1/auth/login",new{email="other@example.com",password="other-password-1",installationId=Guid.NewGuid(),platform="android",appVersion="1"});
-        var ownerSession=await ownerLogin.Content.ReadFromJsonAsync<M03GuestResponse>(); var otherSession=await otherLogin.Content.ReadFromJsonAsync<M03GuestResponse>(); Assert.NotNull(ownerSession); Assert.NotNull(otherSession);
+        await using var factory = await CreateFactoryAsync(); using var owner = factory.CreateClient(); using var other = factory.CreateClient();
+        _ = await owner.PostAsJsonAsync("/api/v1/auth/register", new { email = "owner@example.com", password = "owner-password-1" });
+        _ = await other.PostAsJsonAsync("/api/v1/auth/register", new { email = "other@example.com", password = "other-password-1" });
+        using var ownerLogin = await owner.PostAsJsonAsync("/api/v1/auth/login", new { email = "owner@example.com", password = "owner-password-1", installationId = Guid.NewGuid(), platform = "android", appVersion = "1" });
+        using var otherLogin = await other.PostAsJsonAsync("/api/v1/auth/login", new { email = "other@example.com", password = "other-password-1", installationId = Guid.NewGuid(), platform = "android", appVersion = "1" });
+        var ownerSession = await ownerLogin.Content.ReadFromJsonAsync<M03GuestResponse>(); var otherSession = await otherLogin.Content.ReadFromJsonAsync<M03GuestResponse>(); Assert.NotNull(ownerSession); Assert.NotNull(otherSession);
         owner.Authenticate(ownerSession.AccessToken); other.Authenticate(otherSession.AccessToken);
-        var otherSessions=await (await other.GetAsync("/api/v1/auth/sessions")).Content.ReadFromJsonAsync<JsonElement>(); var foreignId=otherSessions.GetProperty("items")[0].GetProperty("id").GetGuid();
-        using var denied=await owner.DeleteAsync($"/api/v1/auth/sessions/{foreignId}"); Assert.Equal(HttpStatusCode.NotFound,denied.StatusCode);
-        var ownerSessions=await (await owner.GetAsync("/api/v1/auth/sessions")).Content.ReadFromJsonAsync<JsonElement>(); Assert.True(ownerSessions.GetProperty("items")[0].GetProperty("isCurrent").GetBoolean());
-        using var changed=await owner.PostAsJsonAsync("/api/v1/auth/password/change",new{currentPassword="owner-password-1",newPassword="owner-password-2"}); Assert.Equal(HttpStatusCode.NoContent,changed.StatusCode);
-        using var revoked=await owner.RefreshAsync(ownerSession.RefreshToken); Assert.Equal(HttpStatusCode.Unauthorized,revoked.StatusCode);
+        var otherSessions = await (await other.GetAsync("/api/v1/auth/sessions")).Content.ReadFromJsonAsync<JsonElement>(); var foreignId = otherSessions.GetProperty("items")[0].GetProperty("id").GetGuid();
+        using var denied = await owner.DeleteAsync($"/api/v1/auth/sessions/{foreignId}"); Assert.Equal(HttpStatusCode.NotFound, denied.StatusCode);
+        var ownerSessions = await (await owner.GetAsync("/api/v1/auth/sessions")).Content.ReadFromJsonAsync<JsonElement>(); Assert.True(ownerSessions.GetProperty("items")[0].GetProperty("isCurrent").GetBoolean());
+        using var changed = await owner.PostAsJsonAsync("/api/v1/auth/password/change", new { currentPassword = "owner-password-1", newPassword = "owner-password-2" }); Assert.Equal(HttpStatusCode.NoContent, changed.StatusCode);
+        using var revoked = await owner.RefreshAsync(ownerSession.RefreshToken); Assert.Equal(HttpStatusCode.Unauthorized, revoked.StatusCode);
         using var oldLogin = await LoginAsync(owner, "owner@example.com", "owner-password-1", Guid.NewGuid());
         Assert.Equal(HttpStatusCode.Unauthorized, oldLogin.StatusCode);
         using var newLogin = await LoginAsync(owner, "owner@example.com", "owner-password-2", Guid.NewGuid());

@@ -53,9 +53,10 @@ jobs:
           artifact-name: parallel-world-api.spdx.json
           format: spdx-json
       - name: Scan container
-        uses: aquasecurity/trivy-action@v0.33.1
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: parallel-world-api:security
+          version: v0.74.0
           severity: CRITICAL,HIGH
           ignore-unfixed: false
           exit-code: "1"

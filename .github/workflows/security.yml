@@ -20,7 +20,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 10.0.400
+          dotnet-version: 10.0.402
       - name: Restore backend
         run: dotnet restore backend/ParallelWorld.sln --configfile NuGet.Config
       - name: Audit NuGet dependencies

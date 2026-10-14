@@ -1,4 +1,4 @@
-FROM mcr.microsoft.com/dotnet/sdk:10.0.400-noble AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0.402-noble AS build
 WORKDIR /source
 
 COPY global.json NuGet.Config ./
@@ -28,8 +28,12 @@ RUN ASPNETCORE_ENVIRONMENT=Production \
     --startup-project backend/src/ParallelWorld.Infrastructure/ParallelWorld.Infrastructure.csproj \
     --output /app/migrate
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0.11-noble AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:10.0.13-noble AS runtime
 WORKDIR /app
+
+RUN apt-get update \
+    && apt-get upgrade -y \
+    && rm -rf /var/lib/apt/lists/*
 
 ENV ASPNETCORE_HTTP_PORTS=8080
 EXPOSE 8080

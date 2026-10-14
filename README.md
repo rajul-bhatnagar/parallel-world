@@ -31,7 +31,7 @@ M01 adds buildable backend and Android application shells. M02 adds the producti
 
 ## Pinned toolchain
 
-- .NET SDK 10.0.400 with projects targeting `net10.0`
+- .NET SDK 10.0.402 with projects targeting `net10.0`
 - Flutter 3.47.1 stable with bundled Dart 3.13.1
 - Android API 24 minimum
 - Android is the initial platform; iOS remains deferred
@@ -144,12 +144,12 @@ Stop the containerized services with `docker compose --file infrastructure/docke
 
 ## Backend foundation dependencies
 
-- EF Core 10.0.11 and `Npgsql.EntityFrameworkCore.PostgreSQL` 10.0.3 provide the PostgreSQL model and migration. The API pins `Microsoft.EntityFrameworkCore.Relational` 10.0.11 directly so its runtime graph matches the accepted EF patch level.
-- `Microsoft.EntityFrameworkCore.Design` 10.0.11 and repository-local `dotnet-ef` 10.0.11 provide migration generation and verification.
-- `Microsoft.AspNetCore.Authentication.JwtBearer` 10.0.11 provides allowlisted RS256 access-token validation.
-- `Microsoft.AspNetCore.OpenApi` 10.0.11 provides framework-native OpenAPI generation.
+- EF Core 10.0.13 and `Npgsql.EntityFrameworkCore.PostgreSQL` 10.0.3 provide the PostgreSQL model and migration. The API pins `Microsoft.EntityFrameworkCore.Relational` 10.0.13 directly so its runtime graph matches the accepted EF patch level.
+- `Microsoft.EntityFrameworkCore.Design` 10.0.13 and repository-local `dotnet-ef` 10.0.13 provide migration generation and verification.
+- `Microsoft.AspNetCore.Authentication.JwtBearer` 10.0.13 provides allowlisted RS256 access-token validation.
+- `Microsoft.AspNetCore.OpenApi` 10.0.13 provides framework-native OpenAPI generation.
 - `Serilog.AspNetCore` 10.0.0 provides structured console and request logging; sensitive property names are redacted before sinks.
-- `Microsoft.AspNetCore.Mvc.Testing` 10.0.11 hosts the real API pipeline in integration tests.
+- `Microsoft.AspNetCore.Mvc.Testing` 10.0.13 hosts the real API pipeline in integration tests.
 
 ## Development workflow
 

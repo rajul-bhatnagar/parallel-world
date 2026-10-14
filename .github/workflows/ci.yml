@@ -39,7 +39,7 @@ jobs:
       - name: Set up .NET SDK
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 10.0.400
+          dotnet-version: 10.0.402
 
       - name: Restore
         run: dotnet restore backend/ParallelWorld.sln --configfile NuGet.Config
@@ -91,6 +91,46 @@ jobs:
           channel: stable
           flutter-version: 3.47.1
           cache: true
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: Install required Android NDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          ndk_version="28.2.13676358"
+          android_sdk_root="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+          if [ -z "$android_sdk_root" ]; then
+            echo "ANDROID_SDK_ROOT or ANDROID_HOME is required."
+            exit 1
+          fi
+
+          set +e
+          yes | sdkmanager --licenses > /dev/null
+          license_status=${PIPESTATUS[1]}
+          set -e
+          if [ "$license_status" -ne 0 ]; then
+            echo "Android SDK license acceptance failed."
+            exit "$license_status"
+          fi
+
+          installed=false
+          for attempt in 1 2 3; do
+            rm -rf "$android_sdk_root/ndk/$ndk_version" "$android_sdk_root/.temp"
+            if sdkmanager "ndk;$ndk_version"; then
+              installed=true
+              break
+            fi
+            echo "NDK installation attempt $attempt failed."
+          done
+
+          if [ "$installed" != true ]; then
+            echo "Failed to install ndk;$ndk_version after 3 attempts."
+            exit 1
+          fi
+
+          sdkmanager --list_installed | grep -F "ndk;$ndk_version"
 
       - name: Restore dependencies
         run: flutter pub get

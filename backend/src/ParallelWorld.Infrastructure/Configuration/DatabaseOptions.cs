@@ -8,7 +8,9 @@ public sealed class DatabaseOptions
 
     public string ConnectionString { get; set; } = string.Empty;
 
-    public static bool IsValid(DatabaseOptions options)
+    public int CommandTimeoutSeconds { get; set; } = 30;
+
+    public static bool IsValid(DatabaseOptions options, bool requireTls)
     {
         if (string.IsNullOrWhiteSpace(options.ConnectionString))
         {
@@ -21,7 +23,11 @@ public sealed class DatabaseOptions
 
             return !string.IsNullOrWhiteSpace(builder.Host)
                 && !string.IsNullOrWhiteSpace(builder.Database)
-                && !string.IsNullOrWhiteSpace(builder.Username);
+                && !string.IsNullOrWhiteSpace(builder.Username)
+                && builder.Pooling
+                && builder.MaxPoolSize is > 0 and <= 200
+                && options.CommandTimeoutSeconds is > 0 and <= 120
+                && (!requireTls || builder.SslMode is SslMode.Require or SslMode.VerifyCA or SslMode.VerifyFull);
         }
         catch (ArgumentException)
         {

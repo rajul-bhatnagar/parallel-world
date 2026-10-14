@@ -2,8 +2,10 @@ using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Options;
 using ParallelWorld.AI;
 using ParallelWorld.Api;
+using ParallelWorld.Api.Configuration;
 using ParallelWorld.Api.Endpoints;
 using ParallelWorld.Api.Errors;
 using ParallelWorld.Api.Health;
@@ -14,6 +16,10 @@ using ParallelWorld.Simulation;
 using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.WebHost.ConfigureKestrel(options =>
+    options.Limits.MaxRequestBodySize = builder.Configuration.GetValue(
+        "Deployment:MaxRequestBodyBytes",
+        DeploymentOptions.DefaultMaxRequestBodyBytes));
 
 builder.Host.UseSerilog((context, services, loggerConfiguration) =>
     loggerConfiguration
@@ -26,8 +32,25 @@ builder.Host.UseSerilog((context, services, loggerConfiguration) =>
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddProblemDetails(ProblemDetailsConfiguration.Configure);
 builder.Services.AddOpenApi();
-builder.Services.AddInfrastructure(builder.Configuration);
+var hardenedEnvironment = builder.Environment.IsStaging() || builder.Environment.IsProduction();
+builder.Services
+    .AddOptions<DeploymentOptions>()
+    .Bind(builder.Configuration.GetSection(DeploymentOptions.SectionName))
+    .Validate(options => DeploymentOptions.IsValid(options, hardenedEnvironment),
+        "Deployment configuration must provide bounded request limits and explicit production Host/CORS allowlists.")
+    .ValidateOnStart();
+builder.Services.AddInfrastructure(builder.Configuration, builder.Environment);
 builder.Services.AddAiTextGeneration(builder.Configuration);
+builder.Services.AddCors(options => options.AddPolicy("configured-origins", policy =>
+{
+    var origins = builder.Configuration.GetSection("Deployment:CorsAllowedOrigins").Get<string[]>() ?? [];
+    if (origins.Length > 0)
+    {
+        policy.WithOrigins(origins).AllowAnyHeader().AllowAnyMethod();
+    }
+}));
+builder.Services.Configure<Microsoft.AspNetCore.Builder.ForwardedHeadersOptions>(
+    ProductionForwarding.Configure);
 builder.Services.AddSingleton<IDeterministicRandomProvider, DeterministicRandomProvider>();
 builder.Services.AddSingleton<IWorldTimeProjector, WorldTimeProjector>();
 builder.Services.AddSingleton<IDeterministicTemplateGenerator, DeterministicTemplateGenerator>();
@@ -69,6 +92,40 @@ builder.Services.AddHealthChecks()
 
 var app = builder.Build();
 
+if (hardenedEnvironment)
+{
+    app.UseForwardedHeaders();
+    app.UseHsts();
+    app.UseHttpsRedirection();
+}
+
+app.Use(async (context, next) =>
+{
+    var deployment = context.RequestServices.GetRequiredService<IOptions<DeploymentOptions>>().Value;
+    if (hardenedEnvironment
+        && !deployment.AllowedHosts.Contains(context.Request.Host.Host, StringComparer.OrdinalIgnoreCase))
+    {
+        context.Response.StatusCode = StatusCodes.Status400BadRequest;
+        return;
+    }
+
+    if (context.Request.ContentLength > deployment.MaxRequestBodyBytes)
+    {
+        context.Response.StatusCode = StatusCodes.Status413PayloadTooLarge;
+        return;
+    }
+
+    context.Response.OnStarting(() =>
+    {
+        context.Response.Headers.XContentTypeOptions = "nosniff";
+        context.Response.Headers.XFrameOptions = "DENY";
+        context.Response.Headers["Referrer-Policy"] = "no-referrer";
+        context.Response.Headers["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'none'";
+        return Task.CompletedTask;
+    });
+    await next();
+});
+
 app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseSerilogRequestLogging(options =>
 {
@@ -77,6 +134,7 @@ app.UseSerilogRequestLogging(options =>
 });
 app.UseExceptionHandler();
 app.UseStatusCodePages();
+app.UseCors("configured-origins");
 app.UseAuthentication();
 app.UseRateLimiter();
 app.UseAuthorization();

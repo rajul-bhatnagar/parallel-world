@@ -72,13 +72,41 @@ void main() {
 
     test('release configuration accepts explicit production HTTPS', () {
       final config = AppConfig.fromValues(
-        apiBaseUrl: 'https://api.example.test',
+        apiBaseUrl: 'https://api.parallelworld.app',
         environment: 'production',
         releaseMode: true,
       );
 
       expect(config.environment, 'production');
-      expect(config.apiBaseUrl, 'https://api.example.test');
+      expect(config.apiBaseUrl, 'https://api.parallelworld.app');
+    });
+
+    test('production rejects local, Development, and Staging endpoints', () {
+      for (final endpoint in [
+        'https://localhost:8080',
+        'https://localhost.',
+        'https://127.0.0.1',
+        'https://127.0.0.2',
+        'https://[::1]',
+        'https://api.example.test',
+        'https://api.example.test.',
+        'https://api.example',
+        'https://api.invalid',
+        'https://api.localhost',
+        'https://api-staging.parallelworld.app',
+        'https://staging-api.parallelworld.app',
+        'https://api.stage.parallelworld.app',
+        'https://dev-api.parallelworld.app',
+        'https://api.development.parallelworld.app',
+      ]) {
+        expect(
+          () => AppConfig.fromValues(
+            apiBaseUrl: endpoint,
+            environment: 'production',
+          ),
+          throwsA(isA<AppConfigException>()),
+        );
+      }
     });
 
     test('debug configuration defaults an omitted environment to local', () {

@@ -22,13 +22,15 @@ public sealed class AuthenticationOptions
 
     public string CurrentPrivateKeyPem { get; set; } = string.Empty;
 
+    public string CurrentPrivateKeyFile { get; set; } = string.Empty;
+
     public string CurrentPublicKeyPem { get; set; } = string.Empty;
 
     public string? PreviousKeyId { get; set; }
 
     public string? PreviousPublicKeyPem { get; set; }
 
-    public static bool IsValid(AuthenticationOptions options)
+    public static bool IsValid(AuthenticationOptions options, bool requireSecretFile)
     {
         var hasValidShape = options.Issuer == "parallel-world-api"
         && options.Audience == "parallel-world-mobile"
@@ -38,6 +40,9 @@ public sealed class AuthenticationOptions
         && options.ClockSkewSeconds == 30
         && !string.IsNullOrWhiteSpace(options.CurrentKeyId)
         && !string.IsNullOrWhiteSpace(options.CurrentPrivateKeyPem)
+        && (!requireSecretFile
+            || (Path.IsPathFullyQualified(options.CurrentPrivateKeyFile)
+                && File.Exists(options.CurrentPrivateKeyFile)))
         && !string.IsNullOrWhiteSpace(options.CurrentPublicKeyPem)
         && (string.IsNullOrWhiteSpace(options.PreviousKeyId)
             == string.IsNullOrWhiteSpace(options.PreviousPublicKeyPem));

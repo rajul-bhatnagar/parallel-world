@@ -14,7 +14,7 @@ public sealed record GuestBootstrapCommand(
 public sealed record RefreshSessionCommand(string RefreshToken, string IpAddress);
 
 public sealed record LogoutSessionCommand(Guid UserId, string RefreshToken, string IpAddress);
-public sealed record RegisterAccountCommand(string Email, string Password);
+public sealed record RegisterAccountCommand(string Email, string Password, string IpAddress);
 public sealed record LoginCommand(string Email, string Password, string InstallationId, string Platform, string AppVersion, string IpAddress);
 public sealed record UpgradeGuestCommand(Guid UserId, string Email, string Password, string IdempotencyKey);
 public sealed record RecoverAccountCommand(string Email, string RecoveryCode, string NewPassword, string IpAddress);

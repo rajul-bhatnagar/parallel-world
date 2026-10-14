@@ -25,10 +25,14 @@ public sealed class AuthenticationService(
     private const int InvalidRefreshLimit = 10;
     private const int LogoutLimit = 30;
     private const int LoginLimit = 10;
+    private const int RegistrationLimit = 10;
     private const int RecoveryLimit = 5;
 
     public async Task<AuthenticationResult<RegisteredAccount>> RegisterAsync(RegisterAccountCommand command, CancellationToken cancellationToken)
     {
+        var rate = rateLimiter.Acquire("register", command.IpAddress, RegistrationLimit);
+        if (!rate.IsAllowed) return AuthenticationResult<RegisteredAccount>.Fail(RateLimited(rate));
+
         var now = timeProvider.GetUtcNow();
         var email = command.Email.Trim();
         var normalized = email.ToUpperInvariant();

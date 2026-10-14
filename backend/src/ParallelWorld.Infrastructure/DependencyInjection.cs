@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using ParallelWorld.Application.Abstractions.Persistence;
 using ParallelWorld.Application.AI;
@@ -33,26 +34,54 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddInfrastructure(
         this IServiceCollection services,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        IHostEnvironment environment)
     {
+        var hardenedEnvironment = environment.IsStaging() || environment.IsProduction();
         services
             .AddOptions<DatabaseOptions>()
             .Configure(options =>
+            {
                 options.ConnectionString = configuration.GetConnectionString(
-                    DatabaseOptions.ConnectionStringName) ?? string.Empty)
+                    DatabaseOptions.ConnectionStringName) ?? string.Empty;
+                options.CommandTimeoutSeconds = configuration.GetValue("Database:CommandTimeoutSeconds", 30);
+            })
             .Validate(
-                DatabaseOptions.IsValid,
+                options => DatabaseOptions.IsValid(options, hardenedEnvironment),
                 $"ConnectionStrings:{DatabaseOptions.ConnectionStringName} must be a valid PostgreSQL "
-                    + "connection string containing Host, Database, and Username.")
+                    + "connection string containing Host, Database, Username, bounded pooling, and TLS where required.")
             .ValidateOnStart();
 
         services
             .AddOptions<AuthenticationOptions>()
             .Bind(configuration.GetSection(AuthenticationOptions.SectionName))
+            .PostConfigure(options =>
+            {
+                if (Path.IsPathFullyQualified(options.CurrentPrivateKeyFile)
+                    && File.Exists(options.CurrentPrivateKeyFile))
+                {
+                    try
+                    {
+                        options.CurrentPrivateKeyPem = File.ReadAllText(options.CurrentPrivateKeyFile);
+                    }
+                    catch (IOException)
+                    {
+                        options.CurrentPrivateKeyPem = string.Empty;
+                    }
+                    catch (UnauthorizedAccessException)
+                    {
+                        options.CurrentPrivateKeyPem = string.Empty;
+                    }
+                }
+                else if (hardenedEnvironment)
+                {
+                    options.CurrentPrivateKeyPem = string.Empty;
+                }
+            })
             .Validate(
-                AuthenticationOptions.IsValid,
+                options => AuthenticationOptions.IsValid(options, hardenedEnvironment),
                 "Authentication configuration must provide the accepted issuer, audience, lifetimes, "
-                    + "clock skew, current key ID, and protected RSA PEM key material.")
+                    + "clock skew, current key ID, and protected RSA key material from a secret file where required.")
             .ValidateOnStart();
 
         services.AddDbContext<ParallelWorldDbContext>((serviceProvider, options) =>
@@ -61,7 +90,9 @@ public static class DependencyInjection
                 .GetRequiredService<IOptions<DatabaseOptions>>()
                 .Value;
 
-            options.UseNpgsql(databaseOptions.ConnectionString);
+            options.UseNpgsql(
+                databaseOptions.ConnectionString,
+                npgsql => npgsql.CommandTimeout(databaseOptions.CommandTimeoutSeconds));
         });
         services.AddDataProtection();
 

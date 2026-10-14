@@ -16,7 +16,7 @@ public sealed class ConfigurationTests
                 builder.UseEnvironment("Production");
                 builder.ConfigureAppConfiguration((_, configuration) =>
                     configuration.AddInMemoryCollection(
-                        TestAuthenticationConfiguration.Create(string.Empty)));
+                        TestAuthenticationConfiguration.CreateProduction(string.Empty)));
             });
 
         var exception = Assert.ThrowsAny<Exception>(() => factory.CreateClient());
@@ -36,8 +36,9 @@ public sealed class ConfigurationTests
                 builder.UseEnvironment("Production");
                 builder.ConfigureAppConfiguration((_, configuration) =>
                 {
-                    var values = TestAuthenticationConfiguration.Create(
+                    var values = TestAuthenticationConfiguration.CreateProduction(
                         ApiFactory.UnavailableDatabaseConnectionString);
+                    values["Authentication:CurrentPrivateKeyFile"] = string.Empty;
                     values["Authentication:CurrentPrivateKeyPem"] = string.Empty;
                     configuration.AddInMemoryCollection(values);
                 });

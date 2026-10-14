@@ -114,4 +114,11 @@ jobs:
         run: flutter build apk --debug --dart-define=API_BASE_URL=http://10.0.2.2:8080 --dart-define=APP_ENVIRONMENT=test
 
       - name: Build Android release application
-        run: flutter build apk --release --dart-define=API_BASE_URL=https://api.example.test --dart-define=APP_ENVIRONMENT=production
+        env:
+          PRODUCTION_API_BASE_URL: ${{ secrets.PRODUCTION_API_BASE_URL }}
+        run: |
+          if [ -z "$PRODUCTION_API_BASE_URL" ]; then
+            echo "PRODUCTION_API_BASE_URL is required for the Production release build."
+            exit 1
+          fi
+          flutter build apk --release --dart-define=API_BASE_URL="$PRODUCTION_API_BASE_URL" --dart-define=APP_ENVIRONMENT=production

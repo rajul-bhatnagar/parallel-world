@@ -1,6 +1,6 @@
-using System.Text.Json.Serialization;
 using System.Globalization;
 using System.Security.Claims;
+using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.WebUtilities;
 using ParallelWorld.Application.Authentication;
 
@@ -29,7 +29,7 @@ public static class AuthenticationEndpoints
     private static async Task<IResult> RegisterAsync(RegisterRequest request, HttpContext context, IAuthenticationService service, CancellationToken ct)
     {
         var errors = ValidateCredentials(request.Email, request.Password); if (errors.Count > 0) return EndpointResults.Validation(context, errors);
-        var result = await service.RegisterAsync(new(request.Email, request.Password), ct);
+        var result = await service.RegisterAsync(new(request.Email, request.Password, GetIpAddress(context)), ct);
         return result.IsSuccess ? Results.Json(AccountResponse(result.Value!), statusCode: 201) : EndpointResults.Failure(context, result.Failure!);
     }
 

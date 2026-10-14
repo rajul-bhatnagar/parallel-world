@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 
 class AppConfig {
@@ -79,6 +81,13 @@ class AppConfig {
         'API_BASE_URL must use HTTPS in production.',
       );
     }
+    if ((releaseMode || normalizedEnvironment == 'production') &&
+        _isNonProductionHost(uri.host)) {
+      throw const AppConfigException(
+        'API_BASE_URL must not use a local, Development, or '
+        'Staging host in production.',
+      );
+    }
     if (uri.hasQuery || uri.hasFragment) {
       throw const AppConfigException(
         'API_BASE_URL must not contain a query or fragment.',
@@ -124,6 +133,31 @@ class AppConfig {
   static bool _isValidTimeout(int milliseconds) =>
       milliseconds >= minimumTimeoutMilliseconds &&
       milliseconds <= maximumTimeoutMilliseconds;
+
+  static bool _isNonProductionHost(String host) {
+    final lowerCaseHost = host.toLowerCase();
+    final normalized = lowerCaseHost.endsWith('.')
+        ? lowerCaseHost.substring(0, lowerCaseHost.length - 1)
+        : lowerCaseHost;
+    final address = InternetAddress.tryParse(normalized);
+    final labels = normalized.split('.');
+    const reservedTopLevelDomains = {
+      'test',
+      'example',
+      'invalid',
+      'localhost',
+    };
+    const nonProductionLabels = {'dev', 'development', 'stage', 'staging'};
+    return normalized == 'localhost' ||
+        normalized.endsWith('.localhost') ||
+        (address?.isLoopback ?? false) ||
+        (labels.isNotEmpty && reservedTopLevelDomains.contains(labels.last)) ||
+        labels.any(
+          (label) => label
+              .split('-')
+              .any((part) => nonProductionLabels.contains(part)),
+        );
+  }
 }
 
 class AppConfigException implements Exception {

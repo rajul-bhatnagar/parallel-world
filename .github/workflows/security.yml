@@ -1,0 +1,61 @@
+name: Security and supply chain
+
+on:
+  push:
+    branches: [dev, main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.400
+      - name: Restore backend
+        run: dotnet restore backend/ParallelWorld.sln --configfile NuGet.Config
+      - name: Audit NuGet dependencies
+        run: dotnet list backend/ParallelWorld.sln package --vulnerable --include-transitive
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.1
+          cache: true
+      - name: Check Flutter dependency health
+        working-directory: mobile/parallel_world_app
+        run: |
+          flutter pub get
+          dart pub outdated --no-dev-dependencies
+      - name: Scan repository secrets
+        uses: gitleaks/gitleaks-action@v2
+      - name: Run Semgrep SAST
+        run: >-
+          docker run --rm
+          --volume "${{ github.workspace }}:/src"
+          --workdir /src
+          semgrep/semgrep:1.141.0
+          semgrep scan --error --config p/csharp --config p/security-audit backend/src
+      - name: Build backend container
+        run: docker build --file backend/src/ParallelWorld.Api/Dockerfile --tag parallel-world-api:security .
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          image: parallel-world-api:security
+          artifact-name: parallel-world-api.spdx.json
+          format: spdx-json
+      - name: Scan container
+        uses: aquasecurity/trivy-action@0.33.1
+        with:
+          image-ref: parallel-world-api:security
+          severity: CRITICAL,HIGH
+          ignore-unfixed: false
+          exit-code: "1"

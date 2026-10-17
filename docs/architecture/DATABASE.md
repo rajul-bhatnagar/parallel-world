@@ -51,6 +51,10 @@ Join tables include `WorldId` in their primary/unique key and in every participa
 ```mermaid
 erDiagram
     USERS ||--o{ GAME_WORLDS : owns
+    USERS ||--o{ DEVICE_INSTALLATIONS : registers
+    USERS ||--o{ GUEST_BOOTSTRAP_OPERATIONS : bootstraps
+    DEVICE_INSTALLATIONS ||--o{ REFRESH_TOKENS : scopes
+    DEVICE_INSTALLATIONS ||--o{ GUEST_BOOTSTRAP_OPERATIONS : binds
     GAME_WORLDS ||--|| WORLD_SETTINGS : configures
     GAME_WORLDS ||--|| SIMULATION_STATES : advances
     GAME_WORLDS ||--o{ ACTORS : contains
@@ -75,36 +79,67 @@ These records are account-level and therefore do not carry `WorldId`.
 
 - `Id`
 - `AccountType`: Guest or Registered
-- `Email` nullable until registration
-- `NormalizedEmail` nullable
-- `PasswordHash` nullable for external-only authentication
+- `Email` nullable until registration; trimmed display form, maximum 320 characters
+- `NormalizedEmail` nullable; invariant-uppercase of the trimmed email with no provider-specific rewriting
+- `PasswordHash` nullable only for Guest accounts in M17; Registered accounts require a framework-generated hash
 - `Status`
 - `CreatedAt`, `UpdatedAt`, `Version`
 
 Indexes and constraints:
 
-- Partial unique index on `NormalizedEmail WHERE NormalizedEmail IS NOT NULL`.
-- Account type/credential consistency is validated by the Accounts use case; future external identities remain deferred.
+- Partial unique index on `NormalizedEmail WHERE NormalizedEmail IS NOT NULL` prevents concurrent duplicate registration.
+- Accounts locks/rechecks upgrade state and enforces `Guest => credential fields null` and `Registered => Email, NormalizedEmail, PasswordHash non-null`. No verification-state column is added in M17.
+
+### AccountRecoveryCodes
+
+- `Id`, `UserId`, `CodeHash`, `CreatedAt`, `ConsumedAt`, `RevokedAt`, `Version`
+- The plaintext is an unpadded base64url encoding of 256 CSPRNG bits and is never persisted. `CodeHash` is produced and verified through the approved ASP.NET Core framework hasher.
+- Partial unique index on `UserId WHERE ConsumedAt IS NULL AND RevokedAt IS NULL` enforces one active code per registered User.
+- Index `(UserId, CreatedAt DESC)` supports locked lookup and audit without exposing the code.
+- FK to Users; account deletion behavior follows the owning User policy. A code may be consumed once by successful recovery or revoked by regeneration. Failed attempts do not mutate it.
+- Successful recovery consumes the old row, creates the replacement row, changes the password hash, and revokes all refresh families in one transaction. Regeneration revokes the active row and inserts its replacement in one transaction.
 
 ### DeviceInstallations
 
-- `Id`, `UserId`, `InstallationPublicId`, `Platform`, `LastSeenAt`, `CreatedAt`, `RevokedAt`
+- `Id`, `UserId`, `InstallationPublicId`, `Platform`, `AppVersion`, `LastSeenAt`, `CreatedAt`, `RevokedAt`
 - Unique `InstallationPublicId`.
+- Unique `(UserId, Id)` supports composite same-user references from session/bootstrap records.
 - Index `(UserId, LastSeenAt DESC)`.
 - FK to Users uses `ON DELETE CASCADE` only during an explicitly authorized hard account deletion.
+- `InstallationPublicId` is metadata only, never an authentication, recovery, or rotation credential. Authentication requires valid token/session state resolved server-side.
+
+### GuestBootstrapOperations
+
+- `Id`, `ProofHash`, `UserId`, `DeviceInstallationId`, `RefreshTokenFamilyId`, `CreatedAt`, `ExpiresAt`, `CompletedAt`, `RecoveryConsumedAt`
+- Unique `ProofHash`; the raw `GuestBootstrapProof` is never persisted.
+- FKs bind the operation to its User and DeviceInstallation. The referenced installation must belong to the same User.
+- `RefreshTokenFamilyId` identifies the initial device/session family created by the bootstrap and is immutable after completion.
+- `CompletedAt` is set only after the first bootstrap transaction has created the full M03 identity/world/session result. `ExpiresAt` is exactly 10 minutes after `CompletedAt`.
+- A valid proof retry within that window may atomically set `RecoveryConsumedAt` once, invalidate the previously active initial-family credential as needed, and issue a new credential pair in the same family/session lineage. It resolves the existing User/world and never creates another identity, world, player, or family.
+- Conditional update/locking on `RecoveryConsumedAt` ensures concurrent recovery attempts have at most one success. Expired or consumed operations cannot recover credentials.
+- The proof record is bootstrap-only operational/audit state. It cannot authenticate normal requests, rotate refresh tokens, or authorize ownership. Exact hash-retention duration after its recovery need remains a later policy decision.
 
 ### RefreshTokens
 
-- `Id`, `UserId`, `DeviceInstallationId`, `TokenHash`, `RotationFamilyId`, `ExpiresAt`, `RevokedAt`, `ReplacedByTokenId`, `CreatedAt`
+- `Id`, `UserId`, `DeviceInstallationId`, `TokenHash`, `RotationFamilyId`, `ExpiresAt`, `ConsumedAt`, `RevokedAt`, `ReplacedByTokenId`, `CreatedAt`
 - Unique `TokenHash`.
-- Index `(UserId, DeviceInstallationId, ExpiresAt)` and `(RotationFamilyId)`.
-- Store hashes only; never persist plaintext tokens.
+- Index `(UserId, DeviceInstallationId, ExpiresAt)` and `(RotationFamilyId, ExpiresAt)`; family/oldest-active queries must be covered by an implementation-verified index.
+- `ReplacedByTokenId` is a self-reference to the successor created by successful rotation. Family membership and device association are non-null and immutable after issuance.
+- Store only a secure cryptographic hash of the opaque token; never persist plaintext tokens. The raw value has at least 256 bits of entropy and exists server-side only transiently for one-time issuance/rotation.
+- M03 issues tokens with `ExpiresAt` exactly 30 days after `CreatedAt`. `ExpiresAt > CreatedAt` is database constrained; the exact lifetime is also an application/configuration test.
+- Successful rotation atomically sets `ConsumedAt` and `ReplacedByTokenId` and inserts the successor in the same family. A token with `ConsumedAt`, `RevokedAt`, or elapsed `ExpiresAt` cannot mint an access token.
+- Replay of a consumed/replaced token transactionally revokes every still-active token in that family while preserving unrelated families. Timestamps, replacement links, family ID, user ID, and device ID provide replay audit context without raw token material.
+- Refresh rotation is non-idempotent: a successful request returns newly generated credentials once. No reversible credential response or generic idempotency result is persisted. Re-presenting a consumed token, including after a lost success response, follows family-replay containment and never returns the prior response or another token.
+- Accounts enforces at most five active families per user. Creating a sixth locks/rechecks the user's active families and revokes the oldest before activating the new family. Current logout revokes one family; all-device revocation marks every active family for the user revoked.
+- Access JWTs and an access-token denylist are not persisted for MVP.
 
 ## 4. Worlds and ownership
 
 ### GameWorlds
 
-- `Id`, `OwnerUserId`, `Name`, `CurrentWorldTime`, `LastSimulatedAt`, `Status`, `CreatedAt`, `UpdatedAt`, `Version`
+- `Id`, `OwnerUserId`, `Name`, `Seed`, `CurrentWorldTime`, `LastSimulatedAt`, `Status`, `CreatedAt`, `UpdatedAt`, `Version`
+- `CurrentWorldTime` is the accumulated UTC in-world clock. It initializes to `CreatedAt` and advances only by the exact scaled delta of a committed simulation interval; it never jumps to request or processing time.
+- The existing non-null `LastSimulatedAt` initializes to `CreatedAt` for compatibility. While `WorldSimulationState.LastCompletedIntervalEnd` is null, that bootstrap value does not claim a completed interval. After every committed interval it equals the authoritative `LastCompletedIntervalEnd` and is never an independent chronology source.
 - FK `OwnerUserId -> Users.Id ON DELETE RESTRICT`.
 - Alternate key `UNIQUE (OwnerUserId, Id)` supports database-enforced owner/world references.
 - Index `(OwnerUserId, CreatedAt DESC, Id DESC)`.
@@ -114,7 +149,11 @@ MVP one-world exposure is enforced by the application/idempotent creation use ca
 
 ### WorldSettings
 
-- `Id`, `WorldId`, `TimeScale`, action-limit values, AI budget settings, content settings, `RuleVersion`, `CreatedAt`, `UpdatedAt`, `Version`
+- `Id`, `WorldId`, `TimeScale`, `DisplayTimeZoneId`, `RomanceEnabled`, action-limit values, AI budget settings, content settings, `RuleVersion`, `CreatedAt`, `UpdatedAt`, `Version`
+- `TimeScale` is C# `decimal` and PostgreSQL `numeric(8,4)`, defaults to `1.0000`, and must be in the representable positive persisted range `0.0001` through `9999.9999`. It scales accumulated in-world time only; it does not alter canonical UTC interval duration or eligibility.
+- `DisplayTimeZoneId` maps to required column `display_time_zone_id`, stores an IANA timezone identifier, and defaults to `UTC` for new worlds. The M08 migration backfills every existing row to `UTC` before enforcing non-nullability.
+- `RomanceEnabled` is non-null and defaults/backfills to `true` for M13. It is authoritative world configuration, not a client-supplied invitation input.
+- Application validation requires a supported IANA timezone identifier. An explicitly supplied invalid non-empty value is rejected through the standard validation contract and is never silently replaced with `UTC`. Windows timezone IDs are not persisted domain values.
 - Unique `WorldId`.
 - FK `WorldId -> GameWorlds.Id ON DELETE RESTRICT`.
 - Checks require positive time scale and non-negative limits/budgets.
@@ -125,7 +164,10 @@ MVP one-world exposure is enforced by the application/idempotent creation use ca
 - Unique `WorldId`.
 - PostgreSQL table `world_simulation_states`; conceptual C# entity `WorldSimulationState`.
 - FK `WorldId -> GameWorlds.Id ON DELETE RESTRICT`.
-- The row is locked briefly when claiming an interval; a run must start exactly at the persisted cursor.
+- A never-simulated world's authoritative cursor begins at `GameWorld.CreatedAtUtc`; `LastCompletedIntervalEnd` remains null and `NextDueAt` is `CreatedAtUtc + 15 minutes`. The M08 migration normalizes existing never-simulated rows whose earlier initialization used `NextDueAt = CreatedAtUtc`.
+- After `[S,E)` commits, `LastCompletedIntervalEnd=E` and `NextDueAt=E+15 minutes`. `NextDueAt` is a scheduling projection; cursor-derived chronology is authoritative, and a mismatch fails safely rather than deriving a different interval from request time.
+- The row is locked briefly when claiming an interval; a run must start exactly at the authoritative cursor.
+- The same interval transaction sets `GameWorld.LastSimulatedAt=E` and advances `GameWorld.CurrentWorldTime` by the run's exact scaled delta. Rollback leaves both GameWorld fields and both WorldSimulationState cursor fields unchanged.
 
 ## 5. Actors, player profile, and characters
 
@@ -146,16 +188,19 @@ Constraints:
 
 ### PlayerProfiles
 
-- `Id`, `WorldId`, `DisplayName`, `Handle`, `Bio`, `Reputation`, `Influence`, `FollowersCount`, `CreatedAt`, `UpdatedAt`, `Version`
+- `Id`, `WorldId`, `DisplayName`, `Handle`, `Bio`, `RomancePreferenceMode`, `Reputation`, `Influence`, `FollowersCount`, `CreatedAt`, `UpdatedAt`, `Version`
 - Unique `WorldId` and unique `(WorldId, Id)`.
 - Unique `(WorldId, Handle)`.
 - Checks for bounded scores and non-negative cached count.
+- `RomancePreferenceMode` permits only `Disabled` and `AnyEligibleActor`, defaults/backfills to `AnyEligibleActor`, and is never overridden per invitation.
 
 ### Characters
 
-- `Id`, `WorldId`, `DisplayName`, `Handle`, `Bio`, `Age`, `Profession`, `Archetype`, `WritingStyle`, `ActivityLevel`, `Influence`, `Popularity`, `CurrentMoodType`, `Status`, `CreatedAt`, `UpdatedAt`, `Version`
+- `Id`, `WorldId`, `DisplayName`, `Handle`, `Bio`, `Age`, `Profession`, `Archetype`, `WritingStyle`, `RomancePreferenceMode`, `ActivityLevel`, `Influence`, `Popularity`, `Reputation`, `CurrentMoodType`, `Status`, `CreatedAt`, `UpdatedAt`, `Version`
 - Unique `(WorldId, Id)` and `(WorldId, Handle)`.
-- Checks for non-negative age and bounded activity/influence/popularity.
+- Checks for non-negative age and bounded activity/influence/popularity/reputation.
+- `Reputation` is non-null, constrained from 0 through 100, and defaults/backfills to 50. It is independent from PlayerProfile Reputation. M10 adds no reputation-history table or progression rule.
+- `RomancePreferenceMode` has the same two-value constraint and `AnyEligibleActor` default as PlayerProfile. Character `RomanticOpenness` remains a separate persisted 0-100 trait used only after the mode gate passes.
 - Index `(WorldId, Status, Id)` for catalogue/simulation eligibility.
 
 Actor creation and its PlayerProfile/Character detail are one transaction. Because ordinary FKs cannot assert a referenced actor discriminator without triggers, the application validates discriminator/detail consistency and integration tests prove it; the database checks null-shape, uniqueness, and same-world identity.
@@ -190,7 +235,7 @@ This is an auditable source anchor, not event sourcing and not the primary repre
 - Checks for bounded importance/emotional impact and distinct actor/target.
 - Index `(WorldId, OccurredAt DESC, Id DESC)` and `(WorldId, EventType, OccurredAt DESC)`.
 
-Posts, messages, relationship events, memories, promises, secrets, notifications, and simulation effects reference a `GameplayEventId` where they require a source. This replaces unenforceable `SourceType/SourceId` polymorphic references. Current state remains in its feature tables.
+Posts, messages, relationship events, memories, promises, secrets, and simulation effects reference a `GameplayEventId` where they require an event source. This avoids unenforceable generic polymorphic references for those mechanics. Notifications are the narrow ADR-032 exception: they retain typed canonical `SourceType`/`SourceId` because CatchUpSummary is itself authoritative without a GameplayEvent, while GameplayEvent-backed notification types still require a same-world `GameplayEventId`. Current state remains in its feature tables.
 
 ## 7. Social feed
 
@@ -205,7 +250,7 @@ Indexes:
 
 - Feed cursor: `(WorldId, CreatedAt DESC, Id DESC) WHERE DeletedAt IS NULL`.
 - Author history: `(WorldId, AuthorActorId, CreatedAt DESC, Id DESC) WHERE DeletedAt IS NULL`.
-- Reply cursor: `(WorldId, ParentPostId, CreatedAt ASC, Id ASC) WHERE ParentPostId IS NOT NULL AND DeletedAt IS NULL`.
+- Direct-child reply cursor: `(WorldId, ParentPostId, CreatedAt ASC, Id ASC) WHERE ParentPostId IS NOT NULL AND DeletedAt IS NULL`. Each query is scoped to one parent post/reply; no recursive or flattened thread query is part of M07.
 - Quote lookup: `(WorldId, QuotePostId) WHERE QuotePostId IS NOT NULL`.
 
 ### PostReactions
@@ -262,10 +307,10 @@ Conversation participation and sender membership are verified in the transaction
 
 ### Relationships
 
-Directional current values only:
+Directional current values only. Rows are created lazily on the first approved need for one source-to-target direction; existing or new worlds do not pre-create an uncontrolled actor-pair matrix. Concurrent creation relies on the directional unique constraint and transaction retry/reload semantics.
 
 - `Id`, `WorldId`, `SourceActorId`, `TargetActorId`
-- `Familiarity`, `Trust`, `Respect`, `Affection`, `Attraction`, `Comfort`, `Rivalry`, `Jealousy`, `Commitment`
+- Exactly nine 0-100 dimensions: `Familiarity`, `Trust`, `Respect`, `Affection`, `Comfort`, `Rivalry`, `Jealousy`, `Attraction`, `Commitment`
 - `UpdatedAt`, `Version`
 
 Constraints and indexes:
@@ -275,16 +320,30 @@ Constraints and indexes:
 - Check source differs from target and every value is 0-100.
 - Index `(WorldId, TargetActorId)` for reverse lookups.
 - No `RomanticStatus` column is permitted here.
+- No composite or hidden tenth relationship score is persisted. `RelationshipRelevance` and `InterestOverlap` are deterministic derived inputs defined by ADR-025, not stored relationship dimensions.
 
 ### RomanticRelationships
 
 One shared pair-level current status:
 
-- `Id`, `WorldId`, `ActorAId`, `ActorBId`, `Status`, `StatusSince`, `InvitationExpiresAt` nullable, `UpdatedAt`, `Version`
+- `Id`, `WorldId`, `ActorAId`, `ActorBId`, `Status`, `StatusSinceWorldTime`, `UpdatedAtUtc`, `Version`
 - Canonical pair check `ActorAId < ActorBId` and distinct-actor check.
 - Unique `(WorldId, ActorAId, ActorBId)`.
 - Composite FKs to both Actors.
 - State values/transitions must match GAME_RULES.md; deferred states remain disabled by rule version.
+- Current M13 status is shared pair state and never copied into directional Relationship rows. Before any invitation or Dating transition, the transaction locks both participating Actor rows in ascending Actor ID, then rechecks all active romantic rows involving either Actor. Canonical-pair uniqueness prevents duplicate pair state; the ordered Actor locks serialize competing pairs and make the one-Dating-per-Actor check concurrency-safe.
+
+### RomanticInvitations
+
+Immutable invitation decision plus one terminal outcome:
+
+- `Id`, `WorldId`, `RomanticRelationshipId`, `InitiatorActorId`, `TargetActorId`, `DateType`, `Status`, `InitiationScore`, `AcceptanceScore` nullable, `SeededOffset` nullable, `ReasonCode`, `CreatedAtUtc`, `CreatedAtWorldTime`, `ExpiresAtWorldTime`, `ResolvedAtUtc` nullable, `ResolvedAtWorldTime` nullable, `RuleVersion`, `IdempotencyKey`, `Version`
+- Status permits `Pending`, `Accepted`, `Rejected`, and `Expired`; `DateType` is exactly `CasualDate` in M13 v1.
+- Unique `(WorldId, IdempotencyKey)` and one invitation identity per authoritative operation. A partial unique index prevents multiple unresolved invitations for the same canonical pair. The same ascending Actor-row locks and post-lock recheck prevent either Actor from participating in a different unresolved invitation concurrently.
+- Composite FKs target the canonical RomanticRelationship and both Actors in the same world. Initiator and target must be distinct and must equal the canonical pair members.
+- `ExpiresAtWorldTime = CreatedAtWorldTime + 24 hours`. UTC timestamps are audit fields and never decide expiry.
+- Scores, deterministic offset, reason, and outcome are server-authored. Player-target outcomes accept only the explicit Player choice; Character-target outcomes persist ROM-02 components before wording.
+- Index `(WorldId, Status, ExpiresAtWorldTime)` supports deterministic expiry processing; pair history uses `(WorldId, RomanticRelationshipId, CreatedAtWorldTime DESC, Id DESC)`.
 
 ### RelationshipEvents
 
@@ -293,6 +352,7 @@ One shared pair-level current status:
 - Composite FKs to Actors and GameplayEvents.
 - Delta checks enforce the GAME_RULES.md ordinary/severe maximum range; application validates event-specific cap.
 - Cursor index `(WorldId, SourceActorId, TargetActorId, OccurredAt DESC, Id DESC)`.
+- Natural-language content and AI generation records are never relationship-event provenance. M10 v1 applies REL-01 only for authoritative mappings with approved base rows. Initial Follow, Like, Unlike, and generic Reply intentionally create no relationship delta and no zero-delta RelationshipEvent; Unfollow and Re-follow use their existing rows, while Helpful reply requires a separate authoritative classification.
 
 ### RelationshipDailyChangeLedgers
 
@@ -303,10 +363,11 @@ One shared pair-level current status:
 
 ### RomanticStatusHistory
 
-- `Id`, `WorldId`, `RomanticRelationshipId`, `FromStatus`, `ToStatus`, `GameplayEventId`, `InitiatorActorId` nullable, `ReasonCode`, `OccurredAt`, `RuleVersion`, `IdempotencyKey`
+- `Id`, `WorldId`, `RomanticRelationshipId`, `EpisodeId`, `RomanticInvitationId` nullable, `FromStatus`, `ToStatus`, `GameplayEventId`, `InitiatorActorId` nullable, `ReasonCode`, `OccurredAtUtc`, `OccurredAtWorldTime`, `RuleVersion`, `IdempotencyKey`
 - Unique `(WorldId, IdempotencyKey)`.
-- Composite FKs to RomanticRelationships, GameplayEvents, and optional initiator Actor.
-- Cursor index `(WorldId, RomanticRelationshipId, OccurredAt DESC, Id DESC)`.
+- Composite FKs to RomanticRelationships, optional RomanticInvitation, GameplayEvents, and optional initiator Actor.
+- Cursor index `(WorldId, RomanticRelationshipId, OccurredAtWorldTime DESC, Id DESC)`; UTC audit time remains available separately.
+- Rows are append-only. `EpisodeId` is stable across the start and any future end transitions for one Dating episode; a future re-dating start uses a new episode identity. M13 records invitation, acceptance/rejection/expiry, and Dating start only; it does not activate breakup/end/re-entry. Persistence tests may seed future-shaped ended/re-dated episodes solely to prove earlier episode rows are preserved.
 
 RelationshipEvents and RomanticStatusHistory record different facts and do not duplicate shared status on directional rows.
 
@@ -314,46 +375,58 @@ RelationshipEvents and RomanticStatusHistory record different facts and do not d
 
 ### CharacterMemories
 
-- `Id`, `WorldId`, `CharacterId`, `SubjectActorId` nullable, `GameplayEventId`, `MemoryType`, `Summary`, `Importance`, `EmotionalValue`, `Confidence`, `CreatedAt`, `LastRecalledAt` nullable, `ExpiresAt` nullable, `RecallCount`, `Version`
-- Composite FKs to Character, subject Actor, and GameplayEvent.
-- No generic SourceType/SourceId.
-- Checks: Importance/Confidence 0-100, EmotionalValue -100..100, RecallCount non-negative.
+- `Id`, `WorldId`, `OwnerCharacterId`, `MemoryType`, `SubjectType`, nullable typed subject references such as `SubjectActorId` or `SubjectTopicId`, `TopicId` nullable, `Confidence`, `Importance`, `Visibility`, `LifecycleStatus`, `CreatedAtUtc`, `SourceType`, typed source reference, `SourceId`, `Version`
+- MemoryType permits exactly Fact, Preference, Event, Secret, and Promise. Visibility is CharacterPrivate in M12 v1.
+- Composite FKs constrain the owner Character, any Actor/Topic subject, canonical Topic, and each supported authoritative source to the same world. M12 creates only subject/source kinds with a typed enforceable reference; unchecked arbitrary identifiers are not accepted.
+- Exactly one authoritative subject reference and one supported typed source reference are required. Topic is nullable and never stores an arbitrary generated string.
+- Checks bound Importance/Confidence to 0-100 and enforce the type-specific M12 defaults. Ordinary memories have no automatic expiry field/transition.
 
 Indexes:
 
-- Recall candidates `(WorldId, CharacterId, SubjectActorId, Importance DESC, CreatedAt DESC, Id DESC)`.
-- Expiry `(WorldId, CharacterId, ExpiresAt) WHERE ExpiresAt IS NOT NULL`.
-- Source uniqueness `(WorldId, CharacterId, GameplayEventId, MemoryType)` prevents duplicate creation from retries.
+- Recall candidates `(WorldId, OwnerCharacterId, LifecycleStatus, CreatedAtUtc DESC, Id DESC)` with subject/topic support.
+- Source uniqueness `(WorldId, OwnerCharacterId, SourceType, SourceId, MemoryType)` prevents duplicate creation from retries and causes replay to reuse the existing row.
+- The transactional retention path locks/serializes capacity decisions for one owner Character and bounds active memories to 100. Non-protected eviction order is Importance ASC, CreatedAtUtc ASC, Id ASC. Active Secret and Promise memories are protected. At a protected-only full cap, record/reuse the provenance-keyed rejected creation outcome `memory_capacity_protected`, create no memory, mutate no protected row, and leave the source event/message transaction successful.
+
+### MemoryCreationOutcomes
+
+- `Id`, `WorldId`, `OwnerCharacterId`, `SourceType`, `SourceId`, `MemoryType`, `Outcome`, `ReasonCode` nullable, `MemoryId` nullable, `CreatedAtUtc`
+- Unique `(WorldId, OwnerCharacterId, SourceType, SourceId, MemoryType)` is the idempotency/provenance identity for both created and rejected outcomes.
+- A protected-only rejection stores `Outcome=Rejected`, `ReasonCode=memory_capacity_protected`, and no MemoryId. Replay/concurrent duplicate attempts return this outcome even if later capacity differs.
+- Created outcomes reference the same-world CharacterMemory. Checks require exactly the fields appropriate to Created versus Rejected. The outcome record contains no source body or AI/provider content.
 
 ### Secrets and SecretKnowers
 
-`Secrets` contains `Id`, `WorldId`, `OwnerActorId`, optional `SubjectActorId`, `GameplayEventId`, structured description, `Confidentiality`, `Status`, timestamps, and Version. It uses composite actor/event FKs and a 0-100 confidentiality check.
+`Secrets` contains `Id`, `WorldId`, typed authoritative source/provenance, structured subject, status, timestamps, and Version. It uses same-world composite FKs. M12 v1 permits only Active; Removed/Invalidated is reserved until an explicit authoritative action is approved. There is no disclosure-pressure, leakage, or spontaneous disclosure state.
 
-`SecretKnowers` contains `WorldId`, `SecretId`, `ActorId`, `LearnedFromGameplayEventId`, `LearnedAt`, `DisclosurePromiseId` nullable, and status. Primary key `(WorldId, SecretId, ActorId)` plus composite FKs prevents cross-world knowledge. Index `(WorldId, ActorId, Status)` supports access-filtered recall.
+`SecretKnowers` contains `WorldId`, `SecretId`, `CharacterId`, authoritative learned-from source, `LearnedAtUtc`, and status. Primary key `(WorldId, SecretId, CharacterId)` plus composite FKs prevents cross-world knowledge. Each active knower has its own CharacterPrivate Secret memory, and only that Character's recall can select it.
 
 ### Promises
 
-- `Id`, `WorldId`, `CreatorActorId`, `RecipientActorId`, `CreatedGameplayEventId`, `ResolvedGameplayEventId` nullable, structured description, `DueAt` nullable, `DueCondition` nullable, `Status`, `Importance`, timestamps, `IdempotencyKey`, `Version`
-- Composite actor/event FKs; creator differs from recipient.
+- `Id`, `WorldId`, `PromiseType`, `SourceActorId`, `TargetActorId` nullable, authoritative created-source reference, authoritative resolved/cancelled-source reference nullable, exactly one supported due-condition form (`DueAtWorldTime` or structured authoritative event ID/type trigger), `Status`, timestamps, `IdempotencyKey`, `Version`
+- Composite actor/source/event FKs keep every reference in the same world.
 - Unique `(WorldId, IdempotencyKey)`.
-- Status check permits Active, Kept, Broken, Cancelled and forbids mutation from terminal states in application/domain rules.
-- Index `(WorldId, Status, DueAt) WHERE Status = 'Active'`.
+- Status check permits Active, Fulfilled, Cancelled, and Expired and forbids mutation from terminal states in application/domain rules. Fulfilled requires a matching authoritative gameplay event; Cancelled requires an explicit authoritative cancellation source; Expired requires an exact due timestamp/date.
+- Index `(WorldId, Status, DueAtWorldTime) WHERE Status = 'Active'`.
 
 ### MemoryRecallRequests and MemoryRecallSelections
 
-`MemoryRecallRequests` stores `Id`, `WorldId`, `CharacterId`, optional `SimulationActionId`, purpose/topic/subject, `CreatedAt`, `IdempotencyKey`. `MemoryRecallSelections` stores `WorldId`, `RequestId`, `MemoryId`, `Rank`, `Score`, and `UsedAt` nullable. Composite keys/FKs enforce same-world selection; unique `(WorldId, RequestId, MemoryId)` and `(WorldId, RequestId, Rank)` prevent duplicates. Recall input/selection can be audited without storing full AI prompts.
+`MemoryRecallRequests` stores `Id`, `WorldId`, `CharacterId`, optional `SimulationActionId`, purpose, authoritative subject reference, optional canonical `TopicId`, `CreatedAtUtc`, and `IdempotencyKey`. `MemoryRecallSelections` stores `WorldId`, `RequestId`, `MemoryId`, `Rank`, exact decimal `Score`, and `UsedAtUtc` nullable. Composite keys/FKs enforce same-world owner-only selection; unique `(WorldId, RequestId, MemoryId)` and `(WorldId, RequestId, Rank)` prevent duplicates. Recall input/selection can be audited without storing full AI prompts. There are no embedding/vector columns or semantic-search indexes in M12 v1.
 
 ## 11. Simulation, idempotency, AI work, and durable jobs
 
 ### SimulationRuns
 
-- `Id`, `WorldId`, `RunType` (`ActiveTick` or `CatchUp`), `IntervalStart`, `IntervalEnd`, `ProcessedThrough`, `Seed`, `RuleVersion`, `Status` (`Pending`, `Running`, `Partial`, `Completed`, `FailedRetryable`, `FailedTerminal`), `StartedAt`, `CompletedAt` nullable, `IdempotencyKey`, safe `ErrorCode` nullable, `Version`
+- `Id`, `WorldId`, `RunType` (`ActiveTick` or `CatchUp`), `IntervalStart`, `IntervalEnd`, `ProcessedThrough`, `EffectiveTimeScale` (`numeric(8,4)`), `Seed`, `RuleVersion`, `Status` (`Pending`, `Running`, `Partial`, `Completed`, `FailedRetryable`, `FailedTerminal`), `StartedAt`, `CompletedAt` nullable, `IdempotencyKey`, safe `ErrorCode` nullable, `Version`
 - Unique `(WorldId, Id)` and `(WorldId, IdempotencyKey)`.
 - Unique `(WorldId, RuleVersion, IntervalStart, IntervalEnd)`.
 - Check interval end > start.
+- Check `EffectiveTimeScale > 0`; it is copied from the world setting when the interval is claimed and remains the reproducible scale for that run.
+- For `RunType = ActiveTick`, M08 application validation and PostgreSQL constraints require `IntervalEnd = IntervalStart + 15 minutes`.
 - Index `(WorldId, Status, IntervalStart)` and `(WorldId, CompletedAt DESC)`.
 
-Catch-up reuses `SimulationRuns`; `RunType = CatchUp` identifies it without redundant run infrastructure. `IntervalStart`/`IntervalEnd` are the requested processed interval, `ProcessedThrough` is the last committed checkpoint boundary, and `IntervalEnd - ProcessedThrough` is the remaining interval. A Partial or FailedRetryable run resumes from `ProcessedThrough` with the same seed, rule version, and run identity. Overlap prevention does not rely on the caller's idempotency key: the run transaction locks the world's WorldSimulationState row, requires `IntervalStart = LastCompletedIntervalEnd`, rejects an existing Running interval, inserts the exact-interval unique row, and advances the world cursor only to a committed boundary. These constraints plus the lock prevent differently keyed overlapping processing without requiring a PostgreSQL extension.
+For M08 `ActiveTick`, `IntervalStart` is `GameWorld.CreatedAtUtc` when `LastCompletedIntervalEnd` is null and otherwise is `LastCompletedIntervalEnd`; `IntervalEnd` is exactly 15 minutes later. The run captures the current persisted decimal TimeScale as `EffectiveTimeScale`; `CurrentWorldTime` advances by `15 minutes × EffectiveTimeScale`, while `LastSimulatedAt` advances to `IntervalEnd`. A later TimeScale change affects only a future unprocessed run. A normal trigger creates at most the single oldest due run. Catch-up reuses `SimulationRuns`; `RunType = CatchUp` identifies M15 work without redundant run infrastructure. M15 owns multiple-overdue-interval batching, compression, caps, prioritization, and yielding; its accumulated world-time advancement remains the sum of each logical interval's captured scaled delta. For catch-up, `IntervalStart`/`IntervalEnd` are the requested processed interval, `ProcessedThrough` is the last committed checkpoint boundary, and `IntervalEnd - ProcessedThrough` is the remaining interval. A Partial or FailedRetryable run resumes from `ProcessedThrough` with the same effective scale, seed, rule version, and run identity. Overlap prevention does not rely on the caller's idempotency key: the run transaction locks the world's WorldSimulationState row, requires `IntervalStart` to equal the authoritative cursor, rejects an existing Running interval, inserts the exact-interval unique row, and advances the world cursor and world-time projections only to a committed boundary. These constraints plus the lock prevent differently keyed overlapping processing without requiring a PostgreSQL extension.
+
+`ErrorCode` is null for a successfully completed run even when rules are unavailable or ineligible. It is reserved for actual run, transaction, or infrastructure failure and is not a rule-evaluation diagnostic.
 
 ### SimulationRunCheckpoints
 
@@ -361,6 +434,19 @@ Catch-up reuses `SimulationRuns`; `RunType = CatchUp` identifies it without redu
 - Composite FK to SimulationRun; unique `(WorldId, SimulationRunId, StableOrdinal)`, `(WorldId, SimulationRunId, BucketStart, BucketEnd)`, and `(WorldId, IdempotencyKey)`.
 - Index `(WorldId, SimulationRunId, BucketStart)` supports ordered retry/resume.
 - A checkpoint is written atomically with every mechanic/event/action it claims committed. A retry loads completed checkpoints and never rerolls them.
+
+### SimulationRuleEvaluations
+
+- `Id`, `WorldId`, `SimulationRunId`, `RuleCode`, `Outcome`, `ReasonCode`, `RuleVersion`, `EvaluatedAtUtc`
+- `Outcome` is exactly `Unavailable`, `Ineligible`, `Eligible`, or `Executed`; stored values follow repository enum naming conventions.
+- `ReasonCode` is a bounded stable machine-readable code, not generated/localized prose. Initial vocabulary is `relationship_state_unavailable`, `goal_relevance_unavailable`, `mood_activation_unavailable`, `event_relevance_unavailable`, `topic_inputs_unavailable`, `quiet_hours`, and `schedule_ineligible`.
+- `Id` is a deterministic UUID derived from `WorldId`, `SimulationRunId`, and `RuleCode` through the approved stable hash/UUID mechanism.
+- Primary key `Id`; alternate key `UNIQUE (WorldId, Id)`.
+- Unique `(SimulationRunId, RuleCode)` enforces exactly one summary per run/rule across replay/concurrency.
+- Composite FK `(WorldId, SimulationRunId) -> SimulationRuns(WorldId, Id) ON DELETE RESTRICT` enforces same-world ownership. Explicit lifecycle deletion removes evaluations before their run; M08 adds no cleanup worker.
+- Index `(WorldId, SimulationRunId, RuleCode)` supports ordered audit retrieval.
+- No ActorId, target, action, random draw, score component, free-form text, or action FK is stored in M08. Candidate-level diagnostics remain transient.
+- The required evaluations commit atomically with their run checkpoint and cursor advancement. A rollback leaves no evaluation row claiming completion; a retry observes/reuses or deterministically reproduces the same rows.
 
 ### CatchUpSummaries and CatchUpSummaryItems
 
@@ -385,6 +471,7 @@ Catch-up reuses `SimulationRuns`; `RunType = CatchUp` identifies it without redu
 - When WorldId is present, composite FK `(UserId, WorldId) -> GameWorlds(OwnerUserId, Id) ON DELETE RESTRICT` proves that the idempotency owner owns the world. Account-level records leave WorldId null.
 - Same key with different RequestHash is a conflict, never a second operation.
 - Index `(Status, ExpiresAt)` for cleanup/recovery.
+- Safe response data never contains raw access tokens, refresh tokens, or guest-bootstrap proofs. Credential issuance at `/auth/guest` uses the hash-only GuestBootstrapOperation contract, and `/auth/refresh` is deliberately non-idempotent; neither endpoint replays credential bytes through this table.
 
 ### AIGenerationRequests
 
@@ -417,10 +504,10 @@ Both carry WorldId. Trends have normalized topic key, status, start/end, and uni
 
 ### Notifications
 
-- `Id`, `WorldId`, `RecipientUserId`, `RecipientActorId` nullable, `GameplayEventId`, `Category`, `Priority`, `CreatedAt`, `ReadAt` nullable, `ExpiresAt` nullable, `IdempotencyKey`, `Version`
-- Composite FKs to Actor and GameplayEvent.
+- `Id`, `WorldId`, `RecipientUserId`, `RecipientActorId` nullable, `SourceType`, `SourceId`, `GameplayEventId` nullable, `Category`, `Priority`, `CreatedAt`, `ReadAt` nullable, `ExpiresAt` nullable, `IdempotencyKey`, `Version`
+- Composite FK to Actor. A GameplayEvent-backed source requires `GameplayEventId`, requires it to equal `SourceId`, and uses the composite `(WorldId, GameplayEventId)` FK. A CatchUpSummary source uses `SourceType = CatchUpSummary`, `SourceId = CatchUpSummary.Id`, and `GameplayEventId = null`; application persistence validates the same-world CatchUpSummary before insert. The summary retains its own SimulationRun relationship, which is not duplicated into Notification.
 - Composite FK `(RecipientUserId, WorldId) -> GameWorlds(OwnerUserId, Id) ON DELETE RESTRICT` prevents delivery to a user who does not own the world.
-- Unique `(WorldId, IdempotencyKey)` and `(WorldId, RecipientUserId, GameplayEventId, Category)`.
+- Source-type checks reject unsupported or inconsistent source shapes. Unique `(WorldId, IdempotencyKey)` and `(WorldId, RecipientUserId, SourceType, SourceId, Category)` prevent duplicate logical notifications while permitting non-GameplayEvent authoritative sources.
 - Cursor index `(WorldId, RecipientUserId, CreatedAt DESC, Id DESC)`.
 - Unread index `(WorldId, RecipientUserId, CreatedAt DESC) WHERE ReadAt IS NULL`.
 
@@ -447,6 +534,10 @@ No cascade may cross from one world to another. Every migration declares delete 
 
 The following are one transaction:
 
+- Complete the first guest bootstrap by recording the proof hash and creating the User, DeviceInstallation/session lineage, initial refresh family, GameWorld, WorldSettings, WorldSimulationState, player Actor, and PlayerProfile; no partially initialized guest identity may commit.
+- Recover an initial guest bootstrap by atomically consuming the one allowed proof recovery, invalidating the prior active initial-family credential as needed, and inserting its replacement in the same lineage without recreating identity/world state.
+- Rotate a refresh token by consuming the old record and inserting its successor; replay detection and whole-family revocation are committed consistently.
+- Create a device/session family while enforcing the five-active-family limit and revoking the oldest active family when necessary.
 - Create world, settings, simulation state, player profile, and player Actor.
 - Create a post/message/follow/reaction plus GameplayEvent and idempotency result.
 - Apply RelationshipEvent, directional values, daily ledger, romantic transition/history, and qualifying memories/notification.
@@ -512,3 +603,16 @@ Before accepting an implementation or migration, verify:
 13. Cached counts rebuild exactly from source rows and never go negative.
 14. Deletes are RESTRICT/soft by default and cannot erase audit history accidentally.
 15. Secrets, promises, and recalled memory context cannot reference another world.
+16. Refresh rows contain hashes only; rotation permits one successor, consumed-token replay revokes only its family, and unrelated device families remain active.
+17. Expired/revoked families cannot mint access tokens; current/all-family revocation and the five-active-family limit are transactionally consistent.
+18. Guest-bootstrap rows contain proof hashes only; one proof maps to one User, installation, refresh family, world, and player bootstrap, expires 10 minutes after completion, and permits at most one successful recovery rotation.
+19. Registered Users have a database-unique normalized email, a framework password hash, and at most one active hash-only recovery code; no plaintext password or recovery code exists in PostgreSQL.
+20. Guest upgrade preserves the same User primary key and world ownership rows; recovery/password change revoke the refresh families required by ADR-033 atomically with credential mutation.
+
+## 18. M18 production database operations
+
+ADR-034 selects isolated Neon projects/databases for Staging and Production. Development, automated tests, and Staging never use Production data or credentials. Production connections require Neon-compatible TLS, keep normal bounded Npgsql pooling, and do not broadly replay non-idempotent transactions.
+
+EF migrations are applied by an explicit idempotent deployment step before the dependent application receives traffic. Migration failure stops deployment. Application rollback uses the previous compatible Render artifact; migrations are not automatically downgraded. Destructive or incompatible schema work requires expand/migrate/contract planning and a verified backup/restore path.
+
+Production recovery uses at least seven days of Neon point-in-time restore/history where supported plus an encrypted weekly logical backup retained for four weeks outside the service/database. The engineering targets are RPO <= 24 hours outside PITR and RTO <= 4 hours. Before public release, and at least quarterly or before a major schema-risk release, restore into Staging or an isolated recovery database and verify the schema, representative User/World ownership data, and application connectivity. Backup credentials and destinations are private operations configuration.

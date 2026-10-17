@@ -28,7 +28,7 @@ Release labels are **MVP**, **Version 1**, **Future**, and **Development-only**.
 | ASP.NET Core API | Authentication/authorization boundary | Token validation, use-case ownership, validation, ProblemDetails | Sanitized response and correlated log |
 | Background worker | Trusted process, untrusted persisted payload references | Re-resolve world/resource scope, leases/idempotency | Retry/contain without duplicate mechanics |
 | PostgreSQL | Authoritative private store | Private network, TLS where supported, least privilege, constraints, backups | Transaction rollback; no client fallback authority |
-| AI provider | External/untrusted processor | Backend-only key, minimized delimited input, output validation, budget/timeout | Deterministic fallback; mechanics remain committed |
+| AI provider | Local/untrusted Ollama process in M09; future external provider only if approved | Backend-only configuration, minimized delimited input, output validation, resource budget/timeout | Deterministic fallback; mechanics remain committed |
 | Push provider | External delivery service | Minimal payload, device-scoped token, no sensitive body | Persisted notification remains truth |
 | Object storage | Future external data store | Signed/safe URLs, type/size checks, least privilege | Feature unavailable; no access broadening |
 | CI/CD/hosting | Privileged operational systems | Protected secrets, least privilege, reviewed deployments/audit | Rotate/revoke and halt affected deployment |
@@ -41,7 +41,7 @@ flowchart LR
     A -->|"Authorized queries + TLS"| P[("Private PostgreSQL")]
     A --> W["Background worker"]
     W --> P
-    W -->|"Minimized context"| AI["External AI provider"]
+    W -.->|"Minimized context"| AI["Optional local Ollama"]
     W -.->|"Minimal notification"| PUSH["Push provider — later"]
     CI["CI/CD and hosting"] -->|"Protected deployment secrets"| A
 ```
@@ -65,7 +65,7 @@ flowchart LR
 | Sensitive logs | Bodies/tokens/prompts recorded | Denylist/redaction and body logging off | Log review/scanning | Remove access, rotate exposed credentials, purge where possible | MVP |
 | Sensitive push | Body/secret on lock screen | Generic minimal payload and authenticated refetch | Delivery review/tests | Disable category/provider; revoke tokens | Version 1 |
 | Guest farming/takeover | Automated installs/token theft | Guest quotas/rate limits; installation not auth | Creation/reuse anomalies | Throttle/revoke; guest-loss warning | MVP |
-| Upgrade confusion | Email/provider linked to wrong user | Authenticated transactional same-user upgrade, uniqueness, verification | Conflict/audit events | Roll back; revoke new sessions; recovery | Version 1 |
+| Upgrade confusion | Email linked to wrong user | Authenticated transactional same-user upgrade, normalized-email uniqueness, password-policy/framework hashing | Conflict/audit events | Roll back; preserve existing guest session; recovery | M17 |
 | Password attacks | Brute force/stuffing/reset abuse | Adaptive framework hash, rate limits, generic responses, optional MFA later | Failed-login/reset signals | Temporary account-aware throttle; session revoke | Version 1 |
 | External linking error | Unverified issuer/audience/subject | Backend validation, nonce, unique provider subject, explicit linking | Link conflicts/audit | Unlink/revoke and recovery review | Later |
 | Dev endpoint exposure | Production route/config mistake | Environment gating, auth, production route/OpenAPI absence | Deployment/security tests | Disable route, rotate affected secrets, audit | Development-only |
@@ -85,27 +85,29 @@ No control assumes UUID secrecy, app obfuscation, CORS, root detection, or IP ad
 |---|---|---|---|
 | World-visible fictional: character profile, world post, fictional event | PostgreSQL; owned world only; optional Drift cache | No content logging by default; product retention | TLS; AI only when required by persisted decision |
 | Private: messages, relationships, memories, secrets, promises, email, device details | PostgreSQL; strict module/world/knowledge access; minimized cache | Bodies/secrets denied; duration open by category | TLS; AI only authorized minimal subset; email/device IDs never |
-| Sensitive operational: token/password hashes, signing/API/database/push credentials | Protected server/secret manager; least privilege; tokens in secure mobile storage | Values never logged; rotate/expire by policy | Never sent to AI/push/Flutter except one-time raw session token issuance |
+| Sensitive operational: token/bootstrap-proof/password/recovery-code hashes, signing/API/database/push credentials | Protected server/secret manager; least privilege; tokens and transient bootstrap proof in secure mobile storage | Values never logged; rotate/expire by policy | Never sent to AI/push/Flutter except one-time raw session/recovery-code issuance and client-originated bootstrap proof |
 | Diagnostics: correlation/error codes, safe IDs, latency, token counts, fallback state | Protected logs/diagnostic tables | Content-free, access-controlled, duration open | Provider-neutral telemetry only; no private prompt/response |
 
 ## 5. Authentication phases
 
-- **MVP:** random installation identity, guest `User`, one exposed owned world, short-lived access token, rotating refresh token, current-device logout. Authentication exists for ownership/cloud persistence, not multiplayer.
-- **Version 1:** email registration/login, same-user guest upgrade, verification/recovery method, multiple devices, richer session revocation.
-- **Later:** verified Google/Apple providers, explicit account linking, stronger device management, optional MFA if risk justifies it.
+- **MVP:** random installation identity, guest `User`, one exposed owned world, 15-minute RS256 JWT access tokens, rotating 30-day opaque refresh tokens, current-device logout, and server-side current/all-family revocation policy. Authentication exists for ownership/cloud persistence, not multiplayer.
+- **Version 1/M17:** email/password registration and login, same-user guest upgrade without email verification, one-time-displayed recovery codes, multiple devices, and minimal refresh-family session management under ADR-033.
+- **Later:** email verification, magic links, verified Google/Apple providers, explicit account linking, stronger device management, passkeys, and optional MFA if risk justifies it.
 
 The database may support multiple owned worlds, but PRODUCT.md/API_CONVENTIONS.md expose one playable MVP world.
 
 ## 6. Guest authentication
 
-1. Flutter securely loads or creates a cryptographically random installation public ID.
-2. It calls `POST /api/v1/auth/guest` with platform/app version and stable idempotency key.
-3. API applies payload validation and per-installation/IP guest-creation limits.
-4. In one idempotent use case, Accounts resolves/creates the installation and guest user, then persists the user-scoped idempotency result.
-5. API issues access and refresh tokens and returns the current world summary when present.
-6. Flutter stores tokens/installation identity securely; installation identity alone never authenticates later requests.
+1. Flutter securely loads or creates a cryptographically random installation public ID and a separate opaque `GuestBootstrapProof` with at least 256 bits of entropy for this bootstrap operation.
+2. It calls `POST /api/v1/auth/guest` with installation metadata, bootstrap proof, and the approved initial world input. Generic `Idempotency-Key` does not govern this credential-issuing endpoint.
+3. API applies payload validation and the M03 guest-creation limit of 10 attempts per IP per 10 minutes.
+4. In one transaction, Accounts hashes the proof and creates exactly one guest User, DeviceInstallation/session lineage, initial refresh family, GameWorld, player Actor/Profile, WorldSettings, and WorldSimulationState.
+5. API issues access and refresh tokens and returns the created User/current-world identity. PostgreSQL persists only proof/token hashes.
+6. Flutter stores tokens/installation identity securely and discards the proof after the refresh token is durably stored; installation identity alone never authenticates or recovers a session.
 
-Repeated identical requests return the recorded result/current guest identity where valid. A different fingerprint with the same key returns the API idempotency conflict. Installation ID is never logged or displayed.
+The bootstrap proof is random, independent of installation ID, scoped only to this bootstrap, and never accepted as bearer authentication or at another endpoint. It expires 10 minutes after successful bootstrap and permits one successful credential-recovery rotation. A valid proof retry resolves the same User/world, atomically invalidates the currently active initial-family credential, issues new credentials in the same lineage, and marks recovery consumed. It never reproduces the original token bytes. Concurrent first/recovery requests create one identity/world and permit at most one recovery rotation. Expired or recovery-consumed proof cannot recover credentials.
+
+Only a secure hash of the proof is stored. The raw proof never appears in logs, errors, URLs, or response bodies. Installation ID and generic idempotency keys cannot substitute for it. The proof hash is retained only for the bounded recovery/audit/idempotency need and any later accepted retention policy.
 
 A guest may be unrecoverable if both device storage and usable refresh credentials are lost before registration. MVP must communicate this limitation without forcing registration.
 
@@ -117,74 +119,80 @@ sequenceDiagram
     participant A as API
     participant AC as Accounts
     participant P as PostgreSQL
-    F->>A: POST /auth/guest + installation ID + idempotency key
+    F->>A: POST /auth/guest + installation metadata + bootstrap proof
     A->>A: Validate and rate limit
     A->>AC: CreateOrResolveGuest
-    AC->>P: Transaction: installation, user, idempotency, refresh hash
-    P-->>AC: Existing or new guest
-    AC-->>A: Tokens + safe user/world summary
-    A-->>F: 201 original/replay result
-    F->>F: Securely store tokens
+    AC->>P: Transaction: proof/token hashes + user/world/player/session
+    P-->>AC: Existing or new guest bootstrap
+    AC-->>A: New credentials + same safe user/world identity
+    A-->>F: 201 initial or 200 one-time recovery
+    F->>F: Securely store tokens; discard proof after success
 ```
 
 ## 7. Registered-account authentication
 
-Version 1 supports only the registered-authentication and recovery method accepted before M17, plus appropriate verification, session revocation, and multiple devices. Email/password, magic link, or an external provider are alternatives, not preselected requirements. Responses do not reveal whether an account exists. Credentials/proofs are transmitted only over TLS and never stored reversibly or logged.
+ADR-033 selects email plus password for M17. Email is trimmed and normalized with invariant uppercase; provider-specific mailbox rewriting is forbidden. M17 does not require email verification and registered accounts are usable immediately. Passwords are 10 through 128 Unicode text elements, are never trimmed, and have no composition rule. ASP.NET Core's framework password hasher provides adaptive salted one-way hashing and verification; passwords are transmitted only over TLS and never stored reversibly, returned, or logged.
+
+Fresh registration creates one registered User and the normal initial owned world/player state but no device session; login with M03 installation metadata creates the first ordinary refresh family. Login uses the same generic failure for an unknown email and a wrong password. Magic links, social/provider login, phone/SMS login, passkeys, and MFA are not M17 features.
 
 ## 8. Guest-account upgrade
 
 Upgrade is an authenticated, idempotent, transactional mutation of the existing guest `User`:
 
-1. Revalidate the current guest session and submitted registration/provider proof.
-2. Normalize and enforce unique credential/provider identity.
+1. Revalidate the current guest session and submitted email/password proof.
+2. Normalize email and enforce its database-backed uniqueness.
 3. Lock/recheck the user and reject parallel/conflicting upgrades.
-4. Attach verified credentials and change account state without changing `UserId`.
-5. Preserve worlds, actors, posts, messages, relationships, memories, and history.
-6. Rotate current refresh credentials; other guest sessions follow the approved revocation policy.
-7. Commit completely or leave the guest account usable and unchanged.
+4. Attach framework-hashed credentials and change account state without changing `UserId`.
+5. Preserve worlds, actors, social state, simulation state, messages, relationships, memories, dating, notifications, catch-up state, and history.
+6. Preserve the current M03 refresh family; upgrade does not create a parallel session or token architecture.
+7. Create the hash-only recovery-code record and commit completely, or leave the guest account usable and unchanged.
 
-An email/provider already attached elsewhere returns a safe conflict; records are never copied or merged implicitly.
+An email already attached elsewhere returns a safe `email_unavailable` conflict; records are never copied or merged implicitly. Exact upgrade retries reuse the same account/world outcome but cannot replay plaintext recovery material. The still-authenticated upgraded user can explicitly regenerate a code after a lost response.
 
 ### Diagram 3 — guest-account upgrade
 
 ```mermaid
 flowchart TD
-    G["Authenticated guest"] --> PROOF["Validate the accepted registration proof"]
-    PROOF --> UNIQUE{"Credential identity available?"}
+    G["Authenticated guest"] --> PROOF["Validate email/password and current session"]
+    PROOF --> UNIQUE{"Normalized email available?"}
     UNIQUE -->|"No"| CONFLICT["Safe conflict; guest unchanged"]
     UNIQUE -->|"Yes"| TX["Transactionally update same UserId"]
-    TX --> ROTATE["Rotate/review sessions"]
-    ROTATE --> VERIFY{"Verification required?"}
-    VERIFY --> RESULT["Registered or verification-pending account"]
+    TX --> RECOVERY["Store recovery-code hash; preserve current family"]
+    RECOVERY --> RESULT["Registered account; one-time code response"]
     TX -.->|"Any failure"| ROLLBACK["Rollback; guest remains usable"]
 ```
 
 ## 9. Access tokens
 
-Use a signed JWT or later accepted equivalent. Exact algorithm, key storage, and lifetime remain open, but implementation must:
+M03 uses JWT bearer access tokens signed with RS256. The server allowlists RS256 and its configured keys; it never trusts a token-declared algorithm alone. Every token has a 15-minute lifetime and a `kid` header. Validation requires:
 
-- Use an explicit server allowlist for algorithm/key; never trust token-declared algorithm alone.
-- Validate signature, issuer, audience, expiry/not-before, key identifier, and small configured clock skew.
-- Keep lifetime short; embed only stable user subject, session/token version identifier when useful, and minimal account-state claim when required.
-- Never embed refresh token, email/private profile, owned WorldIds, roles that replace current authorization, or game state.
-- Rotate signing keys with overlap for currently valid tokens and emergency revocation procedure.
+- A valid RS256 signature from the configured current or previous still-valid verification key.
+- Exact issuer `parallel-world-api` and audience `parallel-world-mobile`.
+- Valid `exp` and `nbf` when present, with the configured allowed clock skew set to exactly 30 seconds.
+- A stable user identifier in `sub` and a unique token identifier in `jti`.
 
-World ownership is loaded from current server data. Ordinary logout revokes refresh/session state; a previously issued access token may remain valid until short expiry unless a high-risk use case also checks server session version. This limitation must be tested/documented.
+Claims are minimal. They never contain refresh tokens, signing material, private messages, memories, email/private profile data, owned WorldIds, roles that replace current authorization, or game state.
+
+The private signing key is never committed. Development uses a local key outside the repository. Production obtains private key material from environment or secret-management infrastructure; the exact provider is an M18 deployment decision. Controlled rotation publishes the current `kid` while verification accepts the current key and the previous verification key only while tokens signed by that previous key can still be valid.
+
+World ownership is loaded from current server data. Ordinary logout or family revocation does not require a distributed access-token denylist: a previously issued token may remain usable until its 15-minute expiry unless a higher-priority security rule requires an immediate server-side check. Any future immediate-revocation or sender-constrained-token mechanism requires a new decision.
 
 ## 10. Refresh tokens
 
-Refresh tokens are high-entropy random bearer values. Only a one-way hash is stored; plaintext is returned once through TLS and kept in Flutter Secure Storage. Each record is associated with user, device installation, rotation family, expiry, revocation/replacement state, and timestamps.
+Refresh tokens are opaque cryptographically random bearer values, not JWTs, with at least 256 bits of entropy and a 30-day lifetime from issuance. Only a secure cryptographic hash is stored in PostgreSQL; plaintext is returned once through TLS and kept in Flutter Secure Storage. Each record is associated with user, device installation, device/session rotation family, expiry, consumption, revocation/replacement state, and safe audit timestamps.
 
 Rotation is atomic:
 
 1. Receive token in body—not URL—and never log it.
 2. Hash/look up and lock the record.
 3. Verify token, user/session, device, expiry, revocation, and replacement state.
-4. Mark old token rotated/replaced and insert a new hashed token.
+4. Mark the old token consumed/rotated/replaced and insert a new hashed token in the same family.
 5. Commit, then return new access/refresh tokens.
-6. Reuse of a rotated token is a security event: revoke the active family/descendants and require session recovery.
+6. Reuse of a consumed or replaced token is a security event: transactionally revoke that entire family and require creation/restoration of a valid session. Unrelated device/session families remain valid.
 
-Flutter single-flight refresh reduces legitimate concurrent reuse. Strict replay containment is the safe baseline; any bounded retry-grace design requires a reviewed decision and must not allow an attacker to reuse a token.
+The same refresh token cannot successfully rotate twice, including under concurrent requests. Flutter single-flight refresh reduces legitimate concurrent reuse, while the server remains authoritative. Strict replay containment at the device/session-family level is the accepted baseline; there is no retry grace.
+
+Refresh is intentionally non-idempotent and does not use generic `Idempotency-Key` behavior. The server never retains reversible credentials to replay a successful refresh response. If that response is lost, presenting the consumed token again triggers the same family-replay containment and may require guest bootstrap recovery or later registered reauthentication. This response-loss cost is an accepted MVP security tradeoff.
 
 ### Diagram 4 — token lifecycle
 
@@ -216,7 +224,7 @@ sequenceDiagram
     A->>P: Transaction: revoke old + insert new hash
     A-->>F: New access + refresh token
     F->>A: Old token replayed
-    A->>P: Detect replaced token; revoke family descendants
+    A->>P: Detect replaced token; revoke entire family
     A-->>F: 401 refresh_token_reused
 ```
 
@@ -225,8 +233,10 @@ sequenceDiagram
 One installation record represents one app installation and records user association, installation public ID, platform, app version, last seen, created/revoked state, and later push token. Installation ID and push token are locators, not credentials.
 
 - Device revocation blocks future refresh and later push delivery.
+- Each active device/session has its own refresh-token family. A user has at most five active families; creating a sixth transactionally revokes the oldest active family before the new family becomes active.
 - Account switch/log out clears or separates local tokens, private cache, queues, and realtime subscriptions.
 - A device has one active account association unless a future multi-account design explicitly changes it.
+- Guest and registered users use the same family model. M17 same-user upgrade preserves the existing `UserId`, worlds, and current family.
 - Push tokens rotate/update independently and never establish identity.
 - Lost-device remote management is Version 1; an unregistered guest who loses all credentials may be unrecoverable.
 
@@ -242,9 +252,9 @@ One installation record represents one app installation and records user associa
 | Revoked/logged out | Explicit current/all-device action | No refresh; access ends by expiry/session check | New authentication |
 | Suspicious/reuse | Rotated token replay/anomaly | Deny refresh | Revoke family/device; recovery |
 | Device revoked | Device/session action | No refresh/push | Reauthentication/re-registration if permitted |
-| Upgrade-pending | Credential verification incomplete | Guest-safe behavior per approved policy | Registered or rollback/expiry |
+| Upgrade transaction | Authenticated guest upgrade is in progress | No partial account state is externally visible | Registered or full rollback to usable guest |
 
-Password change, compromise, guest upgrade, account deletion, and logout-all revoke the configured session scope. Exact device/session limits and user-facing management are open.
+Current-device logout revokes the current refresh family. All-device logout revokes every active family for the user. Revoked or expired families cannot mint access tokens. The all-family revocation behavior and five-family cap are M03 backend invariants; M17 still owns registered authentication and public user-facing device/session management.
 
 ## 13. Authorization
 
@@ -256,15 +266,17 @@ Authorization layers are authentication, current user resolution, world ownershi
 |---|---|---|
 | `/auth/guest` | Public bootstrap | Installation/IP rate limits and idempotency |
 | `/auth/refresh` | Refresh bearer in body | Device/family/rotation validation and rate limit |
-| `/auth/login`, reset, verification | Public/mixed, Version 1 | Generic responses, credential proof, stricter limits |
-| `/auth/upgrade`, `/auth/logout` | Access token | Current-user session checks and idempotency/revocation |
+| `/auth/register`, `/auth/login`, `/auth/recovery` | Public, M17 | Generic login/recovery failures, credential proof, existing auth rate-limit infrastructure |
+| `/auth/upgrade`, `/auth/password/change`, `/auth/recovery-code/regenerate`, `/auth/logout` | Access token | Current-user/account-state checks and idempotency/revocation |
+| `/auth/sessions...` | Access token, registered M17 user | Current-user family ownership; no token/hash exposure |
 | `/worlds/{worldId}/...` | Access token | Owner query plus same-world nested resources |
-| `/devices...` | Access token, Version 1 | Current-user installation ownership |
 | `/hubs/world` | Access token | Authorize every subscribed world/group |
 | `/dev/...` | Authenticated Development-only | Environment gate, strong authorization, absent in production |
 | `/health/live`, `/health/ready` | Deployment policy | Minimal output; no secrets/configuration |
 
 The player can act only as the owned player actor. Clients cannot submit character-authored content, relationship values, romantic outcomes, memories, simulation actions, system events, or internal AI calls.
+
+For M13, invitation requests cannot submit romance availability/mode, compatibility, date type, rule inputs, scores, deterministic offsets, reason codes, romantic status, or Commitment deltas. A Player-target outcome accepts only the authenticated owned Player Actor's explicit `accept` or `reject` choice for an owned-world pending invitation. Server-side world/Actor state, locking, ROM rules, and PostgreSQL history remain authoritative.
 
 ## 14. World ownership
 
@@ -321,9 +333,9 @@ Cross-user or cross-world lookup returns ownership-safe `404 resource_not_availa
 
 ## 17. Password handling
 
-Passwords are deferred from MVP. When introduced, use ASP.NET Core Identity or another reviewed framework implementation with adaptive one-way hashing, unique salts, framework verification, upgradeable parameters, sensible length/compromised-password controls, and no custom cryptography.
+M17 uses ASP.NET Core `PasswordHasher<TUser>` with adaptive one-way hashing, unique salts, framework verification, and upgradeable parameters. Passwords contain 10 through 128 Unicode text elements, are not trimmed, and have no mandatory composition rule. Custom password cryptography and timing-unsafe manual comparison are prohibited.
 
-Passwords and reset proofs travel only over TLS and are never logged, stored reversibly, returned, or sent to other providers. Avoid arbitrary composition rules that encourage weak patterns. Reset tokens are random, hashed/protected at rest, short-lived, single-use, purpose/user-bound, and invalidate according to the approved session policy.
+Passwords and recovery codes travel only over TLS and are never logged, stored reversibly, sent to another provider, or returned outside their expressly allowed one-time response. Recovery codes contain 256 CSPRNG bits encoded as unpadded base64url and are verified through an ASP.NET Core framework hash.
 
 ## 18. External identity providers
 
@@ -333,15 +345,17 @@ Linking requires an authenticated current account plus fresh provider proof, exp
 
 ## 19. Account recovery
 
-Version 1 recovery method—password reset, magic link, or both—is open. Any flow must use generic request responses, rate limits, short-lived single-use purpose-bound proof, verified destination/provider, atomic credential update, session revocation/rotation, and a safe completion notification.
+ADR-033 selects a user-held recovery code for M17; email reset links and magic links are not implemented. One active code exists per registered User. PostgreSQL stores only its framework hash and lifecycle timestamps. The plaintext appears once after registration, guest upgrade, successful recovery, or explicit authenticated regeneration and is not automatically persisted by Flutter.
 
-Recovery must not reveal account existence or transfer worlds to a new `UserId`. Guest-only accounts have no remote recovery guarantee before registration. Support/admin override is not assumed; any later override requires strong operator auth, audit, least privilege, and explicit product/privacy approval.
+Recovery normalizes email, verifies the code through the framework hasher, validates the new password, and atomically changes the password, consumes the old code, creates one replacement code, and revokes every refresh family. It does not create a session; the user logs in again. Wrong email, wrong/consumed/revoked code, and other invalid proof use the same generic failure and rate-limit path. Regeneration invalidates the prior code, failed attempts do not rotate it, and the active code has no M17 expiry. Recovery never transfers worlds to another `UserId`.
+
+Guest-only accounts still have no remote recovery guarantee before registration. Support/admin override is not assumed; any later override requires strong operator auth, audit, least privilege, and explicit product/privacy approval.
 
 ## 20. Logout and revocation
 
-Current-device logout authenticates the caller, atomically revokes the presented refresh session/family as designed, unregisters/marks device delivery state as needed, and returns idempotent success. Flutter then clears secure tokens, private cache, pending operations, and realtime state. An access token may remain cryptographically valid until short expiry unless the endpoint/use case performs server session-version checks.
+Current-device logout authenticates the caller, atomically revokes the presented refresh family, unregisters/marks device delivery state as needed, and returns idempotent success. Flutter then clears secure tokens, private cache, pending operations, and realtime state. An access token may remain cryptographically valid until its 15-minute expiry unless a higher-priority rule requires an immediate server-side check.
 
-Logout-all/session management is Version 1. Lost/compromised device response revokes the device and all associated refresh descendants. Password/recovery/upgrade/account deletion rotate or revoke sessions per policy.
+The backend session policy also supports revoking every active family for the user. M17 exposes registered-user family listing, owned-family revocation, and logout-all. A safe `sid` access-token claim identifies the current family for presentation only and never authorizes ownership. Password recovery and password change revoke every family, including the current family; Flutter clears its tokens and requires login again. Upgrade preserves its existing current guest family. Existing access tokens retain ADR-013's ordinary at-most-15-minute lifetime.
 
 ### Diagram 7 — logout and session revocation
 
@@ -361,14 +375,18 @@ sequenceDiagram
 
 ## 21. Rate limiting
 
-Use endpoint policies with per-user limits after auth, per-installation limits for guest/device flows, and per-IP fallback—stricter for anonymous requests. IP is an abuse signal, not identity; avoid permanent IP-only lockout.
+Use endpoint policies with per-user limits after auth, per-family/device limits for refresh, and per-IP limits for anonymous or invalid-token traffic. IP is an abuse signal, not identity; avoid permanent IP-only lockout.
 
-- Auth: guest creation, login, refresh, reset, verification resend.
+- M03 guest/session creation: 10 attempts per IP per 10 minutes.
+- M03 refresh: 30 attempts per device/session family per 10 minutes.
+- M03 invalid refresh/replay: 10 attempts per IP per 10 minutes.
+- M03 logout: 30 requests per authenticated user per 10 minutes.
+- Later auth: login, reset, and verification resend limits are selected with their owning feature.
 - Content: post, reply, reaction, follow, message.
 - AI-heavy: message reply generation, world resume/catch-up, Development-only simulation, any future regeneration.
 - Operational: dev endpoints and push registration; health probes are separately controlled.
 
-Return `429` ProblemDetails, stable `rate_limit_exceeded` or `ai_generation_limit_reached`, and `Retry-After`. Exact numbers, distributed strategy, IP metadata retention, and user-visible quota UX remain configurable/open. Limits do not disclose internal AI budgets.
+Return `429` ProblemDetails, stable `rate_limit_exceeded` or `ai_generation_limit_reached`, and `Retry-After`. M03 keeps enforcement simple and compatible with the initial single-deployment modular monolith; it does not add Redis or distributed infrastructure solely for rate limiting. Production tuning, distributed coordination if topology changes, IP metadata retention, later endpoint values, and user-visible quota UX remain later decisions. Limits do not disclose internal AI budgets or log raw tokens.
 
 ## 22. Abuse prevention
 
@@ -378,19 +396,21 @@ Spam posts/message flooding/date-invitation repetition are constrained by endpoi
 
 ## 23. AI-provider security
 
-- Provider credentials, selection, and calls remain backend-only.
-- Use provider/model allowlists, timeouts, output/token/cost limits, bounded retry, and durable idempotent work.
+- ADR-024 selects backend-local Ollama as the M09 provider with configurable preferred model `qwen3:4b`. Provider selection, endpoint/model configuration, and calls remain backend-only; Flutter cannot control or discover them.
+- M09 requires no paid API key, subscription, billing account, or automatic paid-cloud fallback. Future provider credentials remain runtime secrets and require a separate accepted provider decision.
+- Use the configured local endpoint/model allowlist, a configurable 10-second default timeout, output/resource limits, at most one transient connection/timeout retry, and durable idempotent work. Ollama absence or model unavailability fails safely to deterministic fallback and never blocks backend startup.
 - Send only authorized minimized context for a persisted already-decided action.
 - Treat provider output as untrusted text; validate length, actor/target/outcome, disclosure, format, and prohibited claims.
-- Provider failure/invalid output uses deterministic template fallback where supported and never rolls back/reapplies mechanics.
+- Provider failure, invalid output, content-safety rejection, or budget exhaustion uses deterministic template fallback and never rolls back/reapplies mechanics or invokes a paid provider.
 - Persist only provider-neutral status, hashes, latency/token usage, fallback state, and safe errors—no full sensitive prompt/raw response.
 - Provider instructions/output cannot invoke tools, commands, queries, or mechanical mutations.
+- M09 moderation is structural/application validation plus minimal safe fallback. A dedicated moderation model/API is deferred and cannot silently introduce a paid dependency.
 
 ## 24. Prompt and context minimization
 
 Player text, posts, messages, selected memories, and world text are untrusted data, never system instructions. Use separated structured sections and a fixed system/developer contract. Do not claim prompt injection is eliminated; contain its impact through least context and output validation.
 
-Allowed when the persisted decision contract requires it: character voice/personality summary, current mood, decided topic/stance/tone/intent, safe relationship summary, the source message/content necessary for the action, authorized world-event summary, and up to `MAX_MEMORIES_PER_AI_REQUEST` selected memories.
+Allowed when the persisted decision contract requires it: character voice/personality summary, current mood, decided topic/stance/tone/intent, safe relationship summary, the source message/content necessary for the action, authorized world-event summary, and up to `MAX_MEMORIES_PER_AI_REQUEST` Character-owned memories selected by deterministic M12 rules after the mechanical action decision.
 
 Never send access/refresh tokens, email, device/install/push identifiers, unrelated account/profile data, secrets unknown to the character/recipient, unrelated memories, raw diagnostics, formulas/hidden thresholds, provider credentials, or full conversation history.
 
@@ -404,7 +424,7 @@ flowchart TD
     SCOPE --> KNOW["Apply knowledge/secret access rules"]
     KNOW --> MEMORY["Rank and cap authorized memories"]
     MEMORY --> CONTRACT["Build delimited minimal decision contract"]
-    CONTRACT --> AI["Approved provider/model with timeout/budget"]
+    CONTRACT --> AI["Configured local Ollama with timeout/resource budget"]
     AI --> VALIDATE["Validate length, outcome, actors, disclosure"]
     VALIDATE -->|"Valid"| TEXT["Persist wording only"]
     VALIDATE -->|"Invalid/failure"| FALLBACK["Deterministic fallback"]
@@ -421,6 +441,8 @@ Secrets include database connection string, JWT signing material, AI/push/object
 
 Never commit, print, return, package, or place secret values in examples. Document names only. Rotate on schedule/incident, validate presence without value, separate environments, minimize principals, and remove unused credentials.
 
+ADR-034 selects isolated Render runtime environment variables and Secret Files for M18 Staging/Production. The Neon connection string is an environment secret; the current RSA private key is a Secret File. `kid` rotation first deploys old+new public verification keys, then changes the signing key, retains the old public key for at least the maximum access-token lifetime plus clock skew, and finally removes it and destroys the old private key. Ordinary rotation does not revoke refresh families; incident response may.
+
 ## 26. Logging and telemetry
 
 Use structured sanitized events and production-appropriate levels. Correlation ID is not authentication. User/world identifiers are pseudonymized or included only when operationally necessary and protected.
@@ -429,7 +451,7 @@ Use structured sanitized events and production-appropriate levels. Correlation I
 
 | Allowed when necessary | Prohibited |
 |---|---|
-| Safe route template, method, status, duration | Authorization headers; access/refresh/reset tokens |
+| Safe route template, method, status, duration | Authorization headers; access/refresh/reset tokens; guest bootstrap proofs |
 | Correlation ID, deployment version, safe error/reason code | Passwords, secrets, signing/provider/database credentials |
 | Simulation run/action IDs, counts, duration, fallback state | Private-message bodies, full post/draft content |
 | Provider/model identifier, latency and token counts | Full prompts/raw private provider responses |
@@ -446,9 +468,9 @@ Flutter caches only what user experience needs and clears/separates it on logout
 
 ## 28. Memory and secret privacy
 
-Internal memories are not broadly exposed to Flutter. Player-visible shared/relationship history is a sanitized projection. Secrets are available only to recorded knowers and purposes/recipients allowed by game rules. Promise/secret/memory provenance and all actor references are same-world constrained.
+Every M12 v1 memory has CharacterPrivate visibility and is available only to its owning Character's internal recall path. Raw memory, Secret, Promise, score, and provenance state is not exposed to another Character, Flutter, Player UI, or a public API. Player-visible shared/relationship history is a separate sanitized projection. Promise/Secret/memory provenance and all actor references are same-world constrained.
 
-AI retrieval applies character knowledge and secret restrictions before ranking. Logs, summaries, realtime, notifications, push, and errors must not reveal hidden secret text, motivation, attraction, or memory. An AI output that discloses unauthorized content is rejected and replaced by safe fallback.
+AI retrieval applies world, owner, active-state, and CharacterPrivate restrictions before ranking. Logs, summaries, realtime, notifications, push, and errors must not reveal hidden Secret text, motivation, attraction, or memory. An AI output that discloses unauthorized content is rejected and replaced by safe fallback. M12 v1 does not disclose Secrets, use embeddings/vector search, or allow AI/provider output to set memory type, subject, topic, confidence, importance, visibility, lifecycle, or recall score.
 
 ## 29. Data at rest
 
@@ -460,11 +482,15 @@ AI retrieval applies character knowledge and secret restrictions before ranking.
 
 Private-message field-level encryption and Drift encryption are deferred security decisions. Field encryption would reduce database/backup/operator exposure but complicates querying, generation, key rotation, and recovery; it does not replace authorization.
 
+M18 Production uses Neon restore history of at least seven days where supported plus an encrypted weekly logical backup retained for four weeks outside the application container/database. A restore drill is required before public release and at least quarterly or before major schema-risk releases. Backup-storage credentials are runtime operations secrets.
+
 ## 30. Data in transit
 
 Production requires HTTPS and WSS with valid certificates. Plain HTTP is local-development-only and environment-bound. Use TLS to managed PostgreSQL and AI/push/object providers where supported/required. Never put tokens or private text in URLs/query parameters. Do not follow redirects that could forward authorization to an untrusted host.
 
 Certificate pinning is not initially required because rotation/operational risk may exceed benefit; revisit only with a threat/risk decision.
+
+For M18, Render-managed certificates terminate public TLS and Production API traffic is HTTPS-only. Neon connections require provider-compatible TLS. The application does not manage public certificates or add a second proxy layer.
 
 ## 31. Mobile-client security
 
@@ -502,6 +528,8 @@ Flutter mobile does not rely on CORS. Configure only environment-specific truste
 
 Production applies TLS/WSS, secure headers appropriate to any browser surface, host/proxy forwarding validation, and no HTTP downgrade. Exact hosting/proxy policy is environment configuration.
 
+ADR-034 requires separate explicit Staging/Production Host and CORS allowlists. No wildcard origin is permitted with credentials, and no browser origin is added solely for Flutter mobile. Kestrel processes only minimal forwarded scheme/client information with bounded forwarding depth. Arbitrary client-forwarded headers and forwarded IP are never authorization inputs; Render-specific proxy ranges are pinned only when they can be maintained safely as runtime configuration.
+
 ## 37. Error handling and information disclosure
 
 Use API ProblemDetails and stable codes: `401` missing/invalid auth; `403` only for known owned-resource permission denial; ownership-hidden/missing `404`; `409` idempotency/state/concurrency; `429` plus retry guidance; sanitized `5xx`.
@@ -526,7 +554,7 @@ Account deletion is later and follows database delete/retention constraints:
 6. Purge expired backups/logs according to disclosed retention capability.
 7. Confirm completion without leaking data.
 
-Private worlds have no real-user shared-content preservation requirement. Incidental cascade is prohibited; deletion is explicit/audited. Exact durations remain open for active/revoked refresh records, idempotency, messages, memories/history, notifications, AI diagnostics, durable work, logs, deleted-account delay, and backups.
+Private worlds have no real-user shared-content preservation requirement. Incidental cascade is prohibited; deletion is explicit/audited. Exact durations remain open for expired/consumed guest-bootstrap proof hashes, active/revoked refresh records, idempotency, messages, memories/history, notifications, AI diagnostics, durable work, logs, deleted-account delay, and backups.
 
 ### Diagram 9 — account deletion
 
@@ -547,11 +575,13 @@ For one developer, maintain a concise runbook and contact inventory. On suspecte
 
 Do not destroy evidence casually or keep excess private data “just in case.” Prioritize credential revocation and world isolation. Record who/what/when for material actions without placing secrets in the incident record.
 
+The project owner is the M18 release owner and final High-risk acceptance authority. Critical risk blocks Production. High/Critical acceptance must record the issue, affected component, exposure, mitigation, owner, and review/expiry date. Render/Neon built-in notifications provide the initial operational contact path; provider-specific incident contacts remain in the private operations inventory.
+
 ## 41. Security testing
 
 Required automated/integration coverage:
 
-- Authentication: guest create/replay/conflicting key, access expiry/claims, refresh rotation/concurrency/reuse/family revoke, logout/revocation/device revoke; upgrade/recovery later.
+- Authentication: first guest bootstrap; same-proof identity/world stability; new-credential lost-response recovery; proof hash-only storage, 10-minute expiry, one-recovery limit, endpoint restriction, installation-ID rejection, bootstrap/recovery concurrency, and proof log redaction; valid access authentication; wrong issuer, wrong audience, expiry, invalid signature, and clock-skew boundaries; non-idempotent refresh success, one-time replacement, response-loss replay rejection, concurrency, expiry, consumed-token family revoke, and unrelated-family survival; current/all-family logout; sixth-family oldest revocation; raw-token persistence/log redaction; rate-limit `429`; cross-user/session attacks. M03 verifies the same-identity/world invariant needed by later guest upgrade; the upgrade endpoint and registered recovery remain later.
 - Authorization: cross-user world and cross-world actor/post/parent/quote/reaction/follow/conversation/message/relationship/romance/memory/secret/promise/notification/summary/simulation targets.
 - Input/error: malformed JSON/UUID/enums/cursors/idempotency, oversized/control text, safe `401/403/404/409/429/5xx`, no disclosure.
 - AI: hostile prompt treated as data, memory/secret filtering, context cap, output cannot alter mechanics, invalid/provider failure fallback, budget/rate controls.
@@ -566,7 +596,8 @@ Use real PostgreSQL-compatible integration tests for relational ownership/constr
 - Client-supplied `UserId`, `WorldId`, actor type, or UUID secrecy as authorization.
 - Direct Flutter database/Supabase/AI/provider access or secrets in the app.
 - Raw refresh tokens in PostgreSQL/logs/analytics; reusable nonrotating refresh tokens.
-- Tokens/private messages/prompts/secrets/passwords in logs or URLs.
+- Raw guest-bootstrap proofs in PostgreSQL/logs/analytics, installation-ID recovery, or generic idempotent response replay for refresh.
+- Tokens/private messages/prompts/secrets/passwords/recovery codes in logs or URLs.
 - Full chat history/unrelated memories sent to AI.
 - AI output parsed into actions, scores, memories, relationships, or simulation state.
 - Wildcard CORS with credentials or CORS as authentication.
@@ -580,22 +611,21 @@ Use real PostgreSQL-compatible integration tests for relational ownership/constr
 
 ## 43. Open security decisions
 
-1. Exact access-token format/algorithm, signing-key storage/rotation, lifetime, and clock skew.
-2. Refresh-token lifetime, exact family scope per device/session, session/device limits, user-visible management, and whether a reviewed bounded concurrency grace ever supersedes the strict replay baseline.
-3. Password versus magic-link registration/recovery and email-verification requirements.
-4. External-provider order, linking UX, and MFA trigger if ever justified.
-5. Guest-loss/recovery UX before registration.
-6. Exact authentication/content/AI rate limits and temporary restriction behavior.
-7. IP/device metadata collection and retention.
-8. Message, memory/history, notification, AI diagnostic, idempotency, work, log, and backup retention.
-9. Private-message field encryption and Drift encryption.
-10. Account-deletion reauthentication, delay, backup purge, and confirmation policy.
-11. Push preview/category/quiet-hours policy.
-12. Admin/support access model; none exists by default.
-13. Dependency, SAST/DAST, secret-scanning, SBOM, and vulnerability-scanning tools.
-14. Hosting/provider-specific TLS, encryption, audit, backup, and incident contacts.
-15. Whether selected high-risk requests check server session version before access-token expiry.
-16. Broader conversational AI context; blocked by the recorded GAME_RULES.md conflict until corrected.
+ADR-013 resolves the M03 access-token, signing-key contract, refresh lifetime/family/replay policy, five-family limit, current/all-family revocation behavior, and initial authentication rate limits. ADR-033 resolves M17 email/password, recovery-code, guest-upgrade, and minimal session-management behavior.
+
+1. External-provider order, linking UX, and MFA trigger if ever justified.
+2. Production secret-management provider and hosting-specific key custody/rotation operations. **Resolved for M18 by ADR-034: Render environment variables/Secret Files and staged `kid` rotation.**
+3. Production tuning and distributed coordination for rate limits if observed traffic/topology requires it; later endpoint values and temporary restriction behavior.
+4. IP/device metadata collection and retention.
+5. Guest-bootstrap proof audit retention beyond its recovery need, plus message, memory/history, notification, AI diagnostic, idempotency, work, log, and backup retention.
+6. Private-message field encryption and Drift encryption.
+7. Account-deletion reauthentication, delay, backup purge, and confirmation policy.
+8. Push preview/category/quiet-hours policy.
+9. Admin/support access model; none exists by default.
+10. Dependency, SAST/DAST, secret-scanning, SBOM, and vulnerability-scanning tools. **Resolved for M18 by ADR-034's free repository-native dependency/secret/single-SAST/SBOM/single-container-scanner baseline; DAST remains future work.**
+11. Hosting/provider-specific TLS, encryption, audit, backup, and incident contacts. **Resolved for M18 by ADR-034 for Render/Neon TLS, backups, alerts, and project-owner response; private provider contacts remain operational data.**
+12. Whether selected high-risk requests require immediate access-token rejection, and whether sender-constrained mechanisms such as DPoP or mTLS are justified.
+13. Broader conversational AI context; blocked by the recorded GAME_RULES.md conflict until corrected.
 
 ### Matrix 7 — MVP versus deferred security controls
 
@@ -605,7 +635,7 @@ Use real PostgreSQL-compatible integration tests for relational ownership/constr
 | Server world/resource ownership and database constraints | Required | Same invariant for every new module |
 | Rate/size/idempotency/AI budgets and safe fallback | Required | Tune/expand based on abuse telemetry |
 | Secure storage, cache isolation/clearing, sanitized logs | Required | Optional approved cache encryption |
-| Password/login/verification/recovery | Not implemented | Version 1 after decisions |
+| Password/login/recovery | Not implemented | M17 under ADR-033; email verification remains later |
 | Guest same-user upgrade | Contract/control defined, not MVP endpoint | Version 1 implementation |
 | Google/Apple linking/MFA | Deferred | Later after decisions |
 | SignalR | Milestone open; HTTP fallback | Authorized groups and resync when introduced |

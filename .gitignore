@@ -1,33 +1,44 @@
-# Local configuration and secrets
-.env
-.env.*
-!.env.example
-appsettings.*.Local.json
-
-# IDE and operating-system files
-.idea/
-.vscode/
-.vs/
-*.suo
-*.user
-.DS_Store
-Thumbs.db
-
 # .NET
 **/bin/
 **/obj/
+*.user
+*.suo
 *.nupkg
 TestResults/
-coverage/
 
 # Flutter and Dart
 .dart_tool/
 .flutter-plugins
 .flutter-plugins-dependencies
 .packages
+.pub-cache/
 build/
 coverage/
+
+# Android
+**/android/.gradle/
+**/android/local.properties
+*.jks
+*.keystore
+key.properties
+
+# Editors and operating systems
+.idea/
+.vscode/
+.vs/
 *.iml
+.DS_Store
+Thumbs.db
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+appsettings.*.local.json
+appsettings.*.Local.json
+
+# Workspace-local toolchains
+.tooling/
 
 # Logs and temporary files
 *.log

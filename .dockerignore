@@ -1,0 +1,14 @@
+.git
+.config/local-secrets/
+*.pem
+jwt-private.pem
+.github
+.tooling
+**/bin
+**/obj
+**/TestResults
+docs
+codex
+mobile
+*.user
+*.suo

@@ -6,13 +6,13 @@ Read AGENTS.md, docs/milestones/M12_MEMORY.md, docs/product/PRODUCT.md, docs/gam
 Task: Long-Term Memory
 
 Scope:
-Implement structured CharacterMemory; Secret, SecretKnower, disclosure/provenance and confidentiality boundaries; Promise with Active/Kept/Broken/Cancelled lifecycle; source references; importance/emotion/confidence/expiry; deterministic creation/resolution from explicit game events; same-world and idempotency rules; bounded recall; authorized AI context for posts/messages; privacy tests; and internal application contracts. Do not expose raw public memory APIs or use AI to invent/extract authoritative state.
+Implement world/owner-scoped CharacterMemory with exactly Fact, Preference, Event, Secret, and Promise; structured authoritative source/subject/topic provenance; exact confidence/importance/CharacterPrivate visibility; provenance-keyed durable creation outcomes and source replay uniqueness; the exact MEM-02 formula, rounding, ordering, and top-eight bound; serialized per-Character 100-active-memory retention with deterministic non-protected eviction and `memory_capacity_protected` rejection when all 100 are protected; Secret storage with disclosure inactive; Promise Active/Fulfilled/Cancelled/Expired lifecycle driven only by structured authoritative conditions; same-world constraints; recall audit records; authorized memory context for eligible M11 replies; privacy tests; and internal application contracts. Do not expose raw public memory APIs or use text/AI to invent, extract, classify, or change authoritative state.
 
 Explicit exclusions:
-- No raw public memory/secret/promise APIs, AI-invented authoritative memories, cross-world knowledge, or deferred memory features.
+- No raw public memory/secret/promise APIs, AI/text-invented authoritative memories, arbitrary topic strings, embeddings/vector search, semantic classification, Secret disclosure pressure/leakage, cross-world/cross-Character knowledge, full-history context, M13 behavior, or other deferred memory features.
 
 Tests:
-- Test CharacterMemory, secrets/knowers/disclosure provenance/confidentiality, Promise Active/Kept/Broken/Cancelled transitions, deterministic creation/recall, privacy, same-world constraints, and idempotency.
+- Test approved structured-source mapping and prose rejection; exact confidence/importance/visibility; subject/topic/relationship matching; exact decimal recall score/rounding/order/top-eight bound; ordinary no-expiry; 99 protected plus one non-protected eviction; 100-protected `memory_capacity_protected` rejection; unchanged protected rows; active count never above 100; deterministic rejected replay/concurrency; no AI/provider capacity choice; Secret non-disclosure; Promise Active/Fulfilled/Cancelled/Expired transitions; replay uniqueness; privacy/world/owner constraints; and M11/M09 mechanical separation.
 
 Before editing:
 1. List relevant existing files.

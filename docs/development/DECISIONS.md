@@ -80,6 +80,730 @@ Use a milestone feature branch, push it, open a pull request into `main`, requir
 
 `main` is the stable/release-ready branch and `dev` is the persistent active development and integration branch. Implement M01 and later milestones sequentially on `dev`. After each milestone, run its verification, inspect the diff, create a milestone-specific commit, and push `dev`; a pull request is not required after every milestone. When `dev` reaches an approved stable checkpoint, promote it through a pull request from `dev` into `main`, require all applicable CI checks to succeed, review the pull request, and merge through that pull request. A reviewed local merge is not an accepted substitute for this promotion. Direct feature development on `main` is prohibited. Short-lived `feature/...` branches are optional for isolated or risky work and are not required by the milestone workflow. For a one-developer project self-review is acceptable, but the independent Codex diff review required by `DEVELOPMENT_PLAN.md` remains mandatory.
 
+## ADR-013 — M03 access-token and session-family policy
+
+**Date:** 2026-08-30
+**Status:** Accepted
+
+**Context**
+
+M03 requires concrete access-token, refresh-token, replay-containment, session-limit, signing-key, revocation, and authentication-rate-limit rules. The earlier sources defined the security boundaries but intentionally left these values open, blocking implementation.
+
+**Decision**
+
+- Access tokens are JWT bearer tokens signed only with RS256. Validation requires the signature, issuer `parallel-world-api`, audience `parallel-world-mobile`, expiration, and `not-before` when present, with an allowed clock skew of exactly 30 seconds. Tokens last 15 minutes, carry a stable user identifier in `sub` and a unique `jti`, and contain no secrets, private content, world lists, or unnecessary profile data.
+- Every token carries a `kid`. The signing private key is never committed. Development loads a local key from outside the repository; production obtains key material through environment or secret-management infrastructure. Verification accepts the current key and the previous still-valid verification key during controlled rotation. The production secret provider remains an M18 decision.
+- Refresh tokens are opaque cryptographically random bearer values with at least 256 bits of entropy and a 30-day lifetime from issuance. PostgreSQL stores only a secure cryptographic hash. Successful use atomically consumes the token and issues a replacement in the same family; no token can rotate successfully twice.
+- One refresh-token family represents one device/session. A consumed or replaced token replay transactionally revokes that entire family and requires a new or restored valid session, but does not revoke unrelated families. Records retain device association, expiry, consumption, replacement, revocation, and safe audit timestamps without raw tokens.
+- A user may have at most five active device/session families. Creating a sixth revokes the oldest active family. Guest and registered users share this model. Current-device logout revokes the current family; all-device logout revokes every active family for the user. Revoked or expired families cannot mint access tokens. Guest upgrade preserves the same `UserId` and worlds.
+- Installation identifiers are metadata only, never authentication, recovery, or rotation credentials. Ownership and session scope resolve server-side and never from a client-supplied `UserId`. ADR-014 defines the separate guest-bootstrap recovery proof.
+- Issued access tokens ordinarily remain usable until their 15-minute expiry. MVP has no distributed access-token denylist. A future immediate-revocation or sender-constrained-token requirement requires a new decision.
+- Initial M03 limits are: guest/session creation 10 attempts per IP per 10 minutes; refresh 30 attempts per device/session family per 10 minutes; invalid refresh/replay 10 attempts per IP per 10 minutes; logout 30 requests per authenticated user per 10 minutes. Exceeding a limit returns the standard `429` ProblemDetails response. M03 uses a simple modular-monolith-compatible implementation and does not introduce Redis or other distributed rate-limit infrastructure.
+- Access and refresh tokens, authorization headers, and cookies remain protected by the existing logging redaction rules. Refresh rotation is concurrency-safe; replay detection and family revocation are transactional.
+
+M03 must test the concrete token-validation matrix, rotation/concurrency/replay behavior, family isolation, expiry and logout scopes, five-family limit, absence of raw token persistence/logging, rate limiting, cross-user/session attacks, and identity continuity required for later same-user upgrade. Registered authentication, recovery, and public upgrade/session-management endpoints remain M17 work.
+
+**Alternatives considered**
+
+Symmetric signing, JWT refresh tokens, nonrotating refresh tokens, plaintext refresh storage, global revocation after one-device replay, a distributed access-token denylist, and Redis-backed MVP rate limiting were rejected because they either weaken containment or add unnecessary initial operational scope.
+
+**Consequences**
+
+M03 can implement and verify one precise session model. Ordinary logout does not immediately invalidate an already issued access token, so the short expiry is an explicit accepted limitation. Production key custody, hosting integration, and tuning remain later operational work.
+
+**Revisit when**
+
+M17 selects registered authentication/recovery, M18 selects production secret infrastructure, observed traffic requires rate-limit tuning or distributed coordination, or a higher-risk use case requires immediate or sender-constrained access-token revocation such as DPoP or mTLS.
+
+## ADR-014 — M03 guest-bootstrap recovery and non-idempotent refresh
+
+**Date:** 2026-08-30
+**Status:** Accepted; supplements ADR-013
+
+**Context**
+
+Generic idempotency required credential-issuing endpoints to replay their original response, while ADR-013 permits only hash storage and treats reuse of a consumed refresh token as replay. The original raw credential therefore cannot be reproduced safely, and installation identity cannot authorize guest recovery.
+
+**Decision**
+
+- `POST /api/v1/auth/refresh` is intentionally non-idempotent. It accepts no generic `Idempotency-Key` semantics. A successful call atomically consumes the presented token and returns its replacement exactly once. A consumed/replaced token presented again revokes only its affected family and never replays the earlier response or issues another replacement. Losing a successful refresh response may lose that family and require bootstrap or reauthentication; this is an accepted MVP tradeoff.
+- Initial `POST /api/v1/auth/guest` requires a client-generated opaque `GuestBootstrapProof` with at least 256 bits of cryptographic randomness, independent of installation identity. The server stores only its secure hash, scopes it to one bootstrap operation, never accepts it at another endpoint, and never logs or returns it.
+- The bootstrap proof has a 10-minute recovery window from successful bootstrap and permits at most one successful recovery rotation. The client discards it after safely persisting the initial refresh token. Expired or recovery-consumed proof cannot recover credentials.
+- First bootstrap transactionally creates exactly one guest `User`, `DeviceInstallation`, initial refresh family, `GameWorld`, player Actor/Profile, `WorldSettings`, and `WorldSimulationState`, then returns access/refresh credentials. Only hashes of bootstrap and refresh secrets are persisted.
+- A valid retry within the window returns the same User/world identity without duplicating bootstrap state. Because the original refresh token is unrecoverable, the retry atomically invalidates the currently active initial-family credential, issues new access/refresh credentials in the same bootstrap/session lineage, and marks recovery consumed. Concurrent bootstrap/recovery attempts create one identity/world and permit at most one successful recovery rotation.
+- Guest bootstrap is identity-idempotent, not byte-for-byte credential replay. Generic business idempotency remains unchanged for non-credential writes. Installation ID remains metadata only; generic idempotency keys remain deduplication inputs for approved non-credential operations. Neither is an authentication or recovery credential.
+- Guest bootstrap and recovery use the accepted M03 guest-auth rate limit. Proof hashes are retained only as required for bootstrap integrity, replay/audit, and the later accepted retention policy.
+
+**Alternatives considered**
+
+Reversible credential-response storage, refresh retry grace, installation-ID authentication, treating idempotency keys as credentials, and reproducing deterministic refresh tokens were rejected because they weaken ADR-013 or violate hash-only secret storage.
+
+**Consequences**
+
+M03 can safely recover an initial lost bootstrap response without retaining plaintext credentials. Ordinary refresh remains deliberately unforgiving under response loss. The Flutter bootstrap client in M04 must generate, protect during the request/recovery window, and then discard the proof.
+
+**Revisit when**
+
+Observed mobile network behavior justifies a different reviewed rotation protocol, M17 defines registered reauthentication, or the retention policy is finalized.
+
+## ADR-015 — M06 chronological feed ordering
+
+**Date:** 2026-09-12
+**Status:** Accepted
+
+**Context**
+
+M06 requires one stable total order for the private world feed before its API, cursor, database query, Flutter cache, and pagination tests can be implemented. Chronological and deterministic-ranked ordering were previously both listed as candidates, but M06 does not yet have the relationship, interaction, engagement, or simulation signals needed to justify a ranking model.
+
+**Decision**
+
+- M06 orders feed posts strictly by `createdAtUtc DESC, id DESC` within the authenticated user's authorized world. Newer posts appear first, and `id DESC` is the deterministic tie-breaker when timestamps are equal.
+- M06 uses no ranking score, popularity weighting, relationship weighting, AI-generated ranking, simulation-based ordering, randomization, or client-side resorting.
+- Cursor pagination uses the tuple `(createdAtUtc, id)`. The cursor is opaque, versioned, scope-bound, and validated by the server; clients do not decode it.
+- The next page contains only posts for which `createdAtUtc < cursor.createdAtUtc`, or `createdAtUtc = cursor.createdAtUtc` and `id < cursor.id`. This seek predicate prevents adjacent cursor pages from duplicating previously returned items when newer posts arrive between requests.
+- M06 guarantees stable chronological pagination under this tuple ordering. It does not introduce snapshot-isolation or feed-session semantics.
+- Deterministic-ranked or personalized ordering is deferred. A later ordering model requires a separate accepted decision after its signals and stable cursor tuple are explicitly defined.
+
+**Alternatives considered**
+
+Deterministic ranking and personalized ranking were deferred because their inputs and scoring contract do not exist in M06. Offset pagination and client-side sorting were rejected because they do not provide the required stable server-authoritative ordering for a growing feed.
+
+**Consequences**
+
+The M06 API, PostgreSQL query/index, Flutter cache, and automated tests share one exact ordering oracle. New posts may appear before an existing cursor between requests, but items already returned are not duplicated solely because of cursor continuation. Any future ranking change is a public pagination-contract change requiring compatibility review.
+
+**Revisit when**
+
+A later milestone has approved ranking signals such as relationships, interactions, recency weighting, simulation state, or engagement, and a separate decision defines the ranking, tie-breaks, cursor compatibility, and migration behavior.
+
+## ADR-016 — M07 parent-scoped reply thread reads
+
+**Date:** 2026-09-16
+**Status:** Accepted
+
+**Context**
+
+M07 requires a public thread-read contract and deterministic cursor tests. The existing API defined single-post reads and reply creation but did not define whether replies were embedded, recursively flattened, or exposed through a separate paginated collection.
+
+**Decision**
+
+- `GET /api/v1/worlds/{worldId}/posts/{postId}/replies` returns only the direct child replies of the specified post or reply. It uses the standard collection envelope and does not recursively nest or flatten the thread.
+- `GET /api/v1/worlds/{worldId}/posts/{postId}` remains the single Post/detail endpoint. It may expose approved aggregate metadata such as reply count, but it does not embed the paginated reply collection.
+- Direct replies use the total order `createdAtUtc ASC, id ASC`. The opaque cursor represents the last visible `(createdAtUtc, id)` tuple, is versioned and tamper-safe, and is bound to the authorized `worldId`, parent post/reply ID, and applicable filters.
+- The next page contains only replies for which `createdAtUtc > cursor.createdAtUtc`, or `createdAtUtc = cursor.createdAtUtc` and `id > cursor.id`. Invalid, tampered, foreign-world, or wrong-parent cursors fail through the standard ownership-safe cursor/error contract.
+- Thread traversal is explicit and parent-scoped: clients read the root Post separately, then request direct replies for any post/reply whose children they need. M07 does not preload or return a recursively flattened depth-two tree.
+- `MAX_REPLY_DEPTH = 2` means root post depth 0, reply to root depth 1, and reply to a depth-one reply depth 2. Creating depth 3 is rejected. Reading direct children of a depth-two reply succeeds with an empty collection.
+
+**Alternatives considered**
+
+Embedding every reply in the Post detail, recursively nested responses, flattened whole-thread pagination, and offset pagination were rejected because they make parent ownership, stable pagination, and bounded response behavior less explicit.
+
+**Consequences**
+
+Backend queries, Flutter state, and tests share one parent-scoped ordering and cursor contract. Each parent collection paginates independently, and clients fetch deeper branches only when needed.
+
+**Revisit when**
+
+A later approved product requirement needs whole-thread search, a different nesting/depth model, or a compatible bulk thread-loading contract.
+
+## ADR-017 — M08 autonomous follows require M10 relationship state
+
+**Date:** 2026-09-20
+**Status:** Accepted
+
+**Context**
+
+M08 introduces deterministic autonomous social simulation, while `FOLLOW-01` requires directional Familiarity, Trust, Affection, and Rivalry inputs owned by the M10 relationship engine. M08 explicitly excludes relationship persistence and mechanics. Synthesizing temporary values, deriving proxy values from interests or reputation, weakening the follow threshold, or moving M10 persistence into M08 would create an undocumented second relationship model and make later activation inconsistent.
+
+**Decision**
+
+- M08 does not synthesize, infer, persist, or otherwise substitute Familiarity, Trust, Affection, or Rivalry values.
+- When M10 relationship state is unavailable, autonomous Character evaluation of `FOLLOW-01` deterministically returns unavailable/ineligible. It creates no autonomous follow action, `Follow` row, or follow-change event and consumes no fallback random roll.
+- The absence of M10 relationship state is expected M08 behavior, not a simulation error. Repeating the same M08 state continues to produce no autonomous follow action.
+- M07 Player follow and unfollow behavior remains fully available and unchanged.
+- M10 activates autonomous `FOLLOW-01` evaluation using the real directional relationship state it introduces. M10 must not redesign the accepted `FOLLOW-01` scoring contract merely to activate it.
+
+**Alternatives considered**
+
+Temporary relationship defaults, hidden pair scores derived from interests or reputation, reduced follow thresholds, and early M10 relationship tables were rejected because they invent mechanics, violate milestone ownership, or produce state that M10 would later have to reinterpret.
+
+**Consequences**
+
+M08 autonomously creates posts, replies, and likes, but not follows. Its follow evaluation and tests must prove the deterministic unavailable state, absence of autonomous follow rows and temporary relationship state, and continued operation of M07 Player follows. M10 owns the first milestone in which autonomous Character follows can become eligible.
+
+**Revisit when**
+
+Only if the ownership or inputs of `FOLLOW-01` are changed through an accepted gameplay and architecture decision.
+
+## ADR-018 — M08 world display timezone contract
+
+**Date:** 2026-09-20
+**Status:** Accepted
+
+**Context**
+
+M08 evaluates `ACT-01` quiet hours, character schedules, and other local activity windows. Those rules require a stable local-time projection, but the existing world model does not identify a timezone or define a deterministic default. Using the server, device, locale, IP address, or operating-system timezone would make outcomes host-dependent.
+
+**Decision**
+
+- `WorldSettings` stores one required IANA timezone identifier as `DisplayTimeZoneId`, persisted in PostgreSQL as `display_time_zone_id`.
+- Existing and newly created worlds default to the exact identifier `UTC`. The M08 migration adds a non-null column and backfills existing rows to `UTC`.
+- Canonical simulation, event, action, and persistence timestamps remain UTC instants. M08 converts the applicable UTC simulation instant through the configured IANA timezone only to derive the local date and wall-clock time used by schedule and quiet-hour rules.
+- M08 uses the world timezone for every Character in that world. It introduces no per-character timezone state.
+- Timezone database rules provide offsets and daylight-saving transitions. Because conversion starts from a UTC instant, ambiguous or invalid local wall-clock timestamps are never engine inputs. `UTC` has no daylight-saving transition.
+- The server never infers this value from its local timezone, a client device, user locale, IP address, or operating-system settings.
+- A non-empty supplied timezone identifier must resolve as a supported IANA timezone or fail through the standard validation/ProblemDetails contract. Explicit invalid values never silently fall back to `UTC`.
+
+**Alternatives considered**
+
+Server-local time, device-local inference, Windows timezone IDs in domain state, manual offsets/DST rules, silent invalid-value fallback, and per-character timezones in M08 were rejected because they weaken determinism, portability, or milestone scope.
+
+**Consequences**
+
+M08 adds the world-settings field and migration, defaults and backfills it to `UTC`, and tests UTC/non-UTC/DST projections independently of host configuration. A later configurable API may expose the setting using standard validation, but M08 does not need a timezone-selection UI. Per-character timezones require a separate accepted decision and migration.
+
+**Revisit when**
+
+A later approved product requirement introduces player-configurable or per-character timezones.
+
+## ADR-019 — M08 relationship-gated autonomous social rules
+
+**Date:** 2026-09-20
+**Status:** Accepted; supplements ADR-017 and supersedes its M08 replies/likes consequence
+
+**Context**
+
+ADR-017 established that M08 cannot evaluate autonomous `FOLLOW-01` without M10-owned relationship state. The same dependency also exists in `REPLY-01`, which requires Familiarity and RelationshipRelevance, and `REACT-01`, which requires Affection. Treating those inputs as zero, using new-actor defaults as hidden stand-ins, deriving proxies, weakening thresholds, or introducing alternate formulas would create the same forbidden temporary relationship model.
+
+**Decision**
+
+- During M08, autonomous Character evaluation of `FOLLOW-01`, `REPLY-01`, and `REACT-01` deterministically returns unavailable/ineligible when M10 relationship state is absent.
+- An unavailable rule creates no `SimulationAction`, social row, `GameplayEvent`, or aggregate-count mutation. Eligibility is resolved before a rule-specific random roll, so no fallback randomness is consumed.
+- M08 does not synthesize, substitute, infer, or persist Familiarity, RelationshipRelevance, Affection, Trust, or Rivalry and does not add M10 entities, fields, or tables.
+- M07 Player replies, likes/unlikes, and follows/unfollows remain fully operational and unchanged. The gate applies only to autonomous Character simulation.
+- M08 still implements discoverable/evaluable rule eligibility paths, deterministic ordering and priority, tick processing, replay/idempotency, and provenance without fabricating an eligible action.
+- M10 activates autonomous `FOLLOW-01`, `REPLY-01`, and `REACT-01` eligibility using the real directional relationship state it introduces and the existing rule formulas.
+
+**Alternatives considered**
+
+Zero substitution, new-actor defaults, interest/topic/trait/reputation proxies, weaker thresholds, alternate pre-M10 formulas, and early relationship persistence were rejected because they invent gameplay behavior or violate milestone ownership.
+
+**Consequences**
+
+M08 autonomously creates character posts only. Reply, reaction, and follow rules remain auditable deterministic unavailable outcomes until M10, with no persisted action or effect. M08 tests protect unchanged M07 Player behavior, unchanged counters, absence of relationship substitutes, and repeatable no-action results.
+
+**Revisit when**
+
+Only if the ownership or required inputs of these rules change through a later accepted gameplay decision.
+
+## ADR-020 — M08 unavailable mandatory simulation inputs
+
+**Date:** 2026-09-20
+**Status:** Accepted; supplements ADR-017, ADR-018, and ADR-019 and supersedes ADR-019's M08 autonomous-post consequence
+
+**Context**
+
+M08 has no complete approved persisted source for mandatory numeric `ACT-01` and `POST-01` inputs including GoalRelevance, MoodActivation, and EventRelevance. `CurrentMoodType` is categorical rather than a numeric activation value, CharacterGoals are not assigned to M08, full world/gameplay-event relevance is deferred or undefined, and the post topic weights require unavailable goal/event categories. Substituting zero, inferring values, or redistributing weights would silently change the formulas.
+
+**Decision**
+
+- Every rule first classifies each mandatory input as available or unavailable. Available means approved persisted/domain state exists and its semantics and numeric interpretation are defined. Missing data, undefined numeric mapping, later-milestone ownership, or only a partial categorical value means unavailable.
+- A rule with any unavailable mandatory input deterministically returns `Unavailable`/`Ineligible` before probability evaluation. It consumes no rule-specific random draw and creates no `SimulationAction`, `GameplayEvent`, social row, aggregate-count change, or other autonomous side effect.
+- In M08, `ACT-01` is unavailable because GoalRelevance, numeric MoodActivation, and EventRelevance lack complete approved sources. Consequently it selects no actor or action family.
+- In M08, `POST-01` is unavailable because those numeric inputs and the mandatory goal/event topic-weight categories lack approved sources. Missing components are not set to zero, dropped, redistributed, or renormalized.
+- `CurrentMoodType` remains valid categorical M05 state but is not converted into numeric MoodActivation. M08 adds no temporary mood-intensity mapping or storage.
+- M08 adds no CharacterGoals and does not use interests as goal proxies. Goal storage, numeric range/default behavior, formula semantics, and versioning must be assigned by a future accepted decision before dependent rules activate.
+- Existing technical/provenance `GameplayEvent` rows do not imply EventRelevance. Full world events belong to later scope, and an accepted decision must define any numeric relevance mapping before dependent rules activate.
+- M06/M07 Player posts, replies, reactions, and follows remain unchanged. The unavailable result applies only to autonomous simulation.
+- M08 still implements meaningful deterministic infrastructure: world ticks/time, ADR-018 timezone projection, rule registration and ordered evaluation, unavailable reasons, deterministic seed/ID facilities, rule-version handling, transactions, interval claims, checkpoints, idempotency/replay, same-world concurrency control, and different-world independence.
+
+**Alternatives considered**
+
+Zero defaults, categorical mood-to-number mappings, interest/reputation proxies, temporary goals or mood tables, GameplayEvent-derived relevance, skipped terms, and redistributed/renormalized post-topic weights were rejected because they invent mechanics or move later scope into M08.
+
+**Consequences**
+
+M08 persists deterministic simulation progress and auditable rule-unavailability results but creates no autonomous social action or effect with the current inputs. Rule evaluation order is mandatory-input validation, availability/eligibility, then probability/random evaluation only for an independently eligible rule. Future activation requires approved real inputs and explicit storage, range/default, formula, and migration/versioning contracts.
+
+**Revisit when**
+
+Accepted source-of-truth decisions assign complete GoalRelevance, numeric MoodActivation, EventRelevance, and post topic-source semantics to implemented persisted state.
+
+## ADR-021 — M08 rule-evaluation persistence
+
+**Date:** 2026-09-20
+**Status:** Accepted; supplements ADR-017 through ADR-020
+
+**Context**
+
+M08 must persist auditable successful-but-unavailable rule outcomes without fabricating a `SimulationAction` or `GameplayEvent` and without overloading `SimulationRun.ErrorCode`, which represents actual run failure. Candidate-level diagnostics would be excessive and could accidentally make enumeration order part of persisted behavior.
+
+**Decision**
+
+- Add `SimulationRuleEvaluation`, persisted as `simulation_rule_evaluations`, for deterministic rule-level audit state. It is not a gameplay effect, action, gameplay event, or error log.
+- Persist exactly one summary row for each `(SimulationRunId, RuleCode)`. M08 does not persist actor candidates, target candidates, random draws, rejected candidates, or scoring terms.
+- Required fields are deterministic `Id`, `WorldId`, `SimulationRunId`, `RuleCode`, `Outcome`, `ReasonCode`, `RuleVersion`, and `EvaluatedAtUtc`. The ID derives from a stable hash namespace containing `WorldId`, run identity, and `RuleCode`; it never uses random/time/runtime hashing.
+- Outcomes are `Unavailable`, `Ineligible`, `Eligible`, and `Executed`. `Unavailable` means a mandatory approved input or semantic is absent; `Ineligible` means inputs exist but deterministic conditions reject execution; `Eligible` means eligibility succeeded before a committed effect; `Executed` means the approved action/effect committed.
+- Reason codes are stable lowercase machine-readable values, never prose: `relationship_state_unavailable`, `goal_relevance_unavailable`, `mood_activation_unavailable`, `event_relevance_unavailable`, `topic_inputs_unavailable`, `quiet_hours`, and `schedule_ineligible`. New codes require the relevant rule contract; no localized or generated explanation is persisted.
+- Primary missing-reason precedence is rule-specific and stable. `REPLY-01`, `REACT-01`, and `FOLLOW-01` check `relationship_state_unavailable` first, followed by their remaining mandatory inputs in rule-definition order. `ACT-01` and `POST-01` use `goal_relevance_unavailable`, then `mood_activation_unavailable`, then `event_relevance_unavailable`; `POST-01` then uses `topic_inputs_unavailable`. M08 therefore records relationship-state as the primary reason for the three relationship-gated rules and goal relevance for ACT/POST under current state.
+- An unavailable or ineligible evaluation never creates a `SimulationAction` or `GameplayEvent` and never marks its `SimulationRun` failed. `SimulationRun.ErrorCode` remains null for a successful run and is reserved for actual run/transaction/infrastructure failure.
+- The database enforces one row per run/rule and same-world run integrity. Replay reuses the row or deterministically reproduces the identical row; same-world interval locking plus uniqueness prevents concurrent duplicates. Different worlds and different runs remain independent.
+- For each M08 tick, the run, required rule evaluations, checkpoint, and world/simulation cursor advancement commit atomically. Rollback leaves none of those records claiming completion. Evaluation rows follow their run's lifecycle; M08 adds no cleanup worker.
+
+**Alternatives considered**
+
+Using `SimulationRun.ErrorCode`, skipped `SimulationAction` rows, synthetic `GameplayEvent` rows, free-form diagnostic prose, candidate-level tables, nondeterministic IDs, and logs alone were rejected because they conflate semantics, fabricate effects, weaken replay, or provide insufficient durable auditability.
+
+**Consequences**
+
+M08 can complete a successful tick with five deterministic `Unavailable` evaluation rows and no autonomous action/effect. Tests can assert exact outcomes, primary reasons, world isolation, replay uniqueness, atomicity, and unchanged Player behavior without treating expected rule unavailability as failure.
+
+**Revisit when**
+
+Candidate-level diagnostics, additional outcomes, retention independent from SimulationRun, or a public diagnostic projection is explicitly approved.
+
+## ADR-022 — M08 fixed tick bootstrap and run granularity
+
+**Date:** 2026-09-20
+**Status:** Accepted; supplements ADR-017 through ADR-021
+
+**Context**
+
+M08 had no exact contract for a never-simulated world's first cursor, whether `NextDueAt` or request time owns chronology, or whether one trigger may drain multiple complete ticks. Those choices change interval identity, run counts, cursor advancement, replay, and same-world concurrency behavior. Multi-interval catch-up belongs to M15 rather than the foundational active-tick implementation.
+
+**Decision**
+
+- M08 uses fixed 15-minute half-open UTC intervals. One `SimulationRun` represents exactly one interval `[IntervalStartUtc, IntervalEndUtc)` where `IntervalEndUtc = IntervalStartUtc + 15 minutes`.
+- A normal M08 trigger processes at most the single oldest due interval. It creates at most one successful run and never drains or spans an overdue backlog. M15 owns future multi-interval batching/catch-up behavior.
+- For a never-simulated world, the authoritative first cursor is `GameWorld.CreatedAtUtc`: first interval `[CreatedAtUtc, CreatedAtUtc + 15 minutes)`. It is eligible exactly when request/current UTC is greater than or equal to its end.
+- `WorldSimulationState.NextDueAt` is a persisted scheduling projection, not an independent chronology source. Never-simulated worlds use `CreatedAtUtc + 15 minutes`. After committing an interval ending at `E`, set `LastCompletedIntervalEnd = E` and `NextDueAt = E + 15 minutes`.
+- Existing never-simulated rows whose old initialization has `NextDueAt = GameWorld.CreatedAtUtc` are normalized/backfilled to `CreatedAtUtc + 15 minutes` by the M08 migration. World creation adopts the same new default.
+- For a previously simulated world, the next interval start is `LastCompletedIntervalEnd`, and its end/due projection is start plus 15 minutes. Cursor-derived chronology is authoritative. A persisted `NextDueAt` mismatch fails safely through existing validation/failure conventions; request time never defines an alternate interval.
+- `currentUtc < NextDueAt` creates no run. `currentUtc == NextDueAt` is due. Partial intervals are never processed.
+- Run identity and database uniqueness distinguish `WorldId`, interval start/end, and rule version. There cannot be two successful logical runs for that tuple.
+- A completed interval replay performs no second advancement or evaluation/effect set. A transactionally failed attempt leaves the same interval due. Cursor fields advance only in the atomic run/evaluation/checkpoint transaction.
+- Same-world concurrent triggers contend for the same oldest due interval. One may commit it; the losing invocation returns/reuses the resulting state and must not loop forward into the next overdue interval. Different worlds remain independently lockable.
+- Interval boundaries and cursor fields are UTC. ADR-018 timezone projection affects only schedule/quiet-hour rule evaluation and never changes interval identity.
+
+**Alternatives considered**
+
+Immediate creation-time ticks, request-now-derived intervals, one run spanning multiple ticks, multiple runs per M08 trigger, treating `NextDueAt` as independent chronology, and allowing a concurrency loser to consume the next backlog interval were rejected because they weaken replay, blur the M08/M15 boundary, or make invocation timing change interval identity.
+
+**Consequences**
+
+At 31 elapsed minutes, two intervals are eligible but the first M08 trigger creates only `[T,T+15)`, advances the completed cursor to `T+15`, and sets `NextDueAt=T+30`; the world remains due. A second trigger may create `[T+15,T+30)`, advance the cursor to `T+30`, and set `NextDueAt=T+45`. M08 tests assert this exact progression and the migration normalization.
+
+**Revisit when**
+
+M15 defines bounded multi-interval catch-up, batching limits, prioritization, yielding, and long-offline recovery policy.
+
+## ADR-023 — M08 world-time advancement and cursor projections
+
+**Date:** 2026-09-20
+**Status:** Accepted; supplements ADR-017 through ADR-022
+
+**Context**
+
+ADR-022 defines the canonical 15-minute UTC interval cursor but does not fully relate it to the existing `GameWorld.CurrentWorldTime`, `GameWorld.LastSimulatedAt`, and `WorldSettings.TimeScale` fields. Without one authority model, delayed processing, replay, or a scale change could make wall-clock chronology and accumulated in-world time diverge nondeterministically.
+
+**Decision**
+
+- `WorldSimulationState.LastCompletedIntervalEnd` is the authoritative persisted cursor for completed canonical UTC intervals. `NextDueAt` remains its derived scheduling projection and never becomes an independent chronology source.
+- `GameWorld.LastSimulatedAt` is a compatibility projection of the most recently committed canonical interval end. After `[S,E)` commits, both `LastCompletedIntervalEnd` and `LastSimulatedAt` equal `E`; request arrival, transaction completion time, server local time, and worker delay never set it.
+- The existing schema keeps `LastSimulatedAt` non-null and initializes it to `GameWorld.CreatedAtUtc`. For a never-simulated world, `LastCompletedIntervalEnd == null` is the authoritative state; the creation-time `LastSimulatedAt` value is only the legacy-compatible bootstrap representation and does not claim a completed interval.
+- `GameWorld.CurrentWorldTime` is the accumulated in-world clock. It continues to initialize to `GameWorld.CreatedAtUtc` and advances only when an interval commits.
+- For one M08 interval, `worldTimeDelta = 15 minutes × EffectiveTimeScale`, and `new CurrentWorldTime = previous CurrentWorldTime + worldTimeDelta`. Arithmetic uses the existing exact decimal scale and timestamp/tick representation, not binary floating point, processing delay, backlog age, or wall-clock `now`.
+- `WorldSettings.TimeScale` remains a positive `decimal`/PostgreSQL `numeric(8,4)` value with representable persisted range `0.0001` through `9999.9999` and default `1.0000`. It changes only in-world advancement. It does not change the fixed UTC interval duration, due check, `NextDueAt`, `LastCompletedIntervalEnd`, or SimulationRun interval identity.
+- Each SimulationRun persists the positive `EffectiveTimeScale` claimed for that interval using the same `numeric(8,4)` representation. A later setting change affects future unprocessed intervals only and never retroactively changes a completed run or replay.
+- Schedule and quiet-hour rules use the interval's resulting `CurrentWorldTime` as their canonical world-time instant and convert it through `WorldSettings.DisplayTimeZoneId`. Timezone projection never changes canonical UTC interval identity or cursor fields.
+- One M08 trigger advances one interval only. With backlog, each committed interval adds exactly its own scaled delta. M15 may later process several logical intervals in one catch-up invocation, but accumulated world-time advancement remains the deterministic sum of those per-interval deltas.
+- The SimulationRun, required SimulationRuleEvaluations, approved effects, checkpoint/claim state, `LastCompletedIntervalEnd`, `NextDueAt`, `LastSimulatedAt`, and `CurrentWorldTime` commit atomically. Failure advances none of them. Replay and same-world concurrency produce at most one world-time advancement for one logical interval; a losing M08 trigger does not consume the next backlog interval.
+
+**Alternatives considered**
+
+Using request or commit time for `LastSimulatedAt`, jumping `CurrentWorldTime` to wall-clock now, applying the entire backlog delta in one M08 run, allowing TimeScale to alter due chronology, reading the current setting again during replay, binary floating-point arithmetic, and leaving the effective scale unaudited were rejected because they break deterministic interval ownership and replay.
+
+**Consequences**
+
+At scale `2.0000`, each committed 15-minute interval advances `CurrentWorldTime` by exactly 30 minutes while the UTC cursor still advances by 15 minutes. At scale `0.5000`, it advances by exactly 7 minutes 30 seconds. Existing new-world values remain compatible, while `LastCompletedIntervalEnd` unambiguously distinguishes never-simulated state.
+
+**Revisit when**
+
+M15 defines multi-interval catch-up execution details or a future approved feature introduces historical TimeScale editing beyond per-run auditability.
+
+## ADR-024 — M09 local-first zero-paid-API text generation
+
+**Date:** 2026-09-21
+**Status:** Accepted
+
+**Context**
+
+M09 requires one provider/configuration contract before implementing wording generation. The current development and MVP path must work without a paid API, external billing account, provider key, model download in CI, or AI availability as a correctness dependency. The core architecture must also remain provider-neutral so a later reviewed provider can replace or supplement the initial adapter without entering Domain, Application contracts, or Simulation mechanics.
+
+**Decision**
+
+- M09 is local-first. Ollama is the initial generation provider, implemented behind the provider-neutral M09 text-generation abstraction. Ollama-specific transport and response types remain inside the AI/infrastructure adapter and do not enter Domain, Simulation, or core Application contracts.
+- The preferred initial model is `qwen3:4b`, but the server-side model name remains configurable. Development may select the smallest suitable locally installed Ollama text model. No model-specific gameplay behavior is allowed.
+- The default development/MVP path requires no OpenAI subscription, paid Hugging Face inference, paid Gemini usage, other paid AI API, external billing account, or automatic cloud fallback. Provider failure follows `Ollama -> deterministic application-owned template fallback`, never `Ollama -> paid provider`.
+- Central backend configuration covers `Enabled`, `BaseUrl`, `Model`, `Timeout`, `MaxOutputLength`, and `PromptTemplateVersion`. The local endpoint may default to `http://localhost:11434`, the timeout defaults to 10 seconds, and configuration is never client-controlled or exposed to Flutter. Ollama installation, startup, or model availability is not a backend-startup requirement.
+- One retry is allowed only for a transient local connection or timeout failure. Invalid authoritative input, malformed/invalid output, and non-transient failures are not repeatedly retried. Cancellation remains effective throughout the timeout/retry path.
+- Same authoritative facts plus the same template version produce identical fallback text that obeys the existing Post/Reply content limits. Provider absence, timeout, rate/resource rejection, invalid response, unsafe/unusable output, or budget exhaustion cannot rerun simulation, change mechanics, or fail already-decided gameplay.
+- AI receives only a minimal structured wording contract for already-decided facts. It returns presentation wording only and cannot choose actor, target, action, eligibility, outcome, score, relationship value, timing, randomness, state transition, counter, or whether an effect exists. Untrusted social text is delimited data and cannot authorize tools or commands.
+- M09 uses application-level structural/content validation, existing content constraints, minimized context, and safe deterministic fallback. It does not require a paid moderation API. A dedicated moderation model/service remains deferred until a separate accepted decision identifies a free/local or otherwise approved approach.
+- Normal automated tests and CI use a deterministic fake provider and local HTTP transport stubs. They require no network, real Ollama process, model download, paid API, or provider credential. A narrowly scoped real-Ollama check is optional local manual verification only.
+- Cloud or freemium providers, automatic routing/failover, and multi-provider orchestration require a later accepted decision. Gameplay determinism never depends on generated wording or provider determinism.
+
+**Alternatives considered**
+
+Making a paid cloud provider the M09 default, automatically falling back from Ollama to a paid API, requiring Ollama/model installation for backend startup or CI, letting provider-specific types cross module boundaries, and relying on a paid moderation service were rejected because they violate the zero-cost requirement, weaken test isolation, or make gameplay availability depend on AI infrastructure.
+
+**Consequences**
+
+M09 can implement and verify its full abstraction, persistence, validation, retry, fallback, diagnostics, and transport behavior without paid usage. Local wording quality and latency depend on the configured machine/model, but provider failure degrades only presentation. Setup documentation describes optional local Ollama installation and model selection while the default fake/fallback paths keep builds and tests self-contained.
+
+**Revisit when**
+
+A separately approved cloud/freemium provider, dedicated moderation system, provider-routing policy, or production deployment topology is required and its privacy, secret, cost, retry, and fallback contracts are recorded.
+
+## ADR-025 — M10 deterministic relationship mechanics contract
+
+**Date:** 2026-10-01
+**Status:** Accepted; supplements ADR-017, ADR-019, and ADR-020; unresolved-blocker portions superseded by ADR-026
+
+**Context**
+
+M10 requires one exact directional dimension set, deterministic derived inputs for FOLLOW-01 and REPLY-01, reproducible REL-01 modifiers, and authoritative social-action mapping. Existing planning listed only seven dimensions in one implementation prompt, left `InterestOverlap` and `RelationshipRelevance` undefined, and described multiplier ranges without fully defining mappings. Inventing proxies or deriving mechanics from generated text would violate the rules-before-language boundary.
+
+**Decision**
+
+- M10 relationship state has exactly nine directional 0-100 integer dimensions: Familiarity, Trust, Respect, Affection, Comfort, Rivalry, Jealousy, Attraction, and Commitment. Source-to-target and target-to-source are independent. No tenth hidden score exists.
+- Existing defaults remain: Familiarity 10, Trust 50, Respect 50, Affection 20, Comfort 15, Commitment 0, Rivalry 0, and Jealousy 0. Attraction follows the existing deterministic compatibility/seed rule when its approved inputs are available and is 0 when romance is disabled or incompatible.
+- Directional rows are initialized lazily on the first approved need for that source-to-target pair. Unique world/source/target identity, distinct-actor checks, same-world composite foreign keys, and transactional conflict reload/retry make concurrent initialization deterministic without pre-creating an uncontrolled N-by-N matrix.
+- `InterestOverlap` is the midpoint-away-from-zero rounded 0-100 Jaccard similarity of sets of canonical persisted interest/topic identifiers. Duplicates and order do not matter. Either empty set yields 0; identical non-empty sets yield 100.
+- `RelationshipRelevance = clamp(round(0.25F + 0.15T + 0.15R + 0.15A + 0.10C + 0.10Ry + 0.05J + 0.025At + 0.025Cm),0,100)` using exact decimal arithmetic and midpoint-away-from-zero rounding. Rivalry and Jealousy increase relevance because relevance measures directional social significance, not positive affinity.
+- M10 v1 multipliers default to exactly 1.0. Existing exact exceptions remain: public-negative events use 1.25 for Respect loss and Rivalry gain, and repeated positive events after three of the same type in seven game days use 0.5. Undefined severity, personality, mood, repeated-negative, Empathy, and Sensitivity mappings remain neutral. Additional non-neutral behavior requires a separate accepted rule-version decision.
+- Gameplay facts alone classify relationship events. Initial Follow maps to `follow`, Unfollow to the existing `Unfollow` row, re-follow to `Re-follow`, Like creation to `like`, and Reply creation to `reply`. Unlike, Post creation alone, and M09 provider/fallback wording create no M10 v1 relationship event. Natural-language sentiment or wording never determines event type, direction, multiplier, delta, dimension, relevance, or eligibility.
+- The existing matrix lacks exact base rows for initial `follow`, `like`, and generic `reply`; `Helpful reply` is not a generic-reply alias. Those effects remain blocked until exact matrix rows are approved. No implementation may borrow or invent deltas.
+- FOLLOW-01 now has real relationship values and deterministic InterestOverlap, but autonomous activation remains blocked because Character Reputation has no approved persisted source. PlayerProfile Reputation does not supply Character Reputation, and follower count, popularity, influence, AI wording, or relationship state are forbidden proxies.
+- REPLY-01 now resolves Familiarity and RelationshipRelevance but remains unavailable with `mood_activation_unavailable` as its first currently unresolved mandatory input in formula order; GoalRelevance also remains unresolved. No term is zeroed, dropped, or renormalized.
+- REACT-01 now resolves Affection but remains unavailable because AuthorReputation, PositiveMood/numeric mood semantics, GoalRelevance, and repetition semantics are unresolved. A stable reason code/precedence for the earliest missing input must be approved with its source contract before activation.
+- ADR-020 remains authoritative for ACT-01 and POST-01. M10 does not activate them.
+- One relationship effect is unique by authoritative gameplay event, rule version, source Actor, and target Actor. It never keys from generated wording. The relationship row, event, and daily ledger change atomically and concurrency-safely; reverse direction changes only through a separately approved directional effect.
+
+**Alternatives considered**
+
+Seven dimensions, a hidden composite score, fuzzy interest matching, runtime hashing, inferred Character Reputation, arbitrary multipliers inside allowed ranges, treating every reply as Helpful, borrowing Re-follow deltas for initial Follow, sentiment analysis, and AI-derived mechanics were rejected because they invent state or make deterministic outcomes depend on presentation.
+
+**Consequences**
+
+The nine-dimension model, defaults, derived relevance calculations, multiplier defaults/exceptions, directionality, bounds, and AI boundary are implementation-ready. M10 as a whole remains blocked only on an approved Character Reputation source, exact base-delta rows for initial Follow/Like/generic Reply, and REACT-01's earliest-missing-input reason/source contract. REPLY-01 remains deliberately gated by existing ADR-020 inputs rather than blocking relationship persistence itself.
+
+**Revisit when**
+
+Source of truth approves Character Reputation, the missing matrix rows, the REACT-01 input/reason contract, or any additional non-neutral REL-01 multiplier mapping.
+
+## ADR-026 — M10 Character Reputation and social-action relationship effects
+
+**Date:** 2026-10-01
+**Status:** Accepted; supplements ADR-025 and resolves its remaining M10 blockers
+
+**Context**
+
+ADR-025 left M10 blocked on Character Reputation, missing base-delta rows for initial Follow/Like/generic Reply, and REACT-01 missing-input precedence. Those gaps can be resolved without inventing relationship deltas: social actions and relationship effects are separate, and an action without an approved canonical matrix row simply has no REL-01 effect.
+
+**Decision**
+
+- M10 adds persisted `Character.Reputation`, an integer from 0 through 100 with non-null default 50. Existing Character rows backfill to 50 and new Characters initialize to 50. It is independent from PlayerProfile Reputation.
+- M10 adds no Character Reputation progression. REL-01, follows, likes, replies, follower/reaction counts, Influence, Popularity, relationship dimensions, post count, and AI text do not change it. Future progression requires a separate accepted gameplay rule.
+- Character Reputation supplies the Character `Reputation` input to FOLLOW-01 and Character `AuthorReputation` input to REACT-01. PlayerProfile Reputation is not substituted for Character-authored evaluation.
+- FOLLOW-01 is fully evaluable in M10 using its unchanged relationship values, deterministic InterestOverlap, Character Reputation, thresholds, coefficients, and PRNG contract. Outcomes are Ineligible, Eligible, or Executed. M07 active-edge uniqueness/history, cooldown/cap, replay, same-world, and server-only Character-authority constraints remain mandatory.
+- Initial Follow, Like, Unlike, and generic Reply create no M10 v1 relationship delta and no zero-delta RelationshipEvent. The social action remains valid and retains its own audit/idempotency behavior.
+- Unfollow and Re-follow use their existing canonical matrix rows. `Helpful reply` uses its existing row only after an authoritative deterministic mechanic classifies the reply as Helpful. Free-form content, sentiment analysis, M09 wording, Ollama output, and fallback text cannot classify helpfulness.
+- REL-01 runs only when an authoritative gameplay action/event maps to a canonical relationship-event row that already has approved deterministic base deltas. Absence of a mapping or row is an intentional no-relationship-effect result, not a failure.
+- REPLY-01 resolves Familiarity and RelationshipRelevance but remains unavailable with primary reason `mood_activation_unavailable`; GoalRelevance remains unresolved behind that gate.
+- REACT-01 availability precedence is: relationship state, AuthorReputation, PositiveMood, GoalRelevance, repetition semantics. M10 resolves the first two. The primary remaining reason is the new stable code `positive_mood_unavailable`; after PositiveMood resolves it is `goal_relevance_unavailable`; after prior inputs resolve and repetition remains undefined it is the new stable code `repetition_semantics_unavailable`.
+- CurrentMoodType is not converted to PositiveMood, and repetition behavior is not inferred. No missing term is assigned zero, removed, proxied, or renormalized.
+- ADR-020 continues to gate ACT-01 and POST-01. M09 remains presentation-only and has no authority over event classification, Reputation, relationship mechanics, or rule availability.
+
+**Alternatives considered**
+
+Deriving Reputation from other scores or counts, adding reputation progression to M10, synthesizing zero-delta relationship events, inventing Follow/Like/Reply matrix rows, treating every reply as Helpful, classifying text sentiment, and retaining `relationship_state_unavailable` after relationship state exists were rejected because they conflate independent mechanics or invent inputs.
+
+**Consequences**
+
+M10 has no remaining mechanical planning blocker. FOLLOW-01 activates with approved inputs; REPLY-01 and REACT-01 remain deterministically unavailable for their exact next missing inputs; ordinary Follow/Like/Reply actions remain functional without implicit relationship changes. Implementation must add the Character column and migration, but this planning decision itself changes no schema or code.
+
+**Revisit when**
+
+A Character Reputation progression rule, authoritative Helpful-reply classifier, PositiveMood mapping, GoalRelevance source, repetition semantics, or new social-action relationship delta is separately approved.
+
+## ADR-027 — M11 MSG-02 neutral urgency and conflict defaults
+
+**Date:** 2026-10-03
+**Status:** Accepted; makes the M11-v1 MSG-02 eligibility rule implementation-ready
+
+**Context**
+
+MSG-02 requires numeric `Urgency` and `ConflictAvoidancePenalty` inputs, but no accepted M11 mechanic classifies Player-authored message intent/urgency or persists unresolved conflict. Leaving either value implicit would force implementation to invent text heuristics, misuse Rivalry, accept client-controlled hidden mechanics, or delegate gameplay authority to M09/Ollama.
+
+**Decision**
+
+- M11 v1 evaluates every Player-authored private message with `Urgency=50`, the exact neutral midpoint of MSG-02's documented 0-100 scale. The backend supplies this fixed value; the Player and client cannot select or override it.
+- M11 v1 uses `ConflictAvoidancePenalty=0` because no authoritative unresolved-conflict mechanic exists. Absence of modeled conflict contributes no penalty, and Rivalry alone is not unresolved conflict.
+- The existing MSG-02 formula, coefficients, deterministic PRNG behavior, probability semantics, cooldowns, and immediate/no-response timing remain unchanged. These explicit inputs make the M11-v1 rule fully evaluable.
+- Message content remains presentation/content input subject to ordinary validation. Keywords, sentiment, punctuation, uppercase, regexes, message length, history scanning, and embeddings do not classify intent, Urgency, or conflict.
+- M09/Ollama remains wording-only and runs only after the authoritative MSG-02 decision. Provider configuration, output, failure, and deterministic fallback cannot affect Urgency, ConflictAvoidancePenalty, reply existence, timing, or probability.
+- Future explicit conversation intent, urgency categories, modeled conflict, deterministic intent classification, relationship-driven conflict, or memory-aware context requires a separate accepted decision defining the authoritative source, exact mapping, numeric range, replay/rule-version behavior, and interaction with MSG-02 before replacing these defaults.
+
+**Alternatives considered**
+
+Client-supplied urgency, keyword or punctuation scoring, length-based urgency, sentiment/regex/LLM classification, deriving conflict from Rivalry, scanning conversation history, and treating missing inputs as implementation-local constants were rejected because they create unapproved or unaudited gameplay mechanics.
+
+**Consequences**
+
+M11 can implement and test deterministic immediate reply eligibility/no-response without text-dependent mechanics or AI authority. Different valid Player wording under identical mechanical state produces the same MSG-02 mechanical evaluation. Richer urgency and conflict behavior is deliberately deferred.
+
+**Revisit when**
+
+An accepted rule version introduces explicit intent/urgency, authoritative unresolved-conflict state, relationship-driven conflict, or M12-aware inputs with complete mapping and replay semantics.
+
+## ADR-028 — M12 deterministic structured memory mechanics
+
+**Date:** 2026-10-04
+**Status:** Accepted; protected-only retention overflow subsequently resolved by ADR-029
+
+**Context**
+
+M12 named memory creation and recall but did not define a closed v1 type set, authoritative source mapping, exact scoring, retention, Secret behavior, or Promise transitions. Implementing those gaps locally would invite NLP/AI classification, semantic search, unstable recall, cross-Character leakage, or destructive retention behavior. M11 also requires memory context to remain downstream of its deterministic reply/no-response decision.
+
+**Decision**
+
+- M12 v1 supports exactly Fact, Preference, Event, Secret, and Promise. Every memory is world-scoped, owned by one Character, provenance-backed, bounded, deterministic, and CharacterPrivate.
+- Creation requires an authoritative structured source that explicitly supplies the owner Character's knowledge, a supported source category, source identity, and an authoritative subject identifier. Missing owner knowledge or subject prevents creation. Fact requires structured fact metadata; Preference requires structured preference metadata; Event uses a persisted gameplay event/action/message-event with an explicit authoritative M12-memorable category; Secret requires an explicit Secret marker; Promise requires an explicit Promise marker and structured lifecycle fields. Free text, NLP, sentiment, repetition, and AI never determine these values.
+- Subject uses a typed source-of-truth identifier. Topic uses an existing canonical topic/interest identifier or is null. A null topic contributes zero; arbitrary generated topic strings are forbidden.
+- Confidence is 100 for an authoritative structured gameplay Fact, structured Preference, structured Secret, or structured Promise; it is 90 for an explicitly memorable structured Player-authored statement or authoritative gameplay Event. Importance is Fact=60, Preference=60, Event=50, Secret=90, and Promise=90. AI cannot select either value.
+- MEM-02 is `RecallScore = 0.40*SubjectMatch + 0.30*TopicMatch + 0.20*RelationshipMatch + 0.10*Importance`. Inputs are 0-100; exact decimal arithmetic is used and the final score is rounded once to an integer with midpoint-away-from-zero. SubjectMatch is 100 for the same authoritative subject ID and otherwise 0. TopicMatch is 100 for the same non-null canonical topic ID and otherwise 0, including either side missing. For an Actor subject, RelationshipMatch is the accepted M10 RelationshipRelevance from recalling Character to subject Actor; it is 0 for a non-Actor subject.
+- Recall orders by RecallScore DESC, CreatedAtUtc DESC, Id DESC. The existing source-of-truth limit `MAX_MEMORIES_PER_AI_REQUEST=8` applies; the fallback value 5 is not used because a limit already exists.
+- Ordinary memories do not expire automatically in M12 v1. A Character has at most 100 active memories. When possible, overflow evicts a non-protected memory by Importance ASC, CreatedAtUtc ASC, Id ASC. Active Secret and Promise memories are protected. ADR-029 defines the protected-only full-cap outcome.
+- The repository-equivalent of `(WorldId, OwnerCharacterId, SourceType, SourceId, MemoryType)` is unique. Retry/replay reuses the existing memory.
+- Secret disclosure mechanics are inactive. No disclosure pressure, leakage chance, spontaneous transfer, relationship-driven disclosure, or AI-directed disclosure exists in M12 v1. Active is the only released state; Removed/Invalidated remains reserved until an explicit authoritative action is approved.
+- Promise sources include structured promise type, source Actor, optional target Actor, supported due condition, and lifecycle status. Supported conditions are exact world-game due timestamps/dates or explicit authoritative event ID/type triggers. Status is Active, Fulfilled, Cancelled, or Expired. Fulfillment requires a matching authoritative gameplay event; cancellation requires an explicit authoritative cancellation event/command; expiry requires an exact timestamp/date. Unsupported or natural-language-only conditions prevent Promise memory creation. M12 does not activate implicit Promise relationship deltas.
+- MSG-02 decides whether a Character reply exists before recall. Only an eligible reply may request M12 context, and M09 uses it for wording only. Memory cannot alter reply existence, timing, probability, Urgency, or ConflictAvoidancePenalty.
+- M12 v1 has no embeddings, vector columns/search, semantic similarity, or AI authority over memory type, subject, topic, confidence, importance, visibility, Secret state, Promise lifecycle, or recall score.
+
+**Alternatives considered**
+
+Free-text fact/promise extraction, arbitrary topics, embedding similarity, recency/emotion/recall penalties, automatic ordinary expiry, spontaneous Secret disclosure, AI-selected mechanics, Kept/Broken Promise statuses, and sending memory into MSG-02 were rejected because they are unapproved, nondeterministic, or violate milestone boundaries. A default protected-memory deletion or silent cap overflow was also rejected because neither behavior is authorized.
+
+**Consequences**
+
+Recall is deterministic and owner-private, replay cannot duplicate a source memory, and M09 remains presentation-only. ADR-029 completes the retention contract that remained open when this ADR was accepted.
+
+**Revisit when**
+
+Separate future ADRs are required before enabling Secret disclosure, new memory types/visibility, semantic retrieval, different retention, natural-language Promise conditions, or AI mechanical authority.
+
+## ADR-029 — M12 protected-only capacity rejection
+
+**Date:** 2026-10-04
+**Status:** Accepted; completes M12 mechanical planning
+
+**Context**
+
+ADR-028 caps each Character at 100 active memories, deterministically evicts an eligible non-protected memory, and protects active Secrets and Promises. It intentionally left undefined the case where all 100 active memories are protected and another authoritative memory creation is attempted. Deleting a protected memory, exceeding the cap, or failing the source gameplay/message operation would each violate an accepted boundary.
+
+**Decision**
+
+- If a Character has 100 active memories and at least one is non-protected, evict exactly one eligible row by Importance ASC, CreatedAtUtc ASC, Id ASC, then create the new memory under the normal provenance transaction.
+- If all 100 active memories are protected active Secrets/Promises, reject only the new memory creation with deterministic machine reason `memory_capacity_protected`.
+- The protected rows remain unchanged, no new memory row is created, and the active count remains exactly 100. The rule applies regardless of the incoming memory type.
+- The authoritative source event/message remains valid. Capacity rejection is a non-fatal memory outcome and must not roll back, fail, or otherwise change unrelated gameplay, messaging, M11 reply decisions, or M09 wording work that does not depend on the absent memory.
+- The rejected creation outcome is recorded/reused under the same attempted memory provenance identity. Retry, replay, and concurrent duplicate attempts return `memory_capacity_protected` without later creating a duplicate or re-evaluating the outcome against changed text/provider output.
+- Capacity selection and rejection are backend-deterministic. AI/provider output is never consulted and cannot choose a row to evict or override the result.
+
+**Alternatives considered**
+
+Evicting an active Secret, evicting an active Promise, exceeding 100, silently dropping an existing protected row, silently accepting or discarding the new memory without a machine result, failing the source gameplay/message transaction, and using AI to select an eviction were rejected.
+
+**Consequences**
+
+M12 retention has a closed deterministic outcome for both evictable and protected-only capacity. Tests can assert the 99-protected-plus-one-non-protected path, the 100-protected rejection, unchanged protected rows, strict cap enforcement, replay/concurrency behavior, source-operation independence, and absence of AI/provider involvement. M12 has no remaining mechanical planning blocker.
+
+**Revisit when**
+
+A future accepted rule introduces explicit protected-memory archival/removal, a different cap, user-visible capacity management, or a new protected memory category.
+
+## ADR-030 — M13 deterministic romance mechanics
+
+**Date:** 2026-10-04
+**Status:** Accepted; resolves the M13 ROM-01/ROM-02 implementation blockers
+
+**Context**
+
+ROM-01 and ROM-02 require structured romance availability, compatibility, neutral inputs for mechanics not yet modeled, deterministic outcome timing, exclusivity, invitation lifecycle, and an exact Dating-start relationship effect. Those contracts were previously incomplete. Inferring them from messages, memory prose, categorical mood, AI output, interests, or hidden goals would violate the rules-before-language boundary.
+
+**Decision**
+
+- `WorldSettings.RomanceEnabled` is structured world configuration and defaults to `true`. `PlayerProfile` and `Character` each have exactly one `RomancePreferenceMode`: `Disabled` or `AnyEligibleActor`, defaulting to `AnyEligibleActor`. No gender, orientation, or additional preference dimension exists in M13 v1.
+- Two distinct active Actors are romantically compatible exactly when they share a world, world romance is enabled, and both modes are `AnyEligibleActor`. Otherwise ROM evaluation stops before scoring with one reason using this precedence: `romance_disabled`, `initiator_not_open`, `target_not_open`, `romance_incompatible`, `exclusivity_conflict`, `romantic_state_conflict`, threshold/formula failure, then deterministic-roll failure where applicable.
+- For formula inputs, a compatible pair contributes `Compatibility=100`; an incompatible pair is ineligible and is never scored. A Player with `AnyEligibleActor` contributes `RomanticOpenness=100`; `Disabled` is rejected before scoring. A Character uses persisted `CharacterTraits.RomanticOpenness` after its preference-mode gate passes.
+- M13 v1 uses `GoalRelevance=50` and ROM-01 `PositiveMood=50`, both neutral deterministic 0-100 inputs. ROM-02's existing mood term is additive, so its neutral `MoodModifier=0`. `ConflictPenalty=0`. Categorical mood, Rivalry alone, text, memory, and AI do not alter these values.
+- Threshold failures use formula/precondition order and return only the first reason: Familiarity, Trust, Attraction, Comfort, RomanticOpenness, then initiation/acceptance score. The acceptance offset is the existing deterministic PRNG applied to stable invitation identity, persisted once, and bounded to `[-5,5]`; retries never reroll.
+- M13 v1 is strictly monogamous at `Dating`: an Actor can participate in at most one active Dating pair. An Actor can participate in at most one unresolved invitation at a time. Pair rows use canonical Actor ordering, while directional M10 values remain independent. Persistence and transactions must serialize competing invitations and Dating transitions per involved Actor.
+- Every invitation uses the single mechanical date type `CasualDate`. The client cannot choose or override it. Interest-, schedule-, text-, AI-, or memory-derived date types are deferred.
+- Invitation mechanics use authoritative world-game time. A pending invitation expires exactly 24 game hours after creation. Persist UTC creation/update audit timestamps separately from world-game creation and expiry times. The 14-game-day invitation cooldown begins at invitation creation and is not restarted by its outcome.
+- When the target is the Player, the invitation remains pending until the Player explicitly accepts or rejects it, or authoritative world time reaches expiry. When the target is a Character, ROM-02 resolves immediately in the same authoritative processing flow after valid invitation creation. AI never decides or delays the outcome.
+- Acceptance transitions the shared canonical pair from `InvitationPending` to `Dating`. Rejection or expiry transitions it to `None` and remains an immutable outcome/history fact rather than a durable rejected status. Client requests never supply scores, offsets, reasons, or status.
+- The first Dating transition for an invitation/episode applies `Commitment +10` once to both M10 directional rows, independently clamped to 0-100. The two directional effects and Dating history share deterministic provenance and commit atomically. This explicit M13 effect does not consume ordinary REL-01 daily caps and replay cannot apply it twice.
+- Romantic status/history is append-only and records canonical pair, stable episode identity, transition, start/end facts where applicable, invitation/outcome source, initiator, reason, rule version, UTC audit time, and authoritative world-game time. M13 creates only the Dating-start episode; it does not activate breakup, Dating end, FormerPartner, or re-dating. Persistence-level fixtures must prove that later ended and re-dated episodes can coexist without overwriting earlier history, but no M13 API or rule may create those deferred transitions.
+- M09 wording runs only after the authoritative transition/outcome. M11 text and M12 memories cannot determine romance mode, compatibility, neutral inputs, eligibility, outcome, exclusivity, Commitment delta, or history mutation.
+
+**Consequences**
+
+M13 can implement deterministic invitation, acceptance/rejection/expiry, Dating, bilateral one-time Commitment effects, ownership-safe APIs, Flutter projections, and immutable history without inventing relationship inputs. Romance/content-rating policy remains a broad-release gate, not an M13 mechanics blocker. Breakup and re-entry remain deferred.
+
+**Revisit when**
+
+A future accepted decision introduces additional preference modes, player-configurable romance settings, non-neutral goals/mood/conflict, multiple date types, non-monogamy, breakup/re-entry, or deeper romantic states.
+
+## ADR-031 — M15 CatchUp run granularity
+
+**Date:** 2026-10-05
+**Status:** Accepted; resolves the M15 run-granularity contradiction
+
+**Context**
+
+ADR-022 deliberately limits a normal M08 trigger to one 15-minute interval and one `SimulationRun`. M15 separately defines bounded compressed catch-up with six-hour and daily buckets, relational checkpoints, partial progress, and aggregate mechanics. An implementation wrapper incorrectly required CatchUp to reproduce one M08 `SimulationRun`, action count, and PRNG sequence for every historical 15-minute interval. That requirement conflicts with the approved compressed CatchUp model.
+
+**Decision**
+
+- Normal M08 processing is unchanged: one fixed 15-minute interval is one `SimulationRun`, and one normal trigger processes at most the single oldest due interval.
+- One bounded M15 CatchUp operation is one `SimulationRun` with `RunType=CatchUp`. It owns the bounded overdue range selected under CATCH-01 and does not create one run for every historical 15-minute interval.
+- The CatchUp run internally uses the approved newest-horizon six-hour buckets, older daily aggregate buckets, compressed selection, relational bucket checkpoints, caps, and aggregate mechanics.
+- Pending, Running, Partial, Completed, and retryable failure state belongs to that CatchUp run and its relational checkpoints. Retry resumes the same logical run after its last committed checkpoint. M15 does not introduce a second batch-run abstraction or duplicate run infrastructure.
+- CatchUp determinism means the same authorized starting snapshot, bounded CatchUp range, rule version, run seed, and persisted checkpoints produce the same bucket boundaries, bucket order, selected and aggregate mechanics, committed facts, cursor progress, and final gameplay state.
+- CatchUp is not required to reproduce the `SimulationRun` count, `SimulationAction` count, or PRNG draw sequence that would result from invoking M08 once for every missed 15-minute interval. Its equivalence target is approved deterministic gameplay-state correctness under CATCH-01 compression.
+- CatchUp does not change M08 interval identity, active-tick run identity, rule order, replay behavior, or the one-interval normal-trigger limit.
+
+**Consequences**
+
+M15 can reuse the existing `SimulationRun` model without manufacturing thousands of historical active-tick runs or adding a separate batch-run entity. Tests compare CatchUp replays and checkpoint resumes against the same CatchUp inputs and approved compressed outcomes, while existing M08 tests continue to protect exact 15-minute active-tick behavior.
+
+**Revisit when**
+
+A future accepted decision replaces bucket compression, changes CatchUp operation ownership, or requires exact active-tick replay rather than compressed catch-up.
+
+## ADR-032 — M16 typed notification source provenance
+
+**Date:** 2026-10-10
+**Status:** Accepted; resolves the M16 Reply-recipient and CatchUpSummary-provenance blockers
+
+**Context**
+
+M16 releases Reply, PrivateMessage, and CatchUpSummary in-app notifications, but the prior contract did not identify which replies notify the Player. It also required every Notification to reference a GameplayEvent even though M15's authoritative CatchUpSummary has no GameplayEvent identity. Implementing either gap locally would risk self/noisy notifications, root-thread inference, or fabrication of a gameplay event solely to satisfy notification storage.
+
+**Decision**
+
+- A Reply notification is created for the Player only when the new reply is authored by a Character, its immediate parent post or reply is authored by the Player Actor, and every record belongs to that Player's owned world.
+- Character-to-Player-post and Character-to-Player-reply produce a notification. Character-to-Character and Player-authored replies do not. A Player-authored root elsewhere in the thread is insufficient when the immediate parent is Character-authored.
+- Recipient eligibility derives only from structured Actor authorship, immediate-parent identity, and world ownership. Text, mentions, AI output, generated wording, and root-thread ownership cannot select the recipient.
+- Notification provenance is typed with canonical `SourceType` and `SourceId`; `GameplayEventId` is optional globally and required only for GameplayEvent-backed notification types.
+- Reply and PrivateMessage notifications are GameplayEvent-backed. Their `GameplayEventId` is required and identifies the same canonical source represented by `SourceId`.
+- CatchUpSummary notifications use `SourceType=CatchUpSummary`, `SourceId=CatchUpSummary.Id`, and `GameplayEventId=null`. No GameplayEvent is created merely to satisfy notification persistence. The CatchUpSummary's existing relationship to its CatchUp SimulationRun remains authoritative and is not duplicated into Notification.
+- Logical notification uniqueness is the recipient plus canonical source type, canonical source ID, and notification category/type, scoped to the world. Retry, replay, and recovery reuse the same notification.
+- A CatchUpSummary notification is created only after the summary is finalized and durably committed. Running, a Partial checkpoint alone, FailedRetryable, and rolled-back facts do not produce the finalized summary notification. No separate partial-summary lifecycle notification is introduced.
+- Notifications remain descriptions of authoritative existing facts. They cannot create replies, summaries, gameplay events, relationship changes, or simulation actions, and AI cannot decide notification existence, type, recipient, or provenance.
+- Same-world source validation and recipient ownership remain mandatory despite the conditional GameplayEvent relationship.
+- SignalR remains deferred. M16 uses the approved PostgreSQL-backed HTTP synchronization baseline unless a later accepted decision activates realtime transport.
+
+**Alternatives considered**
+
+Notifying for any reply in a Player-rooted thread, notifying for Player-authored replies, using text/mentions to infer recipient, manufacturing a CatchUpSummary GameplayEvent, making `GameplayEventId` nullable without typed source identity, and notifying on Running/Partial/FailedRetryable catch-up state were rejected because they create noisy or unauthoritative behavior and weaken replay-safe provenance.
+
+**Consequences**
+
+M16 can implement its three released categories with exact recipient selection and canonical replay-safe provenance. Database constraints and application validation can distinguish GameplayEvent-backed sources from CatchUpSummary, while preserving world/recipient isolation. Tests must cover every immediate-parent Reply case, finalized-summary timing, conditional GameplayEvent identity, same-source duplicate rejection/reuse, and absence of fabricated gameplay events.
+
+**Revisit when**
+
+A later accepted decision releases another notification category, activates a partial-summary indicator, introduces SignalR, or requires a new authoritative source type.
+
+## ADR-033 — M17 email/password authentication and recovery-code policy
+
+**Date:** 2026-10-11
+**Status:** Accepted; resolves the M17 registered-authentication, recovery, and session-management blockers
+
+**Context**
+
+M17 must add registered accounts without replacing the M03 guest, RS256 access-token, rotating refresh-token, device/session-family, or world-ownership architecture. The repository had not selected a registered credential, verification, recovery, password, or public session-management contract. Choosing those mechanics during implementation would risk account enumeration, plaintext recovery material, incompatible sessions, or loss/duplication of guest-owned state.
+
+**Decision**
+
+- M17 uses email plus password only. Magic links, social/provider login, phone/SMS login, passkeys, MFA, and account merging remain deferred.
+- Email is trimmed, retained in trimmed display form, and normalized with invariant uppercase for comparison and storage. No provider-specific dot removal, plus-alias removal, or other mailbox rewriting is allowed. `NormalizedEmail` has a database-enforced partial unique index and registration/upgrade rechecks uniqueness transactionally.
+- M17 does not verify email and introduces no speculative verification-state field or delivery provider. A registered account is usable immediately.
+- Passwords contain 10 through 128 Unicode text elements. They are not trimmed, and no uppercase/lowercase/digit/symbol composition rule is imposed. ASP.NET Core `PasswordHasher<TUser>` performs adaptive salted one-way hashing and framework verification; plaintext passwords are never persisted, returned, logged, or sent to another provider.
+- Fresh registration accepts only `email` and `password`, creates one registered `User` and the normal initial owned world/player state using the existing `My Parallel World` default, returns the safe account/world identity plus a one-time recovery code, and does not create a session. The client then logs in with installation metadata to create an M03-compatible session family.
+- Authenticated guest upgrade accepts `email` and `password`, mutates the existing guest `User` in place, and preserves its `UserId`, worlds, PlayerProfile, Player Actor, Characters, social data, simulation state, relationships, messages, memories, dating, notifications, and catch-up state. It creates no replacement account or world. The current guest family remains the current session; no parallel token system or second family is created solely by upgrade.
+- Upgrade is identity-idempotent under its required idempotency key and exact request fingerprint. A completed retry returns the same safe registered identity/world state but cannot replay the plaintext recovery code. An authenticated user who lost that one-time response uses explicit recovery-code regeneration. A different fingerprint conflicts. An email owned by another account returns a safe conflict and never merges accounts.
+- Login accepts normalized `email`, the exact untrimmed `password`, and the existing M03 installation metadata. Successful login creates a standard device/session family and returns the existing access/refresh/session contract. Unknown email and wrong password have the same status, code, body shape, and materially equivalent verification path.
+- ADR-013 and ADR-014 remain authoritative: RS256, issuer/audience, 15-minute access lifetime, 30-day hash-only refresh tokens, atomic rotation, replay containment, five active families, device association, current-family logout, and all-family revocation are unchanged. M17 access tokens add only a safe `sid` family identifier claim so session listing can identify the current family; it does not authorize ownership or replace server-side family checks.
+- Each registered user has one active recovery code. A code contains 256 random bits encoded as unpadded base64url, is returned only in the immediate successful registration, upgrade, recovery, or explicit-regeneration response, and is never automatically persisted by Flutter. PostgreSQL stores only an ASP.NET Core framework hash plus created/consumed/revoked timestamps. Codes do not expire while active, but are single-use and are invalidated by recovery or regeneration.
+- Recovery accepts `email`, `recoveryCode`, and `newPassword`. Unknown email, wrong code, consumed code, and revoked code return the same generic failure. Success atomically updates the password hash, consumes the old code, creates and returns a new one once, and revokes every refresh family. It does not log the user in; the user must log in again.
+- Authenticated password change requires the current password and a valid new password. Guests cannot use it. Success updates the hash and revokes every family including the current family; Flutter clears its tokens and requires login. Existing access tokens retain ADR-013's ordinary at-most-15-minute cryptographic lifetime.
+- Authenticated recovery-code regeneration revokes the prior code and returns one new code once. Failed recovery/change/regeneration attempts never rotate credentials.
+- Minimal registered session management lists owned active refresh families using a safe opaque family ID, approved device metadata, created/last-used timestamps, and `isCurrent` derived from the `sid` claim. A registered user may revoke one owned family and may logout all. No refresh token/hash is exposed, no separate device registry is created, and guest access to these M17 management endpoints is rejected.
+- Registration, login, and recovery reuse the existing auth rate-limiting infrastructure; recovery-code attempts are limited without permanent IP-only account lockout. Registration may return generic `email_unavailable` conflict. Login and recovery never distinguish unknown identity from invalid proof.
+
+**Consequences**
+
+M17 can extend the existing Accounts module and Flutter secure-token flow without external email infrastructure or new auth architecture. Registration and one-time recovery-code delivery are deliberately not byte-for-byte replayable because plaintext credentials are never retained. A lost registration response can be recovered by login followed by authenticated code regeneration; a lost upgrade response leaves the existing authenticated session usable for regeneration. Database and integration tests must prove uniqueness, hash-only persistence, same-user upgrade rollback/idempotency, session-family continuity/revocation, enumeration resistance, and world/data preservation.
+
+**Revisit when**
+
+Email verification, magic links, external providers, passkeys, MFA, account merging, recovery-code expiry, immediate access-token revocation, or richer device/session controls are approved through a later decision.
+
+## ADR-034 — M18 production operations and release contract
+
+**Date:** 2026-10-12
+**Status:** Accepted; resolves the M18 production-operations blockers
+
+**Context**
+
+M18 must produce an operable staging and production release without selecting infrastructure, security tooling, performance targets, backup objectives, or release authority during implementation. The architecture requires one modular-monolith deployment and managed PostgreSQL, but the concrete production contract remained open.
+
+**Decision**
+
+- Environments are Development, Staging, and Production. Staging and Production use isolated API services, Neon databases/projects, secrets, JWT keys, and configuration. Neither automated tests nor Development/Staging may use Production data.
+- The API deploys as the existing Docker image to a Render Web Service. Development/private beta may use Render Free; public Production uses a non-Free plan. M18 adds no Kubernetes, microservices, or second proxy layer.
+- Render terminates public TLS with managed certificates. Production API traffic is HTTPS-only. Kestrel processes only the minimum forwarded scheme/client information, uses bounded forwarding depth, and never treats forwarded client IP as authorization. Arbitrary forwarded headers are not trusted. Production and Staging use separate explicit Host and CORS allowlists; Flutter mobile requires no browser origin.
+- Runtime environment variables hold the Neon connection string and non-file operational configuration. Render Secret Files hold the current RSA private key. Secrets are absent from source, images, `render.yaml`, Flutter, build arguments, logs, diagnostics, and tracked appsettings. The Neon production connection requires TLS and uses normal bounded Npgsql pooling without replaying non-idempotent transactions.
+- RS256 and ADR-013 semantics remain unchanged. Existing `kid` support is used for rotation: deploy old+new public verification keys, switch signing to the new secret-file private key, retain the old public key for at least the 15-minute access-token lifetime plus 30-second clock skew, then remove it and destroy the old private key. Ordinary rotation does not revoke refresh families; an incident may require all-family revocation.
+- Production enables at least seven days of Neon point-in-time restore/history where supported. An encrypted logical backup runs weekly, is stored outside the application container/database, and retains four weekly copies. The external backup-storage provider is operational configuration, not an application dependency. Targets are RPO at most 24 hours outside PITR and RTO at most four hours; they are engineering objectives, not SLAs.
+- Before public Production, restore one backup into Staging or an isolated recovery database and verify schema, representative User/World data, and application connectivity. Repeat before major schema-risk releases or at least quarterly during public operation.
+- `/health/live` checks only the process. `/health/ready` checks PostgreSQL connectivity with sanitized output. Optional Ollama never affects readiness. Render/Neon built-in notifications cover unhealthy service/restart/deploy failure, database connectivity, supported sustained error-rate signals, and resource exhaustion.
+- Observability uses Render CPU/memory/request metrics, health/readiness, correlation IDs, and existing structured sanitized logs. Full distributed tracing and external paid metrics/tracing products are deferred. Logs include timestamp, severity, correlation/request ID, safe endpoint/event identity, and safe failure code, never private content or credentials.
+- CI uses free/repository-native security checks: NuGet vulnerability audit, the appropriate existing Dart/Flutter dependency check, the existing secret scan, one supported free SAST path (existing CodeQL first, existing Semgrep second, otherwise one narrowly selected scanner), a backend/container SBOM artifact, and one established free container vulnerability scanner. Redundant scanners and a paid GitHub Advanced Security prerequisite are rejected.
+- Production has zero unaccepted Critical vulnerabilities and zero unaccepted High vulnerabilities on reachable paths. A High/Critical acceptance records the issue, component, exposure, mitigation, owner, and review/expiry date. Critical risk blocks release. The project owner is the Production release owner and final High-risk acceptance authority.
+- MVP engineering targets under representative steady load are: normal non-AI CRUD/read p95 at most 500 ms, bounded simulation/catch-up synchronous API p95 at most five seconds, unexpected server errors below 1%, and normal readiness within 60 seconds. The representative profile is 25 concurrent active users over 100 registered one-world accounts with representative social, message, memory, relationship, dating, notification, simulation, and catch-up data. External Ollama latency is excluded. M18 supplies one reproducible lightweight load definition; correctness failures or obvious unbounded memory growth block release, while target deviations require explicit written acceptance.
+- The release path is CI on `dev`, PR `dev -> main`, automated release gates, staging deploy, smoke/migration/security checklist, project-owner approval, Production deploy, and post-deploy health/smoke verification. No feature development occurs directly on `main`.
+- EF migrations run as an explicit idempotent deployment step before the application version receives traffic. Migration failure stops deployment. Application rollback uses Render's previous known-good deployment where schema-compatible; EF migrations are not automatically downgraded. Destructive/incompatible changes require an approved backup/restore plan and forward-fix or provider restore.
+- Production ProblemDetails omit stack traces, SQL, filesystem paths, and unsafe raw exception text. Development-only simulation/test/debug routes and OpenAPI remain absent in Production.
+- Ollama remains optional with deterministic fallback and no paid provider. A Production Flutter release requires an explicit HTTPS API base URL and fails validation for missing, localhost, Development, or Staging defaults. No backend secret is embedded.
+- M14 remains deferred.
+
+**Alternatives considered**
+
+An unselected provider-neutral deployment, Render Free for public Production, a self-managed PostgreSQL/container, a second TLS proxy, Kubernetes, mandatory OpenTelemetry/paid monitoring, mandatory paid GitHub security features, automatic application-start migrations, automatic migration downgrade, and required Ollama/cloud AI were rejected as unsafe, undefined, or excessive for the one-service MVP.
+
+**Consequences**
+
+M18 may now implement provider-compatible configuration validation, health probes, deployment/runbook artifacts, release CI gates, production Flutter endpoint validation, and lightweight performance verification without inventing operational policy. Provider account IDs, domains, credentials, proxy ranges, and backup-storage credentials remain runtime operations values and are never committed. Staging deployment, restore rehearsal, platform alert activation, and Production approval remain manual operational evidence that cannot be truthfully completed by repository tests alone.
+
+**Revisit when**
+
+Traffic requires multiple API instances, Render/Neon no longer meet operational needs, a distributed worker/trace topology is introduced, recovery objectives change, public risk ownership changes, or an approved paid provider/tool replaces an M18 baseline.
+
 ## New ADR template
 
 ### ADR-XXX — Title

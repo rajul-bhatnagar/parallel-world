@@ -8,11 +8,19 @@ Task: Reactions, Replies and Follows
 Scope:
 Implement reactions/likes, reply creation/thread view, directional follows, cached counters with source rows, idempotent client actions, APIs, Flutter interactions, migrations, ownership validation, and tests. Exclude AI and trends.
 
+Accepted reply-read contract (ADR-016):
+- `GET /api/v1/worlds/{worldId}/posts/{postId}/replies` returns only direct child replies of that post/reply in `createdAtUtc ASC, id ASC` order through the standard cursor collection envelope.
+- Its opaque `(createdAtUtc, id)` cursor seeks with `createdAtUtc > cursor.createdAtUtc`, or equal timestamp and `id > cursor.id`, and is bound to the world, parent, and applicable filters.
+- `GET /api/v1/worlds/{worldId}/posts/{postId}` returns one Post/detail resource and does not embed the paginated replies collection.
+- Thread traversal is explicit and parent-scoped; do not recursively nest, flatten, or preload the whole depth-two tree.
+- `MAX_REPLY_DEPTH = 2` means root depth 0, reply depth 1, and reply-to-reply depth 2. Reject depth-3 creation; reading a depth-2 reply returns an empty collection.
+
 Explicit exclusions:
 - MVP like/reply/follow only; no reposts, other reaction types, mentions, trends, or AI actions.
 
 Tests:
 - Test idempotency, source rows/counters, same-world constraints, ownership negatives, API contracts, and Flutter reconciliation.
+- Test direct-child-only reply reads, ascending order and equal-time `id ASC`, deterministic repetition, cursor continuation without duplicates, invalid/tampered/wrong-world/wrong-parent cursors, depths 0-2, depth-3 rejection, empty children at depth 2, and no embedded reply collection in Post detail.
 
 Before editing:
 1. List relevant existing files.

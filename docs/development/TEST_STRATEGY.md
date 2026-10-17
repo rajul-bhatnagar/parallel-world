@@ -87,8 +87,8 @@ Fast network-free/database-free tests cover value objects, clamping, UTC/time ca
 |---|---|---|---|---|
 | World time/simulation interval | Formula, UTC, state table | Cursor/lock/run persistence | Quiet world/resume | MVP |
 | Activity, schedule, mood, goals | Scores, caps, cooldowns | Planned action/reason | Active/sleeping actor | Released portions MVP |
-| Posts/replies | POST-01/REPLY-01 | World scope, event/text work, cursor | Mention/active feed | MVP |
-| Reactions/follows | REACT-01/FOLLOW-01 | Unique edges/count rebuild | Repetition/cooldown | Like/follow MVP |
+| Posts/replies | M06/M07 Player actions; unavailable ACT-01/POST-01/REPLY-01 paths in M08 | World scope, event/text work, cursor | Missing mandatory input/active feed | Autonomous activation only after approved inputs; REPLY-01 relationship inputs M10 |
+| Reactions/follows | M07 Player actions; autonomous REACT-01/FOLLOW-01 activated by M10 | Unique edges/count rebuild | Repetition/cooldown | Player actions M07; autonomous actions M10 |
 | Messaging | MSG-02 eligibility/no-response | Conversation/send/page | Player message/fallback | MVP; initiation/delay deferred |
 | Relationships | REL-01 deltas/caps/labels | Transaction/history/ledger | Friends/rivals/defence | MVP |
 | Dating | ROM-01/02/state table | Pair/history/idempotency | Eligible/rejected/accepted | MVP through Dating only |
@@ -156,11 +156,11 @@ sequenceDiagram
 
 ## 11. API contract testing
 
-For every released endpoint verify route, method, authentication, JSON shape, unknown-field rejection, lower-camel enums, UTC timestamps, status, ProblemDetails, opaque cursors, idempotency, concurrency, and rate-limit response. Prove ownership-safe `404 resource_not_available`, approved `400` validation, `409` conflict, and `429` with `Retry-After`. OpenAPI compatibility checks may be added after tooling is selected; tests must match `API_CONVENTIONS.md` examples/inventory.
+For every released endpoint verify route, method, authentication, JSON shape, unknown-field rejection, lower-camel enums, UTC timestamps, status, ProblemDetails, opaque cursors, the endpoint's approved idempotency or non-idempotency semantics, concurrency, and rate-limit response. Prove ownership-safe `404 resource_not_available`, approved `400` validation, `409` conflict, and `429` with `Retry-After`. OpenAPI compatibility checks may be added after tooling is selected; tests must match `API_CONVENTIONS.md` examples/inventory.
 
 ## 12. Database testing
 
-Run EF migrations against PostgreSQL from empty and previous-release schemas. Verify bounded checks; every composite `(WorldId, Id)` FK; unique/idempotency constraints; explicit delete behavior; transaction sets; cursor indexes; canonical romantic pair; direct-conversation uniqueness; simulation cursor/interval claim; token-hash uniqueness/rotation; and later guest-upgrade ownership preservation.
+Run EF migrations against PostgreSQL from empty and previous-release schemas. Verify bounded checks; every composite `(WorldId, Id)` FK; unique/idempotency constraints; explicit delete behavior; transaction sets; cursor indexes; canonical romantic pair; direct-conversation uniqueness; simulation cursor/interval claim; token/proof-hash uniqueness and rotation/consumption; and later guest-upgrade ownership preservation.
 
 Initial migrations are forward-only. Rollback uses verified backup/restore or reviewed compensating migration. Destructive changes require explicit review and expand/migrate/contract planning. Representative query plans are inspected after realistic data exists.
 
@@ -172,7 +172,7 @@ The additional .NET architecture-test library is open; xUnit is already approved
 
 ## 14. Security testing
 
-Cover auth bypass, token expiry/modification/claims, refresh reuse, revoked session/device, rate/size limits, malformed input, error/log redaction, production dev-route absence, AI-context minimization, and nonsensitive push previews when push ships. Captured responses/logs must contain no authorization headers, tokens, installation/push IDs, credentials, message/post bodies, prompts/responses, secret memories, or hidden values.
+Cover auth bypass, token expiry/modification/claims, refresh reuse, guest-bootstrap proof reuse/expiry/scope, revoked session/device, rate/size limits, malformed input, error/log redaction, production dev-route absence, AI-context minimization, and nonsensitive push previews when push ships. Captured responses/logs must contain no authorization headers, tokens, raw guest-bootstrap proofs, installation/push IDs, credentials, message/post bodies, prompts/responses, secret memories, or hidden values.
 
 ## 15. Authentication testing
 
@@ -180,14 +180,56 @@ Cover auth bypass, token expiry/modification/claims, refresh reuse, revoked sess
 
 | State/flow | Required behavior | Negative/concurrency case | Release |
 |---|---|---|---|
-| First online installation | Idempotently create guest/session hashes | Offline cannot fabricate guest; installation ID alone fails | MVP |
-| Existing guest | Same identity/world | Different installation gives distinct guest | MVP |
-| Access token | Valid minimal claims | Expired/modified/wrong issuer-audience-algorithm denied | MVP |
-| Refresh | Atomic rotation | Concurrent/reused old token revokes family | MVP |
-| Logout/device revoke | Refresh blocked, Flutter clears | Repetition safe; short-lived access limitation tested | MVP |
-| Registration/login | Generic safe credential flow | Duplicate email/invalid password/enumeration | Version 1 |
-| Guest upgrade | Same user and all data | Parallel/partial/duplicate-email rollback | Version 1 |
-| Recovery/providers/devices | Approved proof/session policy | Replay, bad claims, silent merge denied | Later |
+| First online installation | Client supplies an independent 256-bit-or-greater proof; one transaction creates guest/session/world/player and stores proof/token hashes only | Same-proof races create one identity/world/family; installation ID alone fails | MVP/M03 |
+| Bootstrap response recovery | One valid proof retry within 10 minutes returns the same User/world with newly rotated credentials, then the client discards the proof | Expired/consumed proof fails; at most one concurrent recovery succeeds; proof cannot authenticate or call unrelated endpoints | MVP/M03 |
+| Access token | Valid RS256 JWT; exact issuer/audience; 15-minute expiry; `sub`, `jti`, `kid`; 30-second skew | Expired, invalid signature, wrong issuer/audience/algorithm, and outside-skew token denied | MVP/M03 |
+| Refresh | Opaque hash-only 30-day token; atomic one-use, non-idempotent rotation in one device/session family | Concurrent second use fails; consumed replay, including after a lost response, revokes that family and never returns prior/new credentials; unrelated family remains valid | MVP/M03 |
+| Session-family limit | At most five active families per user | Sixth creation revokes oldest active family; revoked/expired family cannot refresh | MVP/M03 |
+| Logout/device revoke | Current-family and all-family backend revocation block refresh; short-lived access limitation tested | Repetition safe; unrelated family survives current-family logout | MVP/M03; public all-device management M17 |
+| Auth rate limit | M03 guest/refresh/invalid-refresh/logout windows return standard `429` when exceeded | Limits cannot authenticate an installation ID or disclose/log tokens | MVP/M03 |
+| Registration/login | ADR-033 email/password; framework hash; normalized unique email; ordinary M03 session family on login | Concurrent duplicate email, password bounds, wrong/unknown generic response, plaintext absence | M17 |
+| Guest upgrade | Same UserId, world, player, and all M03-M16 data; one-time recovery-code result | Parallel/replay/partial/conflicting-email rollback; no duplicate account/world or plaintext replay | M17 |
+| Recovery code/password | One active hash-only 256-bit code; recovery/change revoke required families and require login | Wrong/used/revoked code, concurrent single-use, old password/code failure, no enumeration/log/persistence leakage | M17 |
+| Registered sessions | Existing family list, owned-family revoke, logout-all, five-family cap | Foreign family hidden; revoked refresh denied; safe metadata only | M17 |
+| Providers/MFA | Not released | Bad claims, linking conflicts, silent merge denied when later approved | Later |
+
+### M03 authentication and session gate
+
+M03 automated coverage explicitly includes:
+
+1. First guest bootstrap with an independent CSPRNG proof of at least 256 bits transactionally creates exactly one User, installation/session lineage, initial refresh family, GameWorld, player Actor/Profile, WorldSettings, and WorldSimulationState.
+2. Exact proof retry within 10 minutes resolves the same User/world, invalidates the prior active initial-family credential as needed, issues new access/refresh credentials in the same lineage, and consumes the sole recovery. It does not replay token bytes.
+3. Expired/consumed proof fails; the proof cannot authenticate normal requests, rotate a refresh token, call unrelated endpoints, derive from/substitute for installation ID, or appear raw in PostgreSQL, logs, errors, URLs, or responses.
+4. Synchronized first-bootstrap requests using the same proof create no duplicate User, world, player, or family; synchronized recovery requests produce at most one success.
+5. A valid access token authenticates the stable `sub` user.
+6. Wrong issuer, wrong audience, expired token, invalid signature, and timestamps immediately inside/outside the 30-second clock-skew boundary are accepted or rejected as specified.
+7. Refresh succeeds once, rotates to a new hash-only 30-day token in the same family, and an expired token fails. It does not accept or use a generic idempotency key.
+8. Two synchronized requests using the same refresh token produce exactly one successful rotation.
+9. Replaying the consumed/replaced token, including after a simulated lost success response, transactionally revokes its family and returns neither the prior response nor a new token, while another device/session family remains valid.
+10. Current-device logout revokes only the current family; the all-family backend operation revokes every active family. The public all-device/session-management API remains M17.
+11. Creating a sixth active family revokes the oldest active family and no newer unrelated family.
+12. PostgreSQL never contains raw refresh/proof values, and captured application/request logs contain no raw access token, refresh token, bootstrap proof, authorization header, or cookie value.
+13. Session and world operations preserve the guest `UserId` and owned world identity needed for later same-user upgrade. M03 does not implement the M17 upgrade endpoint; M17 adds the full transactional upgrade test.
+14. Each M03 auth limit returns standard `429` ProblemDetails at the accepted boundary: guest creation 10/IP/10 minutes, refresh 30/family/10 minutes, invalid refresh/replay 10/IP/10 minutes, and logout 30/authenticated user/10 minutes.
+15. Installation-ID-only, client-supplied `UserId`, cross-user refresh/logout, and other cross-user/session ownership attacks fail without disclosure.
+
+### M17 registered authentication gate
+
+M17 automated coverage explicitly includes:
+
+1. Fresh registration succeeds with trimmed/invariant-uppercase email normalization, creates one User/world/player aggregate, returns one recovery code, and stores only framework password/recovery hashes.
+2. Passwords of 10 and 128 Unicode text elements succeed; shorter, longer, null, and empty values fail; whitespace is not silently trimmed and no composition rule is added.
+3. Normalized-email duplicates and synchronized concurrent registration produce one account/world effect; the losing result is the safe `email_unavailable` conflict.
+4. Correct login creates a standard ADR-013/ADR-014 device/session family. Wrong password and unknown email return indistinguishable `invalid_credentials` responses and do not leak through captured logs.
+5. Guest upgrade preserves the exact UserId, WorldId, PlayerProfile, Player Actor, Characters, social/feed state, simulation/catch-up state, relationships, messages, memories, dating, and notifications. No data is copied to a replacement account/world.
+6. Upgrade replay returns the same safe identity/world without replaying plaintext recovery code; a changed fingerprint conflicts; synchronized upgrade and conflicting-email attempts leave one complete registered outcome or the original usable guest.
+7. Recovery accepts one active code once, changes the password, consumes the old code, creates one replacement code, revokes every family, and issues no session. The old password/code fail and the new password succeeds only through a later login.
+8. Explicit regeneration invalidates the old code and returns one replacement once. Wrong/unknown/consumed/revoked code attempts use one generic failure and never rotate state.
+9. Authenticated password change requires the current password, rejects Guest callers, revokes every family including current, and requires login; unrelated account state remains unchanged.
+10. Session listing exposes safe owned-family/device metadata only, marks current from `sid`, and never returns tokens/hashes. Owned revoke and logout-all block refresh; another user's family is ownership-safe hidden.
+11. Registration, login, recovery, and recovery-code attempts use the existing auth rate limiter without permanent IP-only lockout.
+12. Flutter tests cover register/login/upgrade/recovery/code-save/change-password/session states, registered restart/refresh, one-time code non-persistence, same-account cache preservation, and account-switch/logout cache clearing.
+13. Captured PostgreSQL rows, API errors, and logs contain no plaintext password, recovery code, access/refresh token, or authorization header.
 
 ## 16. Authorization and ownership testing
 
@@ -212,13 +254,13 @@ Cross-world negative coverage is module-by-module; one global ownership test is 
 
 ## 17. Idempotency and concurrency testing
 
-Repeat and race guest session, world creation, post/reply/message creation, reaction, follow, date invitation, world resume, notification creation/read, simulation action, AI work, and later push delivery. The same key and fingerprint returns the recorded result; the same key with another fingerprint returns `409 idempotency_key_reused`. Natural PUT/DELETE operations return current/no-op success.
+Repeat and race world creation, post/reply/message creation, reaction, follow, date invitation, world resume, notification creation/read, simulation action, AI work, and later push delivery. For ordinary idempotent endpoints, the same key and fingerprint returns the recorded result and the same key with another fingerprint returns `409 idempotency_key_reused`. Guest bootstrap is the explicit credential exception: its proof provides identity idempotency and one newly rotated credential recovery, not byte-for-byte response replay. Refresh is explicitly non-idempotent and never uses a generic idempotency key. Natural PUT/DELETE operations return current/no-op success.
 
 Bounded concurrent tests cover profile update, resume, relationship events, reaction/follow, message send, date invitation, notification read, refresh rotation, work leases, and interval claims. Assert one effect, no lost update, correct conflict/reuse response, rollback on failure, and stable final state. Use synchronization barriers, not sleeps.
 
 ## 18. AI integration testing
 
-Use a deterministic fake generator for most tests and a local HTTP stub for transport cases: success, timeout, rate limit, malformed/empty/excessive/duplicate output, provider error, retry, fallback, cost/token metadata, and sanitized diagnostics. Always assert action type, actor, target, visibility, score delta, relationship/dating result, timing, and mechanical event IDs are unchanged.
+Use a deterministic fake generator for most tests and a process-local HTTP stub for Ollama transport cases: success, disabled/unavailable provider, timeout/cancellation, transient connection failure with exactly one retry, rate/resource limit, malformed/empty/excessive/duplicate output, provider error, deterministic fallback, usage metadata, and sanitized diagnostics. Normal automated tests and CI require no external network, real Ollama process, model download, paid API, provider credential, or billing account. A real-Ollama check is optional local manual verification only. Always assert action type, actor, target, visibility, score delta, relationship/dating result, timing, and mechanical event IDs are unchanged.
 
 Hostile text such as “ignore previous instructions,” fake system messages, SQL-like strings, HTML/script, oversized input, secret-extraction requests, score-alteration instructions, and requests for another character's memory is treated only as data. No command runs, unauthorized context is sent, or private content is logged.
 
@@ -226,21 +268,35 @@ Hostile text such as “ignore previous instructions,” fake system messages, S
 
 Test direct-conversation uniqueness, player membership, message send and `clientMessageId` replay, newest-first cursor order and ID tie-break, eligible immediate MVP reply/no-response, reply-plan persistence, provider fallback, realtime/poll refetch, reconnect, pending local send, indeterminate retry, read cursor, wrong ownership, and redaction.
 
+MSG-02 rule tests assert that every Player-authored message receives fixed `Urgency=50` on the 0-100 scale and that the client cannot override it. Different wording, punctuation, and lengths under otherwise identical mechanical state produce the same eligibility evaluation. Provider enabled/disabled, provider output, and deterministic fallback also leave Urgency and the deterministic PRNG outcome unchanged.
+
+Conflict tests assert `ConflictAvoidancePenalty=0` when no modeled unresolved-conflict state exists. Message wording, history sentiment, Rivalry alone, and AI/provider output cannot create a penalty. Together, the same authoritative mechanical state and deterministic seed with different Player wording must produce the same MSG-02 score, draw, and eligible/no-response outcome.
+
 Character-initiated and simulated delayed replies are deferred. MVP may test that sleep/schedule affects approved eligibility/reason behavior; it must not require unreleased delayed delivery.
 
 ## 20. Relationship and dating testing
 
-For every relationship dimension verify initial value, 0-100 clamp, impact-matrix delta, multiplier range, ordinary/severe event cap, daily ledger, sign preservation, asymmetry, source idempotency, friendship priority, severe bypass, repetition, no passive MVP decay, and recovery.
+Verify exactly nine directional dimensions and no hidden tenth score. For every dimension verify its approved initial value, 0 and 100 boundaries, 0-100 clamp, impact-matrix delta, M10 v1 neutral multiplier/default and each explicitly approved exception, ordinary/severe event cap, daily ledger, sign preservation, asymmetry, source idempotency, friendship priority, severe bypass, repetition, no passive MVP decay, and recovery.
 
-MVP dating covers ROM-01 thresholds/compatibility/cooldown/candidate ordering, invitation uniqueness, ROM-02 acceptance/rejection/reason, Dating transition, canonical pair, required invitation/outcome history, and forbidden transitions. Breakup lifecycle, FormerPartner re-entry, reconciliation, engagement, marriage, separation, and divorce become test gates only when explicitly approved after MVP.
+Character Reputation cases verify existing-row backfill and new-row default 50, exact 0/100 boundaries, database rejection outside 0-100, independence from PlayerProfile Reputation, and absence of M10 progression. InterestOverlap cases include identical non-empty sets = 100, disjoint = 0, partial Jaccard overlap with midpoint-away-from-zero rounding, duplicate/order independence, and either/both empty = 0. RelationshipRelevance cases assert the exact nine-term weighted calculation, final clamp, rivalry/jealousy contribution, and directional independence.
+
+Social-action separation cases assert initial Follow, Like, Unlike, and generic Reply produce no relationship mutation or fabricated zero-delta event; Unfollow and Re-follow use their exact rows; Helpful reply requires authoritative classification; and AI wording cannot classify or map an event. FOLLOW-01 cases cover resolved Character Reputation/InterestOverlap/relationship inputs, below/exact/above threshold behavior, deterministic rolls, replay-safe server-side execution, and no implicit relationship delta. REPLY-01 resolves RelationshipRelevance but returns `mood_activation_unavailable`. REACT-01 resolves Affection and AuthorReputation, then returns `positive_mood_unavailable`, `goal_relevance_unavailable`, and `repetition_semantics_unavailable` as earlier inputs are synthetically resolved. ACT-01/POST-01 remain unchanged.
+
+MVP dating covers ADR-030 world romance enablement, both preference modes/defaults, exact compatibility, Player/Character RomanticOpenness sources, `GoalRelevance=50`, ROM-01 `PositiveMood=50`, ROM-02 additive `MoodModifier=0`, `ConflictPenalty=0`, reason precedence, thresholds/candidate ordering, `CasualDate`, 14-game-day cooldown, 24-game-hour expiry, invitation uniqueness, Actor-level unresolved-invitation and Dating exclusivity, concurrent competing invitations, explicit Player accept/reject, immediate deterministic Character ROM-02, Dating transition, bilateral Commitment +10/clamp/one-time replay, canonical pair, required append-only invitation/outcome history with UTC and world-game times, ownership, and AI/text/memory invariance. A persistence fixture seeds an ended episode and a later episode for the same pair and proves distinct episode identity and preservation of every prior row; this does not activate those transitions. Breakup/Dating end, FormerPartner re-entry, re-dating, reconciliation, engagement, marriage, separation, and divorce remain forbidden/deferred behavioral test cases until explicitly approved after MVP.
 
 ## 21. Memory testing
 
-Cover meaningful-event threshold; mandatory Promise, Secret, and released RomanticEvent creation; trivial rejection; bounds; expiry/permanence; source uniqueness; relevance/ranking/ID tie-break; recall cap/penalty/reinforcement; contested contradictions; provenance; promise terminal states; secret knower/disclosure access; and no full-history retrieval. Breakup memory tests activate only with the deferred breakup feature. AI text alone cannot create, resolve, reinforce, or alter memory.
+Cover exactly Fact, Preference, Event, Secret, and Promise. Verify that only approved authoritative structured sources with explicit owner knowledge and subject create memory; arbitrary prose cannot create/classify Fact, Preference, Secret, or Promise; missing authoritative subject prevents creation; canonical topic is exact or null; and confidence, importance, and CharacterPrivate visibility use the exact M12 defaults.
+
+For MEM-02, assert `0.40*SubjectMatch + 0.30*TopicMatch + 0.20*RelationshipMatch + 0.10*Importance` with bounded inputs, exact decimal arithmetic, and one final integer rounding step midpoint-away-from-zero. Test exact subject ID 100/0, exact non-null canonical topic ID 100/0, either topic missing = 0, Actor-subject M10 RelationshipRelevance, non-Actor relationship match = 0, score DESC/CreatedAtUtc DESC/Id DESC ordering, stable top eight, replay-safe selections, owner/world isolation, and no full-history retrieval.
+
+Retention tests assert no ordinary automatic expiry, the 100-active-memory cap, non-protected eviction by Importance ASC/CreatedAtUtc ASC/Id ASC, and that active Secret/Promise rows are never automatically evicted. With 99 protected and one non-protected active memory, creation evicts the non-protected row and succeeds. With 100 protected active memories, creation returns `memory_capacity_protected`, creates no row, changes no protected row, leaves the source event/message successful, and never raises the active count above 100. Replay of the rejected provenance returns the same outcome, including after concurrency/retry, with no AI/provider call. Test source uniqueness/retry reuse, Secret storage without disclosure/leakage, and that AI wording cannot alter lifecycle. Promise tests require structured due conditions, authoritative fulfillment, explicit cancellation only, timestamp/date-backed expiry only, and no NLP transitions. Boundary tests prove memory wording cannot change MSG-02 and Ollama cannot create or mechanically alter memory. Assert absence of embeddings, vector storage/search, semantic matching, and M13 behavior.
 
 ## 22. Feed and pagination testing
 
-Test empty/first/next/refresh feed, stable ordering, equal-time ID tie-break, no duplicates, deleted posts, reply rendering/depth, player optimistic reconciliation, likes/follows, isolation, limits, invalid/mismatched/tampered cursor, and high-volume boundaries. Quotes, reposts, hashtags, mentions, rich reactions, and ranked-feed specifics remain deferred.
+Test empty/first/next/refresh feed; newest-first `createdAtUtc DESC` ordering; equal-time `id DESC` tie-break; deterministic repeated-query ordering; opaque cursor continuation; no duplicates between adjacent pages when newer posts arrive; invalid, mismatched, or tampered cursor handling; world isolation; deleted posts; player optimistic reconciliation; likes/follows; limits; and high-volume boundaries. Assert that M06 applies no ranked/personalized ordering, popularity weighting, relationship weighting, AI ranking, simulation ordering, randomization, or client-side resorting. Quotes, reposts, hashtags, mentions, rich reactions, and ranked-feed specifics remain deferred.
+
+For M07 reply reads, verify that `GET /worlds/{worldId}/posts/{postId}/replies` returns direct children only in `createdAtUtc ASC, id ASC` order; equal timestamps use `id ASC`; repeated queries are deterministic; cursor continuation has no adjacent-page duplicates; and invalid, tampered, wrong-world, or wrong-parent cursors fail safely. Cover root depth 0, depth-one and depth-two replies, depth-three creation rejection, an empty direct-child collection for a depth-two reply, foreign-world parent denial, and confirmation that the single Post/detail response does not embed the full reply collection. Flutter preserves server order and paginates each parent scope independently without inventing recursive flattening.
 
 ## 23. Catch-up simulation testing
 
@@ -260,7 +316,7 @@ flowchart LR
 
 ## 24. Notification and realtime testing
 
-MVP notification tests cover Reply, PrivateMessage, CatchUpSummary, deduplication, read one/all, unread count, bounded minimal-list cursor behavior, expiry visibility, safe preview/deep link, ownership, and retry. Follow, DatingInvitation, relationship/world-event/trend/mention notifications, rich history/filtering/search, and push are deferred.
+MVP notification tests cover Reply, PrivateMessage, CatchUpSummary, deduplication, read one/all, unread count, bounded minimal-list cursor behavior, expiry visibility, safe preview/deep link, ownership, and retry. Reply cases prove Character-to-Player-immediate-parent notification for both a Player post and Player reply, and no notification for Character-to-Character, Player-authored, or merely Player-rooted-thread replies. Catch-up cases prove exactly one notification only after the summary is finalized and durably committed, none for Running, a Partial checkpoint alone, FailedRetryable, or rolled-back facts, replay reuse, `SourceType=CatchUpSummary`/`SourceId=CatchUpSummary.Id`, and no fabricated GameplayEvent. Provenance tests require GameplayEventId for GameplayEvent-backed sources, require it to be null for CatchUpSummary, and reject/reuse duplicate recipient/source-type/source-id/category identity. Follow, DatingInvitation, relationship/world-event/trend/mention notifications, rich history/filtering/search, and push are deferred.
 
 When SignalR is introduced, test authorized connection/group, unauthorized and wrong-world subscription, minimal payload, duplicate event, reconnect, missed-event HTTP refetch, logout disconnect, message/simulation events, and no hidden data. Realtime remains a hint to PostgreSQL-backed HTTP truth.
 
@@ -282,7 +338,7 @@ Test initial load, cached-first/stale data, background refresh, pull-to-refresh,
 | Feed | Loading, refresh-with-data, empty, populated, offline, error, pending/failed, paging |
 | Character | Loading, follow, message, safe relationship summary, hidden data absent |
 | Messaging | Empty/history, sending, failed/retry, reported pending reply, offline |
-| Relationship/dating | Friendship/rival/dating/former partner, history, ineligible, persisted outcome |
+| Relationship/dating | Friendship/rival/dating, invitation/history, ineligible, persisted outcome; no FormerPartner action in MVP |
 | Notifications | Empty, unread/read, pagination, safe preview, deep link |
 | Catch-up | No changes, meaningful/partial summary, related navigation |
 
@@ -321,7 +377,9 @@ New offline initiation remains disabled until the approved product/API decisions
 
 Measure backend feed, message, pending-action, relationship, memory, notification, catch-up, and AI-work queries; and Flutter startup, feed/chat scrolling, large cache, notification list, and realtime bursts. Record environment, data size, and warm/cold state.
 
-Targets remain provisional until measured: reasonable common-API p95, bounded first-page latency, catch-up bounded by action limits, and smooth scrolling on a representative mid-range Android device. Large load tests are deferred until usage justifies them; initial staging scenarios are concurrent launches/resumes, feed reads, message bursts, AI slowdown, and later push backlog.
+ADR-034 sets M18 MVP engineering targets: normal non-AI CRUD/read p95 <= 500 ms; bounded simulation/catch-up synchronous API p95 <= 5 seconds; unexpected server errors below 1%; and normal readiness within 60 seconds. These are not customer SLA guarantees. The representative profile is 25 concurrent active users over 100 registered one-world accounts with representative feed, message, memory, relationship, dating, notification, background-worker, simulation, and catch-up state. The mix covers authentication, feed, Character profiles, messaging, notification reads, and catch-up without including external Ollama latency in core throughput acceptance.
+
+M18 provides one reproducible lightweight load definition. Release requires no Critical/High correctness failure, no obvious unbounded memory growth, and either meeting p95 targets or a documented project-owner acceptance of the deviation. A large performance platform remains deferred until usage justifies it.
 
 ## 32. Reliability and recovery testing
 
@@ -337,7 +395,7 @@ Each fixture declares release, rule version, UTC clock, world seed, safe aliases
 
 The stable catalogue begins with seeds 1001-1012 in section 8. Random/property-style tests report and replay their seed. Canonical snapshots compare mechanics independent of row enumeration, worker count, or provider result.
 
-All time tests use a fake clock and cover UTC/day rollover, cooldowns, token expiry, message delay when released, offline intervals, event/notification expiry, daylight-saving projection, and half-open boundaries. Rule code must not hide direct system-time calls.
+All time tests use a fake clock and cover UTC/day rollover, cooldowns, token expiry, message delay when released, offline intervals, event/notification expiry, daylight-saving projection, and half-open boundaries. M08 additionally verifies the first interval `[CreatedAtUtc, CreatedAtUtc + 15 minutes)`, no run before due, eligibility exactly at due, normalization of legacy never-simulated `NextDueAt`, one exact 15-minute run per trigger, and the documented two-trigger progression after 31 elapsed minutes without batching. Verify `CurrentWorldTime` and the existing non-null compatibility `LastSimulatedAt` start at creation time while null `LastCompletedIntervalEnd` identifies never-simulated state. Verify world time advances exactly by 15 minutes, 30 minutes, and 7 minutes 30 seconds for effective decimal scales `1.0000`, `2.0000`, and `0.5000`; `LastSimulatedAt` then equals the committed interval end rather than processing-now; a run retains its captured scale after the setting changes; and the next unprocessed interval uses the new scale. Two overdue intervals advance world time once per trigger, never by total backlog age. Completed replay must not advance cursor or world time twice; transaction failure must leave `CurrentWorldTime`, `LastSimulatedAt`, `LastCompletedIntervalEnd`, and `NextDueAt` unchanged; same-world concurrent triggers must produce one logical run/advancement and the loser must not consume the next overdue interval; different worlds remain independent. M08 also verifies `UTC` defaults for existing/new worlds, UTC and non-UTC IANA schedule/quiet-hour projection from the interval's resulting `CurrentWorldTime`, deterministic repetition, host-timezone and execution-latency independence, timezone-database DST conversion, invalid-zone rejection, and absence of per-character timezone state. Rule code must not hide direct system-time calls, use binary floating-point scale arithmetic, or infer a timezone from the host.
 
 ## 35. Mocking and test doubles
 
@@ -353,11 +411,13 @@ Prefer a fake clock, seeded random source, fake AI generator, stub AI HTTP serve
 | Backend fast | Restore, format, build, unit, architecture | Backend foundation |
 | Backend integration | Ephemeral PostgreSQL, API/integration, migration | Relevant backend milestone |
 | Flutter | Pub get, format, analyze, unit/provider/widget, later build smoke | Flutter foundation |
-| Security | Secret/dependency scan; selected static analysis | As tools arrive; mandatory by production |
+| Security | NuGet and Dart/Flutter dependency checks; existing secret scan; one free SAST path; backend/container SBOM; one container vulnerability scan | M18 / ADR-034 |
 | Infrastructure | Docker and workflow validation | Files exist |
 | Release | Artifact, migration, staging smoke/acceptance | Production milestone |
 
 A required failed check blocks merge. A check whose project/tool does not exist is reported Not applicable or Unavailable, not silently skipped.
+
+M18 selects repository-native/free tooling without requiring paid GitHub Advanced Security: existing CodeQL first, existing Semgrep second, otherwise one narrowly scoped accepted scanner. CI must not add redundant SAST or container scanners. Production accepts no unaccepted Critical vulnerability and no unaccepted reachable High vulnerability; written exceptions follow ADR-034.
 
 ```mermaid
 flowchart LR
@@ -407,9 +467,13 @@ Exploratory sessions assess character distinctiveness, dialogue repetition, rela
 
 Before production: apply migrations; check liveness/readiness; create guest/world; load feed; post; message; force AI fallback; resume/read summary; read/mark notification; rotate token; perform ownership-negative and log-redaction checks; verify backup/restore access; and confirm Development-only routes are absent from production routing/OpenAPI. Any approved real-AI manual wording check uses fictional data and strict budget.
 
+ADR-034 requires an isolated Render Staging service, Neon database, secrets, JWT key, and configuration. A release candidate reaches Staging only after CI succeeds on `dev` and the `dev -> main` PR checks pass. Before public Production, perform a restore drill in Staging or an isolated recovery database and verify schema, representative User/World data, and application connectivity.
+
 ## 40. Release acceptance
 
 Block release for any Critical security issue, cross-user/world access, data loss, non-idempotent/non-deterministic mechanics, broken guest auth/refresh, failed migration, AI cost runaway, sensitive logs, unusable core flow, or failed required CI. A known High requires documented acceptance, owner, mitigation, and target date.
+
+The project owner is the Production release owner and final High-risk acceptance authority. Critical risk blocks release. The approved sequence is automated checks, Staging deploy, smoke/migration/security checklist, project-owner approval, Production deploy, and post-deploy health/smoke checks. Migrations are explicit pre-traffic deployment steps; failure stops deployment and no automatic EF downgrade is performed.
 
 ```mermaid
 flowchart LR
@@ -450,7 +514,7 @@ Use behavior names such as `DatingInvitation_WhenTrustBelowThreshold_IsRejected`
 
 | Capability | MVP gate | Deferred gate |
 |---|---|---|
-| Guest/session/world | Guest, rotating refresh, logout, one exposed world, isolation | Registration, recovery, devices, same-user upgrade |
+| Guest/session/world | ADR-014 proof-bound guest bootstrap and one lost-response recovery, ADR-013 access/non-idempotent refresh/family limits and backend revocation, current logout, one exposed world, isolation, upgrade identity invariant | Registered-account recovery, public device/session management, full same-user upgrade endpoint |
 | Feed/social | Profiles, posts, replies, likes, follows, cursor | Reposts, quotes, rich reactions, hashtags, mentions, ranking |
 | Simulation/AI | Determinism, persisted actions, wording-only AI, fallback | Provider/tuning expansion |
 | Relationships/dating | Basic directional state, invitation/outcome, Dating, necessary romantic history | Breakup, FormerPartner/reconciliation, commitment, engagement, marriage, separation, divorce |
@@ -470,21 +534,21 @@ A feature is complete only when acceptance criteria are met; sources/existing co
 |---|---|
 | M01 Repository/tooling | Structure, paths/links, baseline command validation |
 | M02 Backend foundation | Startup/config, health, ProblemDetails, production dev-route gate |
-| M03 Guest session/world | Guest replay/conflict, token basics, world creation/ownership denial |
+| M03 Guest session/world | ADR-014 proof bootstrap/recovery/expiry/scope/concurrency/hash-only/redaction; ADR-013 JWT validation matrix; non-idempotent hash-only refresh rotation/concurrency/lost-response replay/family isolation/expiry; current/all-family revocation; five-family cap; auth `429`; upgrade identity invariant; atomic world/player creation and ownership denial |
 | M04 Flutter foundation | Bootstrap/session, secure storage abstraction, routing, error mapping |
 | M05 Characters | Seed/profile/traits, cursor, cross-world denial, screen states |
 | M06 Feed | Create, order/cursor/tie, pending reconciliation, isolation |
 | M07 Social actions | Replies/likes/follows, uniqueness, counts, nested ownership |
-| M08 Simulation | Seed reproducibility, ordering/reasons, interval idempotency/checkpoint |
-| M09 AI | Success/failure/fallback, minimized context, no mechanics, safe diagnostics |
+| M08 Simulation | Seed reproducibility, ordering/reasons; creation-time bootstrap, exact due boundary, legacy due-time normalization, one 15-minute run per trigger, 31-minute two-trigger progression, no batching; exact decimal TimeScale advancement including fractional scale, captured scale audit/change, `LastSimulatedAt` mirroring, replay/rollback/concurrency cursor and world-time safety; world IANA timezone defaults and schedule/quiet-hour projection from resulting world time, DST/validation/host independence; one deterministic rule evaluation per run/rule with stable outcome/reason precedence; unavailable ACT-01/POST-01/REPLY-01/REACT-01/FOLLOW-01 before random draws; no autonomous actions/effects/counter mutations; no zero/proxy/redistributed inputs; unchanged M06/M07 Player actions |
+| M09 AI | Fake/stub success/failure/one-retry/fallback, minimized context, no mechanics, no AI network/model requirement, safe diagnostics |
 | M10 Relationships | Dimensions/caps/asymmetry/history/labels |
-| M11 Messages | Conversation uniqueness, send/idempotency/cursor, eligibility/privacy |
+| M11 Messages | Conversation uniqueness, send/idempotency/cursor, eligibility/privacy; fixed neutral Urgency, zero conflict penalty, text/client/provider invariance, deterministic PRNG authority |
 | M12 Memory | Creation/ranking/provenance/secrets/promises/no full history |
 | M13 Dating | Eligibility/outcome/cooldown/required history/invalid transitions through Dating |
 | M14 Events/trends | Deferred-feature tests only when intentionally activated |
 | M15 Catch-up | Compression/caps/summary/partial retry/concurrent resume |
 | M16 Notifications | Released category/dedupe/read/cursor/ownership; realtime if introduced |
-| M17 Auth | Registration/login/recovery, guest-upgrade preservation/rollback |
+| M17 Auth | ADR-033 email/password normalization/policy/hash-only storage; registration/login generic errors; recovery-code single-use/rotation/hash-only/redaction; same-user guest-upgrade preservation/replay/rollback/concurrency; M03 session semantics, revoke/list/logout-all ownership; Flutter one-time-code/session/cache flows |
 | M18 Production | CI, migration, security scans, performance/recovery, staging smoke |
 
 ## 47. Explicitly rejected testing patterns
@@ -511,17 +575,16 @@ A feature is complete only when acceptance criteria are met; sources/existing co
 5. Coverage tooling/thresholds after a baseline.
 6. Golden scope and rendering platform.
 7. Flutter device/OS matrix and CI operating systems.
-8. Measured performance targets and representative profiles.
+8. Measured performance targets and representative profiles. **Resolved for M18 by ADR-034 and section 31.**
 9. Load tooling and activation threshold.
-10. Secret/dependency/SAST/DAST/SBOM scanning tools.
-11. Previous-version migration fixture and rollback approach.
-12. Staging reset/retention and real-AI manual policy.
+10. Secret/dependency/SAST/DAST/SBOM scanning tools. **Resolved for M18 by ADR-034's free dependency/secret/single-SAST/SBOM/single-container-scanner baseline; DAST remains deferred.**
+11. Previous-version migration fixture and rollback approach. **Resolved for M18 deployment by ADR-034: explicit forward migration, prior compatible application rollback, no automatic EF downgrade, and backup/restore or forward-fix for incompatible schema. A reusable historical fixture remains future test tooling.**
+12. Staging reset/retention and real-AI manual policy. **Resolved for M18: isolated Staging, fictional smoke data, optional strictly budgeted Ollama check, and no Production data. Exact routine Staging data retention remains operational.**
 13. Flaky tracking/quarantine ownership.
-14. Release checklist owner and High-risk acceptance authority.
-15. Feed-order oracle after its product decision.
-16. Concurrency tests after ETag/version and `409`/`412` decisions.
-17. SignalR/push test environments when released.
-18. New-offline-write tests after product/API decisions.
+14. Release checklist owner and High-risk acceptance authority. **Resolved for M18 by ADR-034: project owner.**
+15. Concurrency tests after ETag/version and `409`/`412` decisions.
+16. SignalR/push test environments when released.
+17. New-offline-write tests after product/API decisions.
 
 ### Recorded conflicts and phase mismatches
 

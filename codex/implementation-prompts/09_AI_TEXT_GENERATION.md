@@ -6,13 +6,15 @@ Read AGENTS.md, docs/milestones/M09_AI.md, docs/product/PRODUCT.md, docs/game-de
 Task: AI Text Generation
 
 Scope:
-Implement IAiTextGenerator, request/result models, prompt builder, template fallback, one external provider adapter, timeout/retry/output validation/duplicate detection, budget controls, safe logging, generation diagnostics, fake-provider tests and stub integration tests. AI may write wording only.
+Implement IAiTextGenerator, request/result models, prompt builder, deterministic template fallback, one local Ollama adapter behind the provider-neutral AI boundary, configurable provider/model/10-second default timeout/output limit/template version, one transient connection/timeout retry, output validation/duplicate detection, resource-budget controls, safe logging, generation diagnostics, deterministic fake-provider tests, and process-local HTTP stub integration tests. Prefer configurable `qwen3:4b`; Ollama/model availability is optional and AI may write wording only.
 
 Explicit exclusions:
-- No provider/model choice until recorded before M09; AI must not choose or mutate mechanics; no future AI features.
+- ADR-024 resolves the M09 provider contract. Do not add paid API dependencies, automatic cloud fallback, multiple-provider routing, a mandatory paid moderation service, real Ollama/model downloads in CI, AI-selected/mutated mechanics, or future AI features.
+- The default flow is `Ollama -> deterministic fallback`; backend startup and gameplay must remain functional when Ollama is disabled, absent, unreachable, timed out, missing the configured model, or returns invalid output.
 
 Tests:
-- Use fake/stub providers for automated tests covering validation, retry classification, fallback, budgets, duplicate detection, redaction, and mechanical invariance.
+- Use a deterministic fake provider and process-local HTTP stub for automated tests covering success, disabled/unavailable provider, exactly one transient retry, timeout/cancellation, validation, fallback, resource budgets, duplicate detection, hostile text as delimited data, redaction, and mechanical invariance.
+- Automated tests require no external network, running Ollama server, model download, paid API, provider credential, or billing account. A real-Ollama check is optional local manual verification only.
 
 Before editing:
 1. List relevant existing files.

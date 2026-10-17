@@ -8,11 +8,17 @@ Task: Catch-Up Simulation
 Scope:
 Implement bounded compressed simulation by reusing SimulationRun with RunType CatchUp; persist requested/processed/remaining intervals, relational bucket checkpoints, Partial/Completed/retryable status, retry/resume state, selected/aggregate mechanics, idempotency/concurrency ownership, timeout/work budgets, CatchUpSummary and committed-fact items, the authoritative latest-summary route/UI, indexes/retention behavior, and short/long/duplicate/failure tests.
 
+Run granularity:
+- Normal M08 processing remains one fixed 15-minute interval per SimulationRun and at most one interval per normal trigger.
+- One bounded M15 CatchUp operation is one SimulationRun with RunType CatchUp. Its six-hour/daily buckets, compression, aggregate mechanics, and partial checkpoints are internal to that run.
+- Partial/retry state belongs to that CatchUp run and its relational checkpoints. Do not add a second batch-run abstraction and do not create one SimulationRun per historical 15-minute interval.
+- CatchUp determinism is measured against identical CatchUp inputs, seed, bucket/checkpoint state, and compressed gameplay outcome. Exact SimulationRun counts, SimulationAction counts, and PRNG draw sequences from repeated M08 triggers are not an equivalence requirement.
+
 Explicit exclusions:
 - No minute-by-minute simulation, unbounded work, full M14 events/trends, duplicate run infrastructure, or AI-invented summary facts.
 
 Tests:
-- Test CatchUp SimulationRun identification, processed/remaining intervals, relational checkpoints, Partial/completion/retry/resume, summary/item persistence, idempotency/concurrency, ownership, retention behavior, fallback wording, and UI states.
+- Test CatchUp SimulationRun identification and one-run ownership, processed/remaining intervals, relational checkpoints, Partial/completion/retry/resume, deterministic compressed replay, unchanged normal M08 granularity, summary/item persistence, idempotency/concurrency, ownership, retention behavior, fallback wording, and UI states. Do not require CatchUp to match the run/action counts or PRNG draw sequence of repeated M08 triggers.
 
 Before editing:
 1. List relevant existing files.

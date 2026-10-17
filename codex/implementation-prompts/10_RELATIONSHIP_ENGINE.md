@@ -6,13 +6,15 @@ Read AGENTS.md, docs/milestones/M10_RELATIONSHIPS.md, docs/product/PRODUCT.md, d
 Task: Relationship Engine
 
 Scope:
-Implement directional Relationship and immutable RelationshipEvent, trust/familiarity/respect/affection/comfort/rivalry/jealousy, clamping, idempotent deltas, derived friendship/rival/enemy states, APIs and Flutter summary/timeline basics, with deterministic tests. Exclude romance transitions.
+Implement directional Relationship and immutable RelationshipEvent with exactly nine dimensions: Familiarity, Trust, Respect, Affection, Comfort, Rivalry, Jealousy, Attraction, and Commitment. Implement clamping, idempotent deltas, derived friendship/rival/enemy states, APIs and Flutter summary/timeline basics, with deterministic tests. Exclude romance transitions and any tenth hidden score.
+
+Use ADR-025/026 for deterministic Jaccard `InterestOverlap`, weighted directional `RelationshipRelevance`, neutral M10 v1 REL-01 multiplier defaults with the two existing exact exceptions, persisted Character Reputation (0-100, default/backfill 50), action-to-event mapping, and autonomous-rule availability. Do not infer mechanics from natural-language content. FOLLOW-01 is fully evaluable. Initial Follow, Like, Unlike, and generic Reply intentionally create no REL-01 delta. REPLY-01 remains gated by `mood_activation_unavailable`; REACT-01 remains gated by `positive_mood_unavailable`, then GoalRelevance, then repetition semantics. ACT-01 and POST-01 remain gated by ADR-020.
 
 Explicit exclusions:
 - No romance transitions, dating, secrets/promises, or AI-decided relationship changes.
 
 Tests:
-- Test directional values, clamping/caps, immutable events, idempotency, derived states, same-world constraints, safe API projection, and UI.
+- Test all nine directional values, clamping/caps, immutable events, idempotency, derived states, same-world constraints, safe API projection, InterestOverlap, RelationshipRelevance, neutral multiplier defaults and approved exceptions, authoritative action mapping, autonomous-rule gates, and UI.
 
 Before editing:
 1. List relevant existing files.

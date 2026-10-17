@@ -27,6 +27,7 @@ This file is the single authoritative source of gameplay behaviour. Product scop
 | Player actor | The one human-controlled actor in a world. Rules apply consequences to player actions, but the simulator does not invent player-authored actions. |
 | AI character actor | A rule-controlled character eligible for autonomous actions. |
 | Action | A mechanical intent with actor, target, type, inputs, selected parameters, scheduled time, and idempotency key. |
+| Rule evaluation | One run-level summary for a registered rule, with a stable `Unavailable`, `Ineligible`, `Eligible`, or `Executed` outcome and machine-readable primary reason. It is not an action or gameplay event. |
 | Event | An immutable record that an action or state transition occurred or was rejected for a recorded reason. |
 | Memory | A character-owned structured recollection derived from an eligible event. |
 | Relationship event | An event applying bounded directional changes between two actors and optionally a romantic-status transition. |
@@ -64,12 +65,15 @@ The rest of this document references these names. Changing a value requires a re
 | `MAX_UNSOLICITED_MESSAGES_PER_DAY` | 2 | Deferred |
 | `MESSAGE_TOPIC_COOLDOWN_HOURS` | 24 | Deferred initiation; MVP replies use conversation context |
 | `MAX_PLANNED_REPLY_DELAY_HOURS` | 24 | Deferred delayed replies |
+| `M11_REPLY_URGENCY` | 50 on the 0-100 scale | M11 v1; fixed neutral value for every Player-authored message |
+| `M11_CONFLICT_AVOIDANCE_PENALTY` | 0 | M11 v1; no modeled unresolved-conflict mechanic |
 | `MAX_ORDINARY_RELATIONSHIP_DELTA` | 15 per dimension/event | MVP |
 | `MAX_SEVERE_RELATIONSHIP_DELTA` | 30 per dimension/event | MVP |
 | `MAX_DAILY_RELATIONSHIP_DELTA` | 20 absolute per dimension/direction | MVP |
 | `MAX_ACTIVE_GOALS` | 3 | MVP |
 | `MAX_OPINION_CHANGE_PER_DAY` | 3 ordinary; 8 major-event | MVP |
 | `MAX_MEMORIES_PER_AI_REQUEST` | 8 | MVP |
+| `MAX_ACTIVE_MEMORIES_PER_CHARACTER` | 100 | M12 v1 |
 | `MEMORY_CREATION_IMPORTANCE` | 30 | MVP |
 | `ROMANCE_FAMILIARITY_MIN` | 55 | MVP, tunable |
 | `ROMANCE_TRUST_MIN` | 45 | MVP, tunable |
@@ -114,32 +118,37 @@ The decision, mechanical event, relationship deltas, memories, notification inte
 
 Every important rule below supplies: **Purpose, Inputs, Preconditions, Decision, Randomness, Limits, Cooldown, State changes, Persistence, Idempotency, Example, Status**. All formulas round half away from zero and clamp bounded outputs.
 
+M08 persists one `SimulationRuleEvaluation` per registered rule and run. Mandatory-input validation occurs first. A missing mandatory input produces `Unavailable`; complete inputs that fail deterministic conditions produce `Ineligible`; successful eligibility may produce `Eligible`; a committed approved effect produces `Executed`. Unavailable/ineligible outcomes use stable machine-readable primary reasons, never create a `SimulationAction` or `GameplayEvent`, and do not fail the run.
+
 ## 5. World time and simulation run
 
 ### Rule SIM-01: advance an active world
 
 - **Purpose:** Advance one world without duplicate intervals.
-- **Inputs:** World status, persisted game time, last simulated UTC time, current UTC time, rule version, world seed.
-- **Preconditions:** World is `Active`; interval start equals persisted cursor; no completed run owns the interval.
-- **Decision:** Eligible game-time delta is `floor(real elapsed minutes * GAME_TIME_SCALE)`. Process complete active ticks only. Runs use half-open intervals `[start,end)`.
+- **Inputs:** World status, `GameWorld.CreatedAtUtc`, `CurrentWorldTime`, compatibility `LastSimulatedAt`, persisted simulation cursor and `NextDueAt`, positive decimal `TimeScale`, current UTC time, rule version, world seed.
+- **Preconditions:** World is `Active`; interval start equals the authoritative persisted cursor; `currentUtc >= NextDueAt`; no completed run owns the interval. A never-simulated world's initial cursor is `GameWorld.CreatedAtUtc` and its first due time is `CreatedAtUtc + 15 minutes`.
+- **Decision:** M08 uses fixed 15-minute half-open intervals `[start,end)`. For a never-simulated world, start is `CreatedAtUtc`; otherwise start is `LastCompletedIntervalEnd`. End and the expected due projection are start plus 15 minutes. `NextDueAt` is a scheduling projection of cursor chronology, not an alternate chronology source; a mismatch fails safely. One normal trigger evaluates at most the single oldest due interval. The interval's in-world delta is exactly `15 minutes × EffectiveTimeScale` using decimal/tick arithmetic.
 - **Randomness:** Run seed and substreams defined above; time advancement itself has no roll.
-- **Limits:** Active request work is bounded by configured run/action limits.
+- **Limits:** One `SimulationRun` owns exactly one interval and one normal M08 trigger creates at most one successful run. M08 does not drain or span backlog; M15 owns bounded multi-interval batching/catch-up.
 - **Cooldown:** `ACTIVE_TICK_MINUTES` between active evaluations.
-- **State changes:** Advance simulation cursor only after all mechanical actions for the interval commit.
-- **Persistence:** SimulationRun with interval, seed, rule version, status, action counts, cursor, and error reason.
+- **State changes:** After `[S,E)` commits, set `LastCompletedIntervalEnd=E`, `NextDueAt=E+15 minutes`, `LastSimulatedAt=E`, and `CurrentWorldTime=previous CurrentWorldTime + (15 minutes × EffectiveTimeScale)`. Advance none unless all run, evaluation, checkpoint, and mechanical state for the interval commits. Existing worlds initialize `CurrentWorldTime` and non-null compatibility `LastSimulatedAt` to `CreatedAtUtc`; `LastCompletedIntervalEnd == null` alone identifies never-simulated state.
+- **Persistence:** SimulationRun with interval, effective decimal TimeScale, seed, rule version, status, action counts, cursor, and error reason.
 - **Idempotency:** One run key per world/rule/interval; overlapping completed intervals are rejected.
-- **Example:** With 31 elapsed real minutes and scale 1.0, two 15-minute ticks are eligible; one minute remains unprocessed.
+- **Example:** At `T+31 minutes` for a world created at `T`, scale `2`, and initial world time `W`, the first trigger processes only `[T,T+15)`, sets the completed cursor and `LastSimulatedAt` to `T+15`, sets `NextDueAt=T+30`, and advances world time to `W+30 minutes`; the world remains due. A second trigger may process `[T+15,T+30)`, set the cursor and `LastSimulatedAt` to `T+30`, set `NextDueAt=T+45`, and advance world time to `W+60 minutes`. No trigger batches both intervals, and the remaining minute is partial and ineligible.
+- **Timezone:** Interval identity and cursor fields are canonical UTC. Schedule and quiet-hour rules project the interval's resulting `CurrentWorldTime` through the world IANA timezone; timezone conversion does not change interval chronology.
 - **Status:** MVP.
 
 World states are `Paused`, `Active`, and `Archived`. Paused worlds accumulate no eligible game time. Resuming sets the real-time anchor to the resume UTC time and continues from persisted game time; paused real time is not caught up. Archived behaviour beyond read-only retention is deferred.
 
-Character-local display time derives from persisted UTC plus a configured IANA/Windows-compatible display zone. Schedules use that local projection; persisted timestamps remain UTC. Daylight-saving ambiguity is resolved by UTC ordering, never by duplicate local intervals.
+For M08, character-local display time means the projection of the interval's deterministic resulting `CurrentWorldTime` through the world-configured IANA display timezone. `WorldSettings.DisplayTimeZoneId` stores that identifier and defaults existing and new worlds to `UTC`; M08 has no per-character timezone. Schedules and quiet hours use the derived local date and wall-clock time, while canonical interval, event, and action timestamps remain UTC. Timezone database rules determine daylight-saving transitions; `UTC` has no DST. Because evaluation begins with a persisted UTC world-time instant and converts to local time, ambiguous or invalid local wall-clock timestamps are never rule inputs. Rules must not infer a timezone from the host, device, locale, IP address, or operating-system settings.
 
 ## 6. Character state
 
 ### Personality traits
 
 Traits are integers 0-100. MVP traits are fixed after character creation.
+
+Each Character also has a persisted mechanics-only `Reputation` from 0 through 100, defaulting to 50 for existing and new Characters. It is independent from PlayerProfile Reputation. M10 introduces no Character Reputation progression: follows, reactions, replies, relationship events, counts, Influence, Popularity, and AI wording do not change it. A future update rule requires a separate accepted gameplay decision.
 
 | Trait | Influences |
 |---|---|
@@ -216,9 +225,9 @@ MVP activates at most `MAX_ACTIVE_GOALS`. Goal conflict is resolved by highest p
 - **Persistence:** Planned SimulationAction with score components, roll, seed, and rejection reason when diagnostically retained.
 - **Idempotency:** Actor/interval/action ordinal key; duplicate family/target/topic checks occur before commit.
 - **Example:** An active sociable character with a relevant goal scores 72; roll 31 permits action. A second action adds fatigue, reducing later likelihood.
-- **Status:** MVP.
+- **Status:** MVP rule contract. During M08 it is deterministically unavailable/ineligible because GoalRelevance, numeric MoodActivation, and EventRelevance do not yet have complete approved persisted sources and semantics. Availability is checked before actor/family probability rolls. Missing terms are not assigned zero, inferred, bypassed, or renormalized; no autonomous action/event/effect is created. Future activation requires approved real inputs and their storage, range/default, formula, and migration/versioning contracts.
 
-Quiet hours use character-local time. Profession/schedule marks `Sleeping`, `Working`, `Available`, or `Busy`; important events may create an override. High-activity characters cannot exceed caps, and fairness credit raises opportunities for recently quiet characters.
+Quiet hours use the local time derived from the interval's resulting `CurrentWorldTime` and the world-configured IANA display timezone. Profession/schedule marks `Sleeping`, `Working`, `Available`, or `Busy`; important events may create an override. High-activity characters cannot exceed caps, and fairness credit raises opportunities for recently quiet characters.
 
 ## 8. Social feed rules
 
@@ -235,7 +244,7 @@ Quiet hours use character-local time. Profession/schedule marks `Sleeping`, `Wor
 - **Persistence:** Post action, decided topic/stance/tone/intent, source IDs, seed, AI request, and final/fallback text.
 - **Idempotency:** Actor/topic/interval ordinal; identical retry returns the same post record.
 - **Example:** A technology-interested Inspired character selects an active fictional technology topic; rules persist an optimistic stance before wording.
-- **Status:** MVP. Hashtag enrichment is deferred.
+- **Status:** MVP rule contract; hashtag enrichment is deferred. During M08 it is deterministically unavailable/ineligible because GoalRelevance, EventRelevance, numeric MoodActivation, and the goal/event topic-weight categories do not yet have complete approved persisted sources and semantics. Availability is checked before post/topic probability rolls. Missing components are not zeroed, inferred, dropped, redistributed, or renormalized; no autonomous SimulationAction, Post, GameplayEvent, or feed mutation is created. Future activation requires approved real inputs.
 
 AI receives actor voice attributes, decided topic, stance, tone, intent, maximum length, and up to the allowed memories. If generation fails or violates the contract, a deterministic template expresses the decision. AI cannot add a new target, claim an unrecorded event, or change stance.
 
@@ -252,7 +261,7 @@ AI receives actor voice attributes, decided topic, stance, tone, intent, maximum
 - **Persistence:** Notice decision, reply decision, stance, tone, impact, target post, seed, text intent.
 - **Idempotency:** Actor/post/intent key.
 - **Example:** A direct mention guarantees notice, but a Tired actor may still decline a non-urgent reply when the reply roll fails.
-- **Status:** MVP.
+- **Status:** MVP. M07 Player replies are active outside this autonomous rule. M10 supplies Familiarity and directional RelationshipRelevance, removing `relationship_state_unavailable`. Autonomous Character evaluation remains unavailable with `mood_activation_unavailable`, the first remaining unresolved mandatory input in formula order; GoalRelevance also remains unresolved under ADR-020. Missing terms are not zeroed, dropped, proxied, or renormalized, and no rule-specific roll or autonomous effect occurs while unavailable.
 
 ### Rule REACT-01: react, repost, quote, bookmark, or ignore
 
@@ -267,9 +276,11 @@ AI receives actor voice attributes, decided topic, stance, tone, intent, maximum
 - **Persistence:** Reaction/action or ignored-decision diagnostic with components.
 - **Idempotency:** Actor/post/action-type unique key.
 - **Example:** High interest and agreement yield score 78; roll 22 creates one Like. Retry returns it.
-- **Status:** Like/Ignore MVP; repost, quote, bookmark deferred.
+- **Status:** Like/Ignore MVP; repost, quote, bookmark deferred. M07 Player likes/unlikes are active outside this autonomous rule. M10 supplies Affection and Character Reputation supplies AuthorReputation, removing those availability gaps. Autonomous Character evaluation remains unavailable with `positive_mood_unavailable`. Missing-input precedence is relationship state, AuthorReputation, PositiveMood, GoalRelevance, then repetition semantics; after PositiveMood resolves, use `goal_relevance_unavailable`, and after the earlier inputs resolve use `repetition_semantics_unavailable`. Missing terms are not zeroed, proxied, dropped, or renormalized, and no rule-specific roll or autonomous effect occurs while unavailable.
 
 ### Rule FOLLOW-01: follow or unfollow
+
+`InterestOverlap` is the Jaccard similarity of the two Actors' sets of canonical persisted interest/topic identifiers: `round(100 * |A intersect B| / |A union B|)`. Duplicate identifiers have no additional weight, ordering is irrelevant, and comparison never uses display strings. If either set is empty, including when both are empty, the result is 0. Identical non-empty sets produce 100. Arithmetic is deterministic decimal arithmetic and rounding is midpoint away from zero under the universal score-rounding rule.
 
 - **Purpose:** Maintain world-local follow edges from sustained relevance.
 - **Inputs:** Familiarity, interest overlap, reputation, trust, affection, rivalry, qualified recent events, current edge.
@@ -282,7 +293,7 @@ AI receives actor voice attributes, decided topic, stance, tone, intent, maximum
 - **Persistence:** FollowChanged event with score, reasons, actor, target, and prior edge.
 - **Idempotency:** Actor/target/desired-state key.
 - **Example:** Familiarity 45 and overlap 70 qualify; score 63 and roll 40 creates the edge.
-- **Status:** MVP.
+- **Status:** MVP. M07 Player follow/unfollow is active. M10 supplies Familiarity, Trust, Affection, Rivalry, deterministic InterestOverlap, and Character Reputation. FOLLOW-01 is fully evaluable and uses the unchanged threshold, coefficients, deterministic roll, cooldowns, active-edge/history constraints, and replay contract. It transitions normally among Ineligible, Eligible, and Executed. Autonomous Character follows remain server-side and cannot be submitted through a client impersonation path.
 
 ## 9. Private messaging
 
@@ -304,9 +315,9 @@ AI receives actor voice attributes, decided topic, stance, tone, intent, maximum
 ### Rule MSG-02: reply eligibility and timing
 
 - **Purpose:** Decide whether an AI character replies and, when enabled, when.
-- **Inputs:** Message intent/urgency, schedule, sleep/work state, closeness, mood, unresolved conflict, recent messages.
+- **Inputs:** Message intent/urgency, schedule, sleep/work state, closeness, mood, unresolved conflict, recent messages. For every Player-authored M11-v1 message, the backend supplies fixed `Urgency=50` on the 0-100 scale. Because M11 v1 has no modeled unresolved-conflict mechanic, it supplies `ConflictAvoidancePenalty=0`.
 - **Preconditions:** Valid same-world conversation and recipient knowledge; no existing planned reply for source message.
-- **Decision:** `ReplyScore=clamp(35 + 0.20*Urgency + 0.20*Familiarity + 0.15*Trust + 0.15*Comfort + 0.10*Sociability - ConflictAvoidancePenalty,0,100)`. MVP processes an eligible reply without simulated delay; a failed roll records NoResponse. Deferred delay is 0-`MAX_PLANNED_REPLY_DELAY_HOURS`, increased by Sleep/Work/Tired and reduced by urgency/closeness.
+- **Decision:** `ReplyScore=clamp(35 + 0.20*Urgency + 0.20*Familiarity + 0.15*Trust + 0.15*Comfort + 0.10*Sociability - ConflictAvoidancePenalty,0,100)`. For M11 v1, substitute exactly `Urgency=50` and `ConflictAvoidancePenalty=0`; do not derive either value from text, punctuation, length, sentiment, Rivalry, message history, client input, or AI output. MVP processes an eligible reply without simulated delay; a failed roll records NoResponse. Deferred delay is 0-`MAX_PLANNED_REPLY_DELAY_HOURS`, increased by Sleep/Work/Tired and reduced by urgency/closeness.
 - **Randomness:** Deterministic eligibility roll and, when enabled, delay substream.
 - **Limits:** One reply plan per source message; no full-history AI input.
 - **Cooldown:** Conversation repetition/topic cooldown; follow-up after 24 hours only when an unresolved promise/urgent intent remains.
@@ -316,9 +327,13 @@ AI receives actor voice attributes, decided topic, stance, tone, intent, maximum
 - **Example:** A work-state recipient gets an eligible reply; MVP generates it now, while deferred timing would persist a four-hour due time first.
 - **Status:** Eligibility/reply MVP; delayed timing and character follow-up deferred.
 
+Player-authored text remains content for validation and, after the mechanical decision, bounded wording context. It does not supply hidden MSG-02 mechanics. M09/Ollama cannot classify intent, urgency, conflict, reply existence, timing, or probability. Future explicit intent, urgency categories, conflict state, deterministic classification, relationship-driven conflict, or memory-aware inputs require an accepted rule-version decision defining their authoritative source, exact mapping and range, replay/versioning behavior, and MSG-02 interaction before replacing the M11-v1 constants.
+
 ## 10. Relationship system
 
 Relationships are directional. A-to-B and B-to-A are updated only by event rules that explicitly affect each direction.
+
+The directional state contains exactly nine dimensions: Familiarity, Trust, Respect, Affection, Comfort, Rivalry, Jealousy, Attraction, and Commitment. Every dimension is an integer from 0 through 100. There is no tenth hidden score.
 
 ### Initial values
 
@@ -326,12 +341,18 @@ For newly introduced actors: Familiarity 10, Trust 50, Respect 50, Affection 20,
 
 Fear is not an MVP relationship dimension because PRODUCT.md does not require it. Adding Fear later requires an accepted product/rules change, defined event impacts, and migration of existing relationships.
 
+`RelationshipRelevance` is a directional measure of how socially significant the target is to the source Actor, rather than a measure of positive affinity alone:
+
+`RelationshipRelevance = clamp(round(0.25*Familiarity + 0.15*Trust + 0.15*Respect + 0.15*Affection + 0.10*Comfort + 0.10*Rivalry + 0.05*Jealousy + 0.025*Attraction + 0.025*Commitment), 0, 100)`.
+
+The coefficients sum to 1.0. Rivalry and Jealousy intentionally increase relevance because conflict can make another Actor socially significant. Calculation uses exact deterministic decimal arithmetic, rounds midpoint away from zero, preserves source-to-target directionality, and applies the clamp only as a final defensive operation. AI and generated text are never inputs.
+
 ### Rule REL-01: apply a relationship event
 
 - **Purpose:** Apply auditable bounded directional deltas.
 - **Inputs:** Event type, actor/target, base matrix row, severity, personality, mood, relationship state, public/private context, repetition count.
 - **Preconditions:** Valid same-world actors; source event committed; event not previously applied.
-- **Decision:** `FinalDelta=round(BaseDelta * SeverityMultiplier * PersonalityMultiplier * MoodMultiplier * ContextMultiplier * RepetitionMultiplier)`. Multipliers are bounded: severity 0.5-2.0, personality 0.75-1.25, mood 0.85-1.15, context 0.75-1.25, repetition 0.5-1.25.
+- **Decision:** `FinalDelta=round(BaseDelta * SeverityMultiplier * PersonalityMultiplier * MoodMultiplier * ContextMultiplier * RepetitionMultiplier)`. M10 v1 defaults `SeverityMultiplier`, `PersonalityMultiplier`, `MoodMultiplier`, `ContextMultiplier`, and `RepetitionMultiplier` to exactly `1.0`. The only existing exact non-neutral mappings remain the dimension-specific public-negative context multiplier and repeated-positive multiplier stated below. The documented ranges reserve future rule versions but do not authorize selecting another value. Any additional non-neutral mapping requires a separate accepted decision defining its persisted source, exact mapping, range, rounding, and replay/versioning behavior.
 - **Randomness:** None after source event is decided.
 - **Limits:** Ordinary/severe per-event caps and ordinary daily cap; values clamp 0-100. Severe importance-90 events may use the severe cap and bypass daily ordinary cap once.
 - **Cooldown:** Source-action cooldowns; repeated argument cooldown.
@@ -368,7 +389,25 @@ Abbreviations: `F` Familiarity, `T` Trust, `R` Respect, `A` Affection, `At` Attr
 | Unfollow |  | -2 | -1 | -2 |  | -1 |  | +1 |  |
 | Re-follow | +2 | +1 |  | +1 |  | +1 |  | -1 |  |
 
-Public negative events multiply Respect loss and Rivalry gain by 1.25. Empathy reduces negative response to accidental harm; Sensitivity increases emotional dimensions. Repeated positive events of the same type after three in seven days use 0.5 repetition multiplier; repeated negative events use up to 1.25. No modifier can reverse a base delta's sign.
+For an authoritative public negative event, apply `ContextMultiplier = 1.25` only to Respect loss and Rivalry gain. After three authoritative positive events of the same type in the preceding seven game days, apply `RepetitionMultiplier = 0.5` to subsequent positive events of that type. All other M10 v1 context and repetition cases use `1.0`; the earlier “up to 1.25” repeated-negative behavior and the Empathy/Sensitivity adjustments remain inactive because their exact mappings are undefined. Personality, mood, and severity multipliers remain `1.0`. No modifier may be chosen randomly, inferred from wording, or reverse a base delta's sign. A future rule-version decision may activate another non-neutral mapping.
+
+### M10 v1 authoritative social-action mapping
+
+Relationship event classification uses committed gameplay facts only, never natural-language content:
+
+| Authoritative gameplay result | Relationship event |
+|---|---|
+| Successful initial Follow creation | no M10 v1 relationship event |
+| Successful Unfollow | canonical `Unfollow` |
+| Successful re-follow | canonical `Re-follow` |
+| Successful Like creation | no M10 v1 relationship event |
+| Like removal/unlike | no M10 v1 relationship event |
+| Successful generic Reply creation | no M10 v1 relationship event |
+| Reply authoritatively classified as Helpful | canonical `Helpful reply` |
+| Post creation alone | no relationship event |
+| M09 provider or fallback wording | no relationship event |
+
+An action invokes REL-01 only when an authoritative gameplay action/event maps to a canonical row with approved deterministic base deltas. Otherwise the social action may still succeed, but no relationship score changes and no fake zero-delta RelationshipEvent is created. `Unfollow` and `Re-follow` use their existing rows. `Helpful reply` applies only after an authoritative deterministic mechanic classifies the reply as Helpful; generic reply text, sentiment, M09 wording, and provider output cannot perform that classification. For an approved row, REL-01 identifies direction from authoritative actor/target state, loads or concurrency-safely creates the unique directional relationship, applies the row once, clamps each dimension independently to 0-100, and persists gameplay-event/rule/direction provenance. Reverse direction changes only through a separately approved directional effect.
 
 ### Derived friendship states
 
@@ -391,36 +430,44 @@ Ordinary passive decay is disabled in MVP to keep changes understandable. Deferr
 ### Rule ROM-01: romantic eligibility and invitation
 
 - **Purpose:** Decide who may invite whom and select a valid candidate.
-- **Inputs:** Familiarity, Trust, Attraction, Comfort, romantic openness/preferences, active romantic state, goals, severe conflicts, cooldown, schedule.
-- **Preconditions:** Both actors romance-enabled and compatible; F/T/At/C meet constants; RomanticOpenness meets minimum; no incompatible active relationship; no unresolved severe conflict in lookback; cooldown expired.
-- **Decision:** `InitiationScore=0.30*Attraction+0.20*Trust+0.15*Comfort+0.10*Familiarity+0.10*RomanticOpenness+0.10*GoalRelevance+0.05*PositiveMood-ConflictPenalty`. Candidate with highest score at least 60 wins; ties use seeded stable tie-break. Date type is selected from shared interests and mutually available schedules.
-- **Randomness:** Seeded tie-break/date-type choice; thresholds are not random.
-- **Limits:** One pending invitation per pair and one active compatible romance per actor in MVP.
-- **Cooldown:** `DATE_INVITATION_COOLDOWN_DAYS` after invitation or rejection.
+- **Inputs:** Familiarity, Trust, Attraction, Comfort, structured world romance availability, Actor romance modes, RomanticOpenness, active romantic state, deterministic neutral GoalRelevance/PositiveMood/ConflictPenalty, and cooldown.
+- **Preconditions:** The world has `RomanceEnabled=true`; both distinct active same-world Actors use `AnyEligibleActor`; F/T/At/C meet constants; RomanticOpenness meets minimum; neither Actor has an active Dating relationship or another unresolved invitation; pair state permits invitation; cooldown expired.
+- **Decision:** `InitiationScore=0.30*Attraction+0.20*Trust+0.15*Comfort+0.10*Familiarity+0.10*RomanticOpenness+0.10*GoalRelevance+0.05*PositiveMood-ConflictPenalty`. Candidate with highest score at least 60 wins; ties use seeded stable tie-break. M13 v1 assigns `CasualDate`; shared-interest/schedule selection is deferred.
+- **Randomness:** Seeded stable candidate tie-break only; thresholds and the fixed `CasualDate` type are not random.
+- **Limits:** One unresolved invitation involving an Actor and one active Dating relationship per Actor in MVP. The sole mechanical date type is `CasualDate`; the client and AI cannot select another.
+- **Cooldown:** `DATE_INVITATION_COOLDOWN_DAYS` in authoritative game time beginning at invitation creation; the outcome does not restart it.
 - **State changes:** `None -> RomanticInterest -> InvitationPending` as needed.
-- **Persistence:** Invitation decision, candidate scores, eligibility reasons, date type, due/expiry, timeline event.
+- **Persistence:** Invitation decision, candidate scores, first eligibility reason, `CasualDate`, UTC audit creation time, world-game creation time, expiry exactly 24 game hours later, and timeline event.
 - **Idempotency:** Initiator/candidate/cooldown-window key.
-- **Example:** F60/T55/At68/C50/open70 qualifies; initiation score 64 creates a pending invitation before dialogue.
+- **Example:** F70/T60/At75/C60/open70 with the M13 neutral inputs produces initiation score 65 and creates a `CasualDate` invitation before dialogue.
 - **Status:** MVP.
+
+M13 v1 compatibility is Boolean and exact: world romance enabled, both Actors `AnyEligibleActor`, both active, same world, and distinct Actors. A compatible pair contributes `Compatibility=100` where ROM-02 requires the numeric input; an incompatible pair is rejected before scoring. `Disabled` contributes no score. A Player using `AnyEligibleActor` supplies formula `RomanticOpenness=100`; a Character uses persisted `CharacterTraits.RomanticOpenness` after its mode gate passes. ROM-01 uses `GoalRelevance=50`, `PositiveMood=50`, and `ConflictPenalty=0`. No categorical mood mapping, hidden goal, text, interest, memory, or AI inference supplies those values.
+
+ROM-01 returns one reason using this precedence: `romance_disabled`, `initiator_not_open`, `target_not_open`, `romance_incompatible`, `exclusivity_conflict`, `romantic_state_conflict`, then Familiarity, Trust, Attraction, Comfort, RomanticOpenness, initiation-score, and deterministic tie/roll failure where applicable. Equivalent repository-standard lowercase names are permitted only when they preserve this order and meaning.
 
 ### Rule ROM-02: accept or reject a date
 
 - **Purpose:** Decide the invitation outcome before text.
-- **Inputs:** Recipient Attraction, Trust, Comfort, Familiarity, openness, current mood, goal relevance, compatibility, recent positive/negative events.
+- **Inputs:** Recipient Attraction, Trust, Comfort, structured RomanticOpenness, exact compatibility, neutral GoalRelevance/MoodModifier/ConflictPenalty, and the persisted deterministic offset.
 - **Preconditions:** Pending unexpired invitation; eligibility remains valid; not already resolved.
 - **Decision:** `AcceptanceScore=0.35*Attraction+0.25*Trust+0.15*Comfort+0.10*Compatibility+0.10*RomanticOpenness+0.05*GoalRelevance+MoodModifier-ConflictPenalty+SeededOffset`, where MoodModifier is -10..10 and SeededOffset is -5..5. Accept at `DATE_ACCEPTANCE_MIN`; otherwise reject with the highest-weight deterministic reason code.
 - **Randomness:** Only bounded seeded offset/tie-break.
 - **Limits:** Score clamped 0-100; one outcome.
-- **Cooldown:** Invitation cooldown applies after either outcome.
+- **Cooldown:** The invitation-creation cooldown remains in force after either outcome and is not restarted.
 - **State changes:** Accept: `InvitationPending -> Dating`; Reject: `InvitationPending -> None`. Rejection is an event, not a durable status.
 - **Persistence:** DateAccepted/DateRejected event, score components, reason, memories, relationship impacts, timeline.
 - **Idempotency:** Invitation ID/outcome rule key.
 - **Example:** Score 58 plus seeded offset -2 rejects with LowComfort; AI phrases that recorded reason.
 - **Status:** MVP.
 
+M13 v1 uses `Compatibility=100`, `GoalRelevance=50`, additive `MoodModifier=0`, and `ConflictPenalty=0` after compatibility and state gates pass. The seeded offset uses the universal deterministic PRNG with stable invitation identity, is persisted once, and is never rerolled on retry. Threshold/formula rejection order is Attraction, Trust, Comfort, RomanticOpenness, then acceptance score; only one mechanical reason is persisted.
+
+If the target is the Player, ROM-02 waits for explicit Player Accept/Reject and expires to `None` when authoritative world time reaches the persisted expiry. If the target is a Character, ROM-02 evaluates immediately after valid invitation creation in the same authoritative processing flow. No arbitrary real-time delay or AI decision is used.
+
 ### Dating progression
 
-MVP states are `None`, `RomanticInterest`, `InvitationPending`, and `Dating`. Dating begins with Commitment raised to at least 20. Successful dates and relationship events may develop approved dimensions without activating a deeper lifecycle.
+MVP states are `None`, `RomanticInterest`, `InvitationPending`, and `Dating`. The first Dating transition for an invitation/episode adds exactly 10 Commitment to both directional M10 rows, clamps each independently to 0-100, and records deterministic transition provenance. It applies once, atomically with Dating history, and does not consume ordinary REL-01 daily caps. It does not make the directional rows equal. Successful dates and relationship events may develop only otherwise-approved dimensions without activating a deeper lifecycle.
 
 Deferred states are `FormerPartner`, `Committed`, `Engaged`, `Married`, `Separated`, and `Divorced`.
 
@@ -450,42 +497,42 @@ These rules are inactive until PRODUCT.md release placement is decided. Initial 
 ### Rule MEM-01: create a memory
 
 - **Purpose:** Preserve meaningful knowledge without recording every trivial interaction.
-- **Inputs:** Source event, type, importance, emotional impact, subject, topic, participants, visibility, character knowledge.
-- **Preconditions:** Character witnessed/received/was told the event; released MVP types are PersonalFact, Promise, Secret, Compliment, Insult, Conflict, SharedExperience, Achievement, RomanticEvent, and Rejection. Breakup, LifeEvent, and WorldEventReaction activate only with their deferred systems.
-- **Decision:** Create when importance >= `MEMORY_CREATION_IMPORTANCE`, absolute emotional impact >=40, or a released mandatory type is Promise, Secret, or RomanticEvent. Breakup becomes mandatory only if that deferred lifecycle is activated. Merge only when same source fact and subject; do not merge distinct events.
+- **Inputs:** An authoritative structured source, owner Character, authoritative subject identifier, optional canonical topic/interest identifier, memory type, and source identity.
+- **Preconditions:** The owner Character is explicitly recorded as knowing, witnessing, receiving, or being told the source. M12 v1 supports exactly Fact, Preference, Event, Secret, and Promise. If the source does not provide both authoritative owner knowledge and an authoritative subject, no memory is created.
+- **Decision:** Fact requires a structured gameplay fact or an explicitly memorable structured Player-authored fact. Preference requires a structured preference. Event requires a persisted gameplay event/action/message-event with an explicit authoritative M12-memorable category. Secret requires an explicit Secret marker. Promise requires an explicit Promise marker and the structured lifecycle data below. Arbitrary prose never determines type, subject, topic, secrecy, or promise status.
 - **Randomness:** None.
-- **Limits:** Importance/confidence 0-100; emotional impact -100..100.
-- **Cooldown:** Trivial same-topic events within one day reinforce at most once.
-- **State changes:** Create or reinforce structured memory; never from AI text alone.
-- **Persistence:** Memory with source event, knowledge provenance, confidence, visibility, expiry, recall count.
-- **Idempotency:** Character/source-event/memory-type key.
-- **Example:** A kept promise creates one Promise memory for both involved characters; retry reinforces nothing twice.
+- **Limits:** Importance and confidence are 0-100. Type defaults are Fact=60, Preference=60, Event=50, Secret=90, and Promise=90. Confidence is 100 for an authoritative structured gameplay fact, structured Preference, structured Secret, or structured Promise; 90 for an explicitly memorable structured Player-authored statement or authoritative gameplay Event. M12 v1 visibility is always CharacterPrivate.
+- **State changes:** Create the structured memory once. M12 v1 does not infer, merge, reinforce, contradict, or expire memories from wording.
+- **Persistence:** Memory with owner, type, authoritative subject, optional canonical topic, confidence, importance, CharacterPrivate visibility, lifecycle state, creation time, and provenance identity.
+- **Idempotency:** The repository-equivalent of `(WorldId, OwnerCharacterId, SourceType, SourceId, MemoryType)` is unique; replay reuses the existing memory.
 - **Status:** MVP.
 
 ### Rule MEM-02: score and recall memories
 
 - **Purpose:** Select a small relevant context set for rules or wording.
-- **Inputs:** Importance, recency, emotional magnitude, subject/topic/relationship match, recall frequency, confidence, access restrictions.
-- **Preconditions:** Requesting character knows memory; secret visibility permits purpose/recipient; memory not expired or resolved beyond use.
-- **Decision:** `RecallScore=0.25*Importance+0.15*Recency+0.15*EmotionalMagnitude+0.15*SubjectMatch+0.10*TopicMatch+0.10*RelationshipMatch+0.10*Confidence-RecallPenalty`. Recency is `max(0,100-2*ageDays)`; penalty is `min(20,2*recallsInLast7Days)`. Sort score descending then memory ID.
+- **Inputs:** Exact authoritative request subject, optional canonical request topic, M10 directional relationship state, persisted Importance, and access restrictions.
+- **Preconditions:** The requesting Character owns the active CharacterPrivate memory. No other Character, client, public API, or Player UI receives the raw memory.
+- **Decision:** `RecallScore = 0.40*SubjectMatch + 0.30*TopicMatch + 0.20*RelationshipMatch + 0.10*Importance`. Each input is bounded 0-100. Calculate with exact decimal arithmetic and round the final score once to an integer using midpoint-away-from-zero. SubjectMatch is 100 only for the same authoritative subject identifier, otherwise 0. TopicMatch is 100 only for the same non-null canonical topic identifier, otherwise 0. For an Actor subject, RelationshipMatch is the M10 `RelationshipRelevance` from the recalling Character to that Actor; for every non-Actor subject it is 0. Sort by RecallScore DESC, CreatedAtUtc DESC, Id DESC.
 - **Randomness:** None.
 - **Limits:** At most `MAX_MEMORIES_PER_AI_REQUEST`; full conversation history is never sent.
-- **Cooldown:** Recall penalty discourages repetition.
-- **State changes:** Increment recall metadata only after context is used; reinforce importance by at most +5 for a new importance-60 related event.
+- **State changes:** Record the idempotent request/selection only; recall does not change score inputs or lifecycle.
 - **Persistence:** RecallSelection record referencing request and selected scores.
 - **Idempotency:** AI request/character/memory selection key.
-- **Example:** A high-importance recent promise outranks an old low-emotion compliment.
 - **Status:** MVP.
 
-Ordinary memories may expire after 30 days when importance <40 and never reinforced. Importance >=80, active promises, unresolved secrets/conflicts, relationship transitions, and major life events are permanent until an explicit resolution rule changes their status. Contradictory memories coexist and are marked Contested; structured confidence, provenance, and recency decide rule use. AI context may mention uncertainty but cannot resolve the contradiction.
+Ordinary memories do not expire automatically in M12 v1. Each Character may have at most `MAX_ACTIVE_MEMORIES_PER_CHARACTER` active memories. When a new memory would exceed the cap and an eligible non-protected memory exists, evict exactly one by Importance ASC, CreatedAtUtc ASC, Id ASC, then create the new memory. Active Secret and Promise memories are protected from automatic eviction. If all 100 active memories are protected, reject only the new memory creation with machine reason `memory_capacity_protected`; keep every protected memory and the count of 100 unchanged. The source event/message remains valid and unrelated gameplay or messaging continues. The rejected outcome is idempotent by the attempted memory's provenance, so replay returns the same reason without AI/provider involvement.
 
 ### Secrets
 
-A Secret records owner, subject, knowers, confidentiality 0-100, disclosure promise, provenance, and status. Disclosure eligibility requires the discloser knows it, a rule-selected recipient, and `DisclosurePressure > Confidentiality`, where pressure uses Aggression, low Honesty, low Trust toward owner, goal relevance, and event urgency. Accidental disclosure is a distinct low-intent event; deliberate disclosure is Betrayal. Both persist knowledge transfer before wording and apply the impact matrix. Secrets never cross worlds or enter logs. Secret recall excludes recipients not authorized by current knower state.
+A Secret memory is created only from an authoritative structured Secret marker and remains CharacterPrivate to its owning Character. M12 v1 implements no disclosure pressure, leakage chance, spontaneous knowledge transfer, or AI-directed disclosure. RelationshipRelevance, Trust, Conflict, and wording cannot change Secret state. The only active M12 v1 state is Active; Removed/Invalidated remains reserved until an explicit authoritative system action is separately approved. Secrets never cross worlds or enter logs. A future accepted ADR must define coefficients and transitions before disclosure gameplay is activated.
 
 ### Promise state and resolution
 
-A Promise records creator, recipient, description code/template data, due condition/date, importance, and status. States are Active, Kept, Broken, Cancelled. Kept/Broken resolution occurs once when the due condition is evaluated; Cancelled requires mutual cancellation or invalidated condition before resolution. Resolution creates memories and relationship events. AI cannot declare a promise kept or broken without the rule event.
+A Promise memory is created only from an authoritative structured Promise source containing promise type, source Actor, optional target Actor, a supported due condition identifier, and lifecycle status. Supported conditions are an explicit world-game due timestamp/date or an explicit authoritative event ID/type trigger; arbitrary natural-language conditions are unsupported and prevent creation. States are Active, Fulfilled, Cancelled, and Expired. Fulfilled requires a matching authoritative gameplay event. Cancelled requires an explicit authoritative cancellation event/command; if none exists, cancellation does not occur automatically. Expired requires an exact explicit due timestamp/date. Text and AI output cannot create, fulfill, cancel, expire, or otherwise classify a Promise. M12 v1 does not activate implicit Promise relationship deltas.
+
+### Messaging and AI boundary
+
+MSG-02 first decides whether a Character reply exists using its accepted M11 mechanics. Only after an eligible reply exists may M12 retrieve the authorized bounded memory selection for M09 wording. Memory content cannot affect reply existence, timing, probability, Urgency, or ConflictAvoidancePenalty. AI may phrase approved context but cannot determine memory type, subject, topic, confidence, importance, visibility, lifecycle, or recall score. M12 v1 uses no embeddings, vector search, semantic similarity, sentiment analysis, or free-text classification.
 
 ## 13. Reputation, influence, and followers
 
@@ -533,16 +580,16 @@ Paused time is excluded. Archived worlds do not catch up. On ordinary app inacti
 ### Rule NOTIFY-01: create and deliver notification intent
 
 - **Purpose:** Notify the player of meaningful world activity without duplicates.
-- **Inputs:** Source event, category, importance, player involvement, read state, quiet hours, delivery settings.
-- **Preconditions:** Event belongs to player's world and category is released. MVP categories are Reply, PrivateMessage, and CatchUpSummary. Follow, DatingInvitation, mention, relationship milestone, world event, trend, reputation milestone, and push are deferred unless PRODUCT.md later approves them.
-- **Decision:** Priority is Critical for direct time-sensitive invitation, High for direct message/reply, Normal for follow/summary, Low otherwise. Aggregate same category/source family in a catch-up window. Push eligibility requires post-MVP opt-in, priority High/Critical, and daily cap.
+- **Inputs:** Authoritative typed source, category, importance, player involvement, read state, quiet hours, delivery settings.
+- **Preconditions:** The authoritative typed source belongs to the player's owned world and the category is released. MVP categories are Reply, PrivateMessage, and CatchUpSummary. A Reply notifies the Player only when a Character authors the new reply and its immediate parent post/reply is authored by the Player Actor. Character-to-Character replies, Player-authored replies, and replies elsewhere in a Player-rooted thread do not notify unless that immediate-parent rule is satisfied. Follow, DatingInvitation, mention, relationship milestone, world event, trend, reputation milestone, and push are deferred unless PRODUCT.md later approves them.
+- **Decision:** Priority is Critical for direct time-sensitive invitation, High for direct message/reply, Normal for follow/summary, Low otherwise. Reply recipient eligibility uses structured author and immediate-parent ownership only; text, mentions, root-thread ownership, AI output, and generated wording cannot select a recipient. Aggregate same category/source family in a catch-up window. Push eligibility requires post-MVP opt-in, priority High/Critical, and daily cap.
 - **Randomness:** None.
-- **Limits:** One notification per source event/category; deferred push cap.
+- **Limits:** One notification per canonical source/category; deferred push cap.
 - **Cooldown:** Quiet hours delay non-Critical push, not in-app persistence.
 - **State changes:** Unread -> Read; expiry hides but does not delete source history.
-- **Persistence:** MVP persists the in-app Notification intent with source event, priority, created/read/expiry times and deduplication key. Provider delivery attempts apply only to deferred push delivery and are not an MVP requirement.
-- **Idempotency:** Player/source-event/category key.
-- **Example:** One persisted reply creates one unread in-app notification; catch-up retry creates no duplicate.
+- **Persistence:** MVP persists the in-app Notification intent with canonical `SourceType` and `SourceId`, optional `GameplayEventId`, priority, created/read/expiry times, and deduplication key. Reply and PrivateMessage use their authoritative GameplayEvent-backed source and require `GameplayEventId`. CatchUpSummary uses `SourceType=CatchUpSummary`, `SourceId=CatchUpSummary.Id`, and `GameplayEventId=null`; no GameplayEvent is fabricated for notification provenance. A CatchUpSummary notification is created only after the summary reaches its finalized durably committed state, never for Running, a Partial checkpoint alone, FailedRetryable, or rolled-back facts.
+- **Idempotency:** Player/canonical-source-type/canonical-source-id/category key.
+- **Example:** One Character reply whose immediate parent is Player-authored creates one unread notification; a finalized committed catch-up summary creates one CatchUpSummary notification, and retry creates no duplicate.
 - **Status:** Basic in-app MVP; rich history/push deferred.
 
 ## 17. State-machine tables
@@ -584,10 +631,10 @@ Friendship labels are not stored as authoritative state in MVP. They are derived
 
 | From | To | Allowed |
 |---|---|---|
-| Active | Kept | Due condition satisfied once |
-| Active | Broken | Due condition failed/expired once |
-| Active | Cancelled | Valid cancellation before resolution |
-| Kept/Broken/Cancelled | Any other | No; terminal |
+| Active | Fulfilled | Matching authoritative gameplay event satisfies the stored condition once |
+| Active | Expired | Exact stored due timestamp/date passes without fulfillment |
+| Active | Cancelled | Explicit authoritative cancellation event/command before resolution |
+| Fulfilled/Expired/Cancelled | Any other | No; terminal |
 
 ### Simulation-action status
 
@@ -637,7 +684,7 @@ Deferred: character-initiated/delayed messages; reposts, quotes, bookmarks, hash
 
 These values or policies require playtesting or an accepted product decision. Implementations must use the listed initial constants while keeping them configurable by rule version; they must not silently choose new values.
 
-1. Confirm or change `GAME_TIME_SCALE`, active tick length, catch-up detailed horizon, and 30-day per-run cap.
+1. Confirm or change `GAME_TIME_SCALE`, catch-up detailed horizon, and 30-day per-run cap. M08's active interval is fixed at 15 UTC minutes by ADR-022.
 2. Decide how the UI handles more than one partial catch-up run and very long absences.
 3. Tune character/day and world/day action limits for a cast of approximately 10.
 4. Tune activity, post, reply, reaction, follow, opinion, mood, and goal formula weights.

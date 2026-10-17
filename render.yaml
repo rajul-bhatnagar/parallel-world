@@ -1,0 +1,60 @@
+services:
+  - type: web
+    name: parallel-world-api-staging
+    runtime: docker
+    plan: 0.5c-512mb
+    dockerfilePath: ./backend/src/ParallelWorld.Api/Dockerfile
+    dockerContext: .
+    autoDeployTrigger: checksPass
+    healthCheckPath: /health/ready
+    preDeployCommand: /app/migrate --connection "$ConnectionStrings__Default"
+    maxShutdownDelaySeconds: 60
+    envVars:
+      - key: ASPNETCORE_ENVIRONMENT
+        value: Staging
+      - key: ASPNETCORE_HTTP_PORTS
+        value: "8080"
+      - key: ConnectionStrings__Default
+        sync: false
+      - key: Authentication__CurrentKeyId
+        sync: false
+      - key: Authentication__CurrentPrivateKeyFile
+        value: /etc/secrets/jwt-private.pem
+      - key: Authentication__CurrentPublicKeyPem
+        sync: false
+      - key: Deployment__AllowedHosts__0
+        sync: false
+      - key: Deployment__ForwardedHeadersEnabled
+        value: "true"
+      - key: AI__Generation__Enabled
+        value: "false"
+
+  - type: web
+    name: parallel-world-api-production
+    runtime: docker
+    plan: 0.5c-512mb
+    dockerfilePath: ./backend/src/ParallelWorld.Api/Dockerfile
+    dockerContext: .
+    autoDeployTrigger: off
+    healthCheckPath: /health/ready
+    preDeployCommand: /app/migrate --connection "$ConnectionStrings__Default"
+    maxShutdownDelaySeconds: 60
+    envVars:
+      - key: ASPNETCORE_ENVIRONMENT
+        value: Production
+      - key: ASPNETCORE_HTTP_PORTS
+        value: "8080"
+      - key: ConnectionStrings__Default
+        sync: false
+      - key: Authentication__CurrentKeyId
+        sync: false
+      - key: Authentication__CurrentPrivateKeyFile
+        value: /etc/secrets/jwt-private.pem
+      - key: Authentication__CurrentPublicKeyPem
+        sync: false
+      - key: Deployment__AllowedHosts__0
+        sync: false
+      - key: Deployment__ForwardedHeadersEnabled
+        value: "true"
+      - key: AI__Generation__Enabled
+        value: "false"

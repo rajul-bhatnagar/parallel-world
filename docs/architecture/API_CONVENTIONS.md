@@ -45,7 +45,7 @@ Protected requests use:
 Authorization: Bearer <access-token>
 ```
 
-Tokens never appear in URLs. Access tokens are short-lived. Refresh tokens are rotated, revocable, returned only at issuance/rotation, stored securely by Flutter, and never exposed as hashes.
+Tokens never appear in URLs. M03 access tokens are RS256 JWTs issued by `parallel-world-api` for `parallel-world-mobile`, expire after 15 minutes, and use exactly 30 seconds of allowed clock skew. The API validates signature, exact issuer/audience, `exp`, `nbf` when present, stable user `sub`, and unique `jti`. Refresh tokens are opaque values with at least 256 bits of entropy and a 30-day lifetime; they are rotated, revocable, returned only at issuance/rotation, stored securely by Flutter, and never exposed as hashes.
 
 MVP uses guest authentication through `POST /api/v1/auth/guest`, refresh, and logout. Registration, login, recovery, and guest upgrade are Version 1 contracts and must preserve the existing `UserId` and world history.
 
@@ -222,7 +222,7 @@ Idempotency-Key: <client-generated-value>
 ```
 
 - 8-100 ASCII characters from letters, digits, `.`, `_`, `:`, and `-`; random UUID/ULID values are recommended.
-- Persisted scope is `(UserId, operation, key)` as required by DATABASE.md. Guest creation first resolves or transactionally creates the user through the unique installation identity, then stores/loads the user-scoped idempotency result; installation identity alone never authorizes the replay.
+- Persisted scope is `(UserId, operation, key)` as required by DATABASE.md.
 - The request fingerprint covers method, normalized route, relevant content type, and canonical request body.
 - Same key/fingerprint returns the original status, safe body, `Location`, and concurrency headers with `Idempotency-Replayed: true`.
 - Same key with a different fingerprint returns `409 idempotency_key_reused`.
@@ -230,7 +230,15 @@ Idempotency-Key: <client-generated-value>
 - Clients persist and reuse the logical operation key across timeout/offline retries.
 - Exact retention duration remains open; it must cover the supported mobile retry window and is published operationally before offline writes ship.
 
-Required for guest session, world creation, post/reply/quote creation, message send, date invitation, world resume, account registration/upgrade, and other retryable POST actions. `PUT` reaction/repost/follow and read-state actions are naturally idempotent and return current state/no-op success on repetition.
+Required for world creation, post/reply/quote creation, message send, date invitation, world resume, authenticated guest upgrade, and other retryable non-credential POST actions. Fresh registration relies on normalized-email uniqueness and safe retry through login/regeneration because its one-time recovery code cannot be replayed. `PUT` reaction/repost/follow and read-state actions are naturally idempotent and return current state/no-op success on repetition.
+
+Credential-issuing endpoints have explicit security semantics instead of generic response replay:
+
+- `/auth/guest` uses a `GuestBootstrapProof`, not `Idempotency-Key`, to make User/world creation identity-idempotent. A valid lost-response recovery may return newly rotated credentials rather than the original token bytes.
+- `/auth/refresh` is intentionally non-idempotent and does not accept or honor `Idempotency-Key`. A consumed-token retry follows strict family replay handling.
+- `/auth/upgrade` requires `Idempotency-Key` for the identity/world mutation, but a completed replay omits the one-time plaintext recovery code. The authenticated user regenerates a code if the original response was lost.
+
+The server never stores reversible access/refresh credentials merely to replay an earlier response.
 
 ## 15. Concurrency
 
@@ -258,13 +266,18 @@ If ETags are approved, `ETag` and `If-Match` use an encoded opaque value, never 
 
 | Collection | Default | Maximum | Server order |
 |---|---:|---:|---|
-| Feed | 20 | 50 | `createdAtUtc DESC, id DESC` until feed-ranking decision changes it |
+| Feed | 20 | 50 | `createdAtUtc DESC, id DESC` |
+| Replies | 20 | 50 | `createdAtUtc ASC, id ASC`; direct children of one parent only |
 | Messages | 30 | 100 | `createdAtUtc DESC, id DESC`; Flutter may reverse for display |
 | Notifications | 30 | 100 | `createdAtUtc DESC, id DESC` |
 | Relationship history | 25 | 100 | `occurredAtUtc DESC, id DESC` |
 | Characters | 20 | 100 | stable server-defined catalogue order ending in `id` |
 
 Cursor encoding and expiry remain open implementation decisions; clients must never decode cursors.
+
+For the M06 feed, the opaque cursor represents the last visible `(createdAtUtc, id)` tuple. The next page seeks strictly after that tuple in descending order: `createdAtUtc < cursor.createdAtUtc`, or equal `createdAtUtc` with `id < cursor.id`. The cursor is bound to the authorized world and applicable filters. This prevents adjacent pages from duplicating previously returned items when newer posts arrive; it does not create a snapshot-isolated feed session.
+
+For M07 direct replies, the opaque cursor represents the last visible `(createdAtUtc, id)` tuple in `createdAtUtc ASC, id ASC` order. The next page seeks replies where `createdAtUtc > cursor.createdAtUtc`, or equal `createdAtUtc` with `id > cursor.id`. The cursor is bound to the authorized world, parent post/reply ID, and applicable filters; a mismatched or tampered cursor returns `400 invalid_cursor` without disclosing a foreign resource.
 
 ## 17. Filtering and sorting
 
@@ -320,7 +333,16 @@ Global HTTP body/header limits are configured defensively and documented operati
 
 Policies are grouped by authentication (guest/login/refresh/reset), content (post/reply/message/follow/reaction), AI-heavy (message reply generation/resume/simulation), and operational traffic. Limits combine per-user, per-installation, and per-IP fallback dimensions; anonymous traffic is stricter.
 
-Responses use `429`, `Retry-After`, `retryAfterSeconds`, and `rate_limit_exceeded` or `ai_generation_limit_reached`. Public responses never reveal internal AI budgets. Exact numbers are tunable and remain open; health checks are separately controlled so orchestration probes are not blocked by user limits.
+M03 authentication policies are:
+
+| Operation | Initial limit |
+|---|---|
+| Guest/session creation | 10 attempts per IP per 10 minutes |
+| Refresh | 30 attempts per device/session family per 10 minutes |
+| Invalid refresh/replay | 10 attempts per IP per 10 minutes |
+| Logout | 30 requests per authenticated user per 10 minutes |
+
+Responses use `429`, `Retry-After`, `retryAfterSeconds`, and `rate_limit_exceeded` or `ai_generation_limit_reached`. Public responses never reveal internal AI budgets. M03 uses a simple non-Redis implementation compatible with the initial modular-monolith deployment. Production tuning and later endpoint values remain open; health checks are separately controlled so orchestration probes are not blocked by user limits.
 
 ## 23. Realtime SignalR conventions
 
@@ -356,16 +378,25 @@ POST /api/v1/auth/refresh
 POST /api/v1/auth/logout
 ```
 
-Guest creation accepts installation ID, platform, app version, and required idempotency key. Installation identity alone is not authorization. Refresh rotates tokens; logout revokes the presented refresh session/device scope as defined by security policy.
+Guest creation accepts installation ID, platform, app version, the approved initial world name, and a required client-generated `guestBootstrapProof`. The proof is an opaque random value with at least 256 bits of entropy and is distinct from installation identity and refresh credentials. Installation identity is metadata only and never authorizes bootstrap retry, credential recovery, or another request. Access-token validation follows section 3 and `SECURITY.md`; ownership always derives from the validated `sub`, never a client-supplied `UserId`.
+
+The first successful bootstrap atomically creates the guest User, installation/session lineage, initial refresh credential, GameWorld, player Actor/Profile, WorldSettings, and WorldSimulationState. PostgreSQL stores only hashes of the bootstrap proof and refresh token. The proof is valid for one credential-recovery rotation within 10 minutes of successful bootstrap and is then recovery-consumed. It is never accepted as bearer authentication.
+
+An exact proof retry within that window resolves the existing User/world, invalidates the currently active initial-family credential, issues new access/refresh credentials in the same bootstrap/session lineage, and marks recovery consumed. It never creates another User, world, player Actor, or independent family and does not reproduce the original raw token. Expired, consumed, unrelated, or concurrent losing proof use fails safely. The client discards the proof after it has durably stored the original refresh token.
+
+Refresh accepts an opaque refresh token in the request body, never a URL. It is non-idempotent and clients must not send a generic idempotency key. A successful refresh atomically consumes the presented token and returns a replacement refresh token in the same device/session family plus a new access token exactly once. Under concurrency, the same token succeeds at most once. Presenting a consumed/replaced token—including after a lost successful response—returns the safe replay error and transactionally revokes that family; it never returns the previous response or mints another replacement. Unrelated families remain usable. Expired or revoked families cannot mint an access token.
+
+`POST /api/v1/auth/logout` revokes the current refresh family and returns idempotent success. The M03 backend also enforces the all-family revocation operation, but a public logout-all/session-management endpoint remains M17 scope. Issued access tokens ordinarily remain valid only until their 15-minute expiry; MVP has no distributed access-token denylist.
+
+All authentication endpoints use the section 22 rate limits and standard ProblemDetails conventions. Access tokens, refresh tokens, authorization headers, and cookies are never logged.
 
 **Example 1 — guest session creation**
 
 ```http
 POST /api/v1/auth/guest
-Idempotency-Key: 01J44T6P6HF3A6QZQ9S7MCEYQK
 Content-Type: application/json
 
-{"installationId":"b7f16835-d9bc-44e4-93e4-cf1053f17dcc","platform":"android","appVersion":"1.0.0"}
+{"installationId":"b7f16835-d9bc-44e4-93e4-cf1053f17dcc","platform":"android","appVersion":"1.0.0","guestBootstrapProof":"<opaque-client-generated-proof>","worldName":"My Parallel World"}
 ```
 
 ```json
@@ -375,11 +406,11 @@ Content-Type: application/json
   "refreshToken": "<token>",
   "refreshTokenExpiresAtUtc": "2026-08-30T18:20:00Z",
   "user": {"id":"82af3e1d-e00f-46fd-809d-fc9e4d013937","accountType":"guest"},
-  "world": null
+  "world": {"id":"3aa4bd64-68c7-4db3-a3e1-91d095d1877e","name":"My Parallel World","status":"active","currentGameTimeUtc":"2026-07-31T18:20:00Z","player":{"actorId":"d389d482-c160-416c-93b0-dfa59045b7b5","displayName":"Player"},"createdAtUtc":"2026-07-31T18:20:00Z"}
 }
 ```
 
-Success: `201` for creation or replayed original result.
+Success: `201` for first bootstrap; `200` for the single valid proof recovery with the same identity/world and newly rotated credentials.
 
 ## 26. World endpoints
 
@@ -475,10 +506,13 @@ GET    /api/v1/worlds/{worldId}/feed
 POST   /api/v1/worlds/{worldId}/posts
 GET    /api/v1/worlds/{worldId}/posts/{postId}
 DELETE /api/v1/worlds/{worldId}/posts/{postId}
+GET    /api/v1/worlds/{worldId}/posts/{postId}/replies
 POST   /api/v1/worlds/{worldId}/posts/{postId}/replies
 ```
 
-Post editing is open and not in MVP. Delete performs approved logical removal. Author is always the authenticated player; the client cannot post as an AI actor. Feed origin/provider diagnostics remain internal. Feed mode is unavailable until chronological versus deterministic ranking is decided.
+Post editing is open and not in MVP. Delete performs approved logical removal. Author is always the authenticated player; the client cannot post as an AI actor. Feed origin/provider diagnostics remain internal. M06 exposes one feed mode: strict chronological `createdAtUtc DESC, id DESC` ordering with an opaque `(createdAtUtc, id)` cursor. It uses the standard `{ "items": [], "nextCursor": null, "hasMore": false }` collection envelope. Ranked/personalized feed modes are deferred and are not accepted query options.
+
+The M07 replies GET endpoint returns only direct children of the specified post/reply in `createdAtUtc ASC, id ASC` order using the standard collection envelope. It does not return a recursively nested or flattened thread. Clients traverse a branch explicitly by requesting replies for a returned reply ID. `GET /posts/{postId}` remains a single Post/detail response and does not embed the paginated reply items. The replies endpoint is ownership-safe: the route world and parent must be accessible, and the cursor must match both. `MAX_REPLY_DEPTH = 2` means root depth 0, direct reply depth 1, and reply-to-reply depth 2; depth-3 creation is rejected, while reading a depth-2 reply returns an empty direct-child collection.
 
 **Example 4 — feed page**
 
@@ -627,10 +661,11 @@ All are player-visible projections. The API never accepts relationship deltas/st
 ```text
 POST /api/v1/worlds/{worldId}/relationships/{characterId}/date-invitations
 GET  /api/v1/worlds/{worldId}/date-invitations
+POST /api/v1/worlds/{worldId}/date-invitations/{invitationId}/outcome
 GET  /api/v1/worlds/{worldId}/relationships/{characterId}/romantic-history
 ```
 
-Client submits only the player's permitted choice (for example date type). Server rules decide eligibility, candidate, acceptance/rejection, status, scores, deltas, and history before AI wording. Engagement, marriage, separation, and divorce have no released endpoints.
+The invitation request carries no mechanical date type, openness, compatibility, score, offset, reason, or outcome. M13 v1 always uses `CasualDate`. Server rules decide eligibility, acceptance/rejection, status, scores, Commitment effects, and history before AI wording. A Player-target invitation is resolved only through the outcome endpoint with `accept` or `reject`; Character-target ROM-02 resolves immediately in the invitation processing flow. Engagement, marriage, separation, divorce, breakup, and re-entry have no released endpoints.
 
 **Example 11 — date invitation**
 
@@ -638,14 +673,24 @@ Client submits only the player's permitted choice (for example date type). Serve
 POST /api/v1/worlds/3aa4bd64-68c7-4db3-a3e1-91d095d1877e/relationships/72aad86b-7e46-4aba-8d33-929ee6054a1f/date-invitations
 Idempotency-Key: 908ed213-58d1-4aec-ae08-222896999aa4
 
-{"dateType":"coffee"}
+{}
 ```
 
 ```json
-{"id":"e180626b-3045-4d44-a6ad-abd1e09313af","characterId":"72aad86b-7e46-4aba-8d33-929ee6054a1f","dateType":"coffee","status":"invitationPending","createdAtUtc":"2026-07-31T18:20:00Z"}
+{"id":"e180626b-3045-4d44-a6ad-abd1e09313af","characterId":"72aad86b-7e46-4aba-8d33-929ee6054a1f","dateType":"casualDate","status":"accepted","romanticStatus":"dating","createdAtUtc":"2026-07-31T18:20:00Z","createdAtWorldTime":"2026-07-31T18:20:00Z","expiresAtWorldTime":"2026-08-01T18:20:00Z"}
 ```
 
-The response always represents persisted current state. Whether deterministic outcome evaluation finishes in this request or afterward remains an open API/product timing decision.
+The response always represents persisted current state. For a Character target, deterministic ROM-02 evaluation finishes in the invitation request. For a Player target, creation returns `invitationPending`; explicit outcome or authoritative world-time expiry updates it later. Retries use the same idempotency key and return the persisted result without rerolling.
+
+Romantic-history responses are append-only projections ordered by world-game occurrence time and stable ID and include stable episode identity. M13 exposes no operation that ends Dating or starts a later episode; the projection must nevertheless preserve all authorized persisted episodes without collapsing them into the current pair status.
+
+Player-target resolution accepts only:
+
+```json
+{"decision":"accept"}
+```
+
+or `reject`. It accepts no status, scores, relationship values, reason, or Commitment delta.
 
 ## 33. Memory endpoints
 
@@ -706,19 +751,35 @@ MVP supports an unread badge/deep-link indicators plus a bounded cursor-paginate
 
 ## 37. Account-upgrade and login endpoints
 
-Version 1:
+M17 under ADR-033:
 
 ```text
-POST /api/v1/auth/register       Shape selected by the accepted M17 auth decision
-POST /api/v1/auth/login          Shape selected by the accepted M17 auth decision
-POST /api/v1/auth/upgrade        Preserves the existing UserId
-POST /api/v1/auth/recovery       Shape selected by the accepted M17 recovery decision
-POST /api/v1/devices
-PATCH /api/v1/devices/{deviceId}
-DELETE /api/v1/devices/{deviceId}
+POST   /api/v1/auth/register
+POST   /api/v1/auth/login
+POST   /api/v1/auth/upgrade
+POST   /api/v1/auth/recovery
+POST   /api/v1/auth/password/change
+POST   /api/v1/auth/recovery-code/regenerate
+GET    /api/v1/auth/sessions
+DELETE /api/v1/auth/sessions/{sessionId}
+POST   /api/v1/auth/logout-all
 ```
 
-Upgrade attaches credentials to the existing guest user and preserves worlds, actors, profiles, posts, relationships, messages, memories, and history. It does not copy data to a new user unless a later accepted architecture decision explicitly changes that rule. Provider-token and verification shapes remain open with authentication method selection.
+Email input is trimmed and normalized with invariant uppercase. Password and recovery-code values are never trimmed. Unknown-email and wrong-password login attempts both return the same `401 invalid_credentials` ProblemDetails. Unknown-email, wrong, consumed, and revoked recovery-code attempts all return the same `400 recovery_failed` ProblemDetails. Registration and upgrade may return `409 email_unavailable` without identifying another account. Field-shape and password-policy failures use the standard `400 validation_failed` field errors.
+
+`POST /auth/register` is public and accepts only `email` and `password`. It creates one registered User plus the `My Parallel World` default initial world/player aggregate and returns `201` with safe `user`, `world`, and the plaintext `recoveryCode` exactly once. It does not create a session; the client proceeds to login. Database uniqueness is authoritative under races. A lost success response is recovered by login followed by authenticated recovery-code regeneration, not by plaintext-response replay.
+
+`POST /auth/login` is public and accepts `email`, `password`, `installationId`, `platform`, and `appVersion` using the M03 installation conventions. Success returns `200` with the existing M03 `accessToken`, access expiry, `refreshToken`, refresh expiry, safe `user`, and current `world`. The created family counts toward the existing five-family cap. M17 access tokens add the safe `sid` family identifier claim; ownership continues to derive from `sub` and PostgreSQL.
+
+`POST /auth/upgrade` requires an authenticated Guest and `Idempotency-Key`; its body contains only `email` and `password`. It transactionally mutates the current User and returns `200` with the same safe `user` and `world` plus a one-time `recoveryCode`. The current family remains valid. Exact completed replays return the same safe identity/world outcome with `recoveryCode=null`; the server never stores or replays plaintext code. Another fingerprint returns `409 idempotency_key_reused`. Registered accounts may treat an exact repeat as the completed replay but cannot change the registered email through this endpoint.
+
+`POST /auth/recovery` is public and accepts `email`, `recoveryCode`, and `newPassword`. Success returns `200` with only a newly generated one-time `recoveryCode`; it changes no User/world identity, revokes every refresh family, and does not issue tokens. The user must log in again.
+
+`POST /auth/password/change` requires an authenticated Registered user and accepts `currentPassword` and `newPassword`. Success returns `204`, revokes every family including the current family, and requires login. Guest callers are rejected. `POST /auth/recovery-code/regenerate` requires an authenticated Registered user, invalidates the prior code, and returns `200 {"recoveryCode":"<one-time-code>"}`. Neither plaintext value appears in later reads.
+
+`GET /auth/sessions` requires an authenticated Registered user and returns active families only: safe opaque `sessionId` (the rotation-family ID), approved installation identifier/label, platform, created time, last-used time when available, and `isCurrent` derived from `sid`. `DELETE /auth/sessions/{sessionId}` returns ownership-safe `404` for another user's or unknown family and idempotent `204` for an owned already-revoked family. Revoking the current family prevents refresh and Flutter clears local credentials. `POST /auth/logout-all` returns idempotent `204` after revoking every owned family.
+
+The immediate successful registration, first successful upgrade, successful recovery, and explicit regeneration responses are the only API surfaces that may contain plaintext recovery code. API logs, ProblemDetails, OpenAPI examples, later account responses, sessions, and persistence never contain it. Registration, login, recovery, and code attempts reuse the existing authentication rate-limit infrastructure.
 
 ## 38. Health and operational endpoints
 
@@ -728,6 +789,8 @@ GET /health/ready
 ```
 
 Liveness reveals process availability only. Readiness checks required dependencies with minimal sanitized output. Neither returns configuration, secrets, connection strings, provider details, user data, or stack traces. Administrative gameplay endpoints are not part of MVP.
+
+For M18, liveness checks only the application process. Readiness checks PostgreSQL connectivity; optional Ollama never makes the service unready. Production responses remain minimal and sanitized. Production accepts only its explicit Render/custom host allowlist, uses a separate explicit CORS allowlist with no wildcard-plus-credentials configuration, and requires HTTPS at the Render-managed public boundary. Development-only simulation/test/debug routes and OpenAPI remain absent in Production. Production ProblemDetails never include stack traces, SQL, filesystem paths, or unsafe raw exception text.
 
 ## 39. OpenAPI conventions
 
@@ -793,7 +856,7 @@ Response also includes `Retry-After: 30`.
 
 ## 42. Open API decisions
 
-1. Exact access/refresh-token response shape and authentication methods after guest MVP.
+1. Richer registered authentication beyond ADR-033, including email verification, magic links, providers, passkeys, MFA, account merging, and recovery-code expiry. M17 and the M03 token/session fields are resolved by ADR-013, ADR-014, and ADR-033.
 2. ETag/`If-Match` versus explicit version fields for editable resources.
 3. Final `409` versus `412` concurrency mapping after concurrency transport is selected.
 4. **Recorded conflict:** this planning request recommends `400` only for malformed syntax and `422` for valid domain-validation failures, while approved `ARCHITECTURE.md` section 24 specifies `400` with field errors for validation. The API preserves `400`. If `422` is approved later, `docs/architecture/ARCHITECTURE.md` requires correction before this document changes.
@@ -806,19 +869,18 @@ Response also includes `Retry-After: 30`.
 11. First SignalR milestone; HTTP refresh/polling remains valid before it.
 12. Synchronous versus asynchronous default for world resume; contract supports `200/202` without changing mechanics.
 13. API host domain and final ProblemDetails type host.
-14. Exact rate-limit values.
+14. Production rate-limit tuning and values for endpoints introduced after M03.
 15. OpenAPI generation/compatibility-check approach.
 16. Idempotency retention period and offline-write retry window.
-17. Initial feed ordering and any permitted feed-mode query.
 
 ### Consolidated endpoint inventory
 
-`Auth` means bearer authentication; `Idem` means `Idempotency-Key`; `Cursor` means opaque cursor pagination.
+`Auth` means bearer authentication; `Idem` normally means `Idempotency-Key`, while `Proof` is the guest-only bootstrap-proof retry contract; `Cursor` means opaque cursor pagination.
 
 | Method | Route | Purpose | Auth | Idem | Cursor | Release | Success |
 |---|---|---|---:|---:|---:|---|---|
-| POST | `/auth/guest` | Create/resolve guest session | No | Yes | No | MVP | 201 |
-| POST | `/auth/refresh` | Rotate session | Refresh | Yes | No | MVP | 200 |
+| POST | `/auth/guest` | Create/recover guest bootstrap | No | Proof | No | MVP | 200/201 |
+| POST | `/auth/refresh` | Rotate session once | Refresh | No | No | MVP | 200 |
 | POST | `/auth/logout` | Revoke session | Yes | Natural | No | MVP | 204 |
 | POST | `/worlds` | Create owned world | Yes | Yes | No | MVP | 201 |
 | GET | `/worlds` | List owned worlds | Yes | No | No for MVP one-world result | MVP | 200 |
@@ -837,6 +899,7 @@ Response also includes `Retry-After: 30`.
 | POST | `/worlds/{worldId}/posts` | Player post | Yes | Yes | No | MVP | 201 |
 | GET | `/worlds/{worldId}/posts/{postId}` | Read post | Yes | No | No | MVP | 200 |
 | DELETE | `/worlds/{worldId}/posts/{postId}` | Logically delete player post | Yes | Natural | No | MVP | 204 |
+| GET | `/worlds/{worldId}/posts/{postId}/replies` | Read direct child replies | Yes | No | Yes | MVP | 200 |
 | POST | `/worlds/{worldId}/posts/{postId}/replies` | Player reply | Yes | Yes | No | MVP | 201 |
 | PUT | `/worlds/{worldId}/posts/{postId}/reaction` | Set like | Yes | Natural | No | MVP | 200 |
 | DELETE | `/worlds/{worldId}/posts/{postId}/reaction` | Remove like | Yes | Natural | No | MVP | 204 |
@@ -851,8 +914,9 @@ Response also includes `Retry-After: 30`.
 | GET | `/worlds/{worldId}/relationships` | Relationship summaries | Yes | No | Yes | MVP | 200 |
 | GET | `/worlds/{worldId}/relationships/{characterId}` | Player-visible relationship | Yes | No | No | MVP | 200 |
 | GET | `/worlds/{worldId}/relationships/{characterId}/history` | Relationship history | Yes | No | Yes | MVP | 200 |
-| POST | `/worlds/{worldId}/relationships/{characterId}/date-invitations` | Player date choice | Yes | Yes | No | MVP | 201/202 |
+| POST | `/worlds/{worldId}/relationships/{characterId}/date-invitations` | Player invitation request | Yes | Yes | No | MVP | 201 |
 | GET | `/worlds/{worldId}/date-invitations` | Invitation state | Yes | No | Yes | MVP | 200 |
+| POST | `/worlds/{worldId}/date-invitations/{invitationId}/outcome` | Player accept/reject choice | Yes | Yes | No | MVP | 200 |
 | GET | `/worlds/{worldId}/relationships/{characterId}/romantic-history` | Romantic timeline | Yes | No | Yes | MVP | 200 |
 | GET | `/worlds/{worldId}/notifications` | Released notification page | Yes | No | Yes | MVP | 200 |
 | GET | `/worlds/{worldId}/notifications/unread-count` | Basic indicator | Yes | No | No | MVP | 200 |
@@ -867,10 +931,15 @@ Response also includes `Retry-After: 30`.
 | GET | `/worlds/{worldId}/events` | World-event list | Yes | No | Yes | Version 1 | 200 |
 | GET | `/worlds/{worldId}/events/{eventId}` | World-event detail | Yes | No | No | Version 1 | 200 |
 | GET | `/worlds/{worldId}/characters/{characterId}/shared-history` | Sanitized shared history | Yes | No | Yes | Version 1/open | 200 |
-| POST | `/auth/register` | Create registered account | No | Yes | No | Version 1 | 201 |
-| POST | `/auth/login` | Create registered session | No | Yes | No | Version 1 | 200 |
-| POST | `/auth/upgrade` | Upgrade current guest | Yes | Yes | No | Version 1 | 200 |
-| POST | `/auth/recovery` | Selected registered-account recovery flow | Mixed | Yes | No | Version 1/gated | 200/204 |
+| POST | `/auth/register` | Create registered account and initial world | No | Email uniqueness | No | M17 | 201/409 |
+| POST | `/auth/login` | Create M03-compatible registered session | No | No | No | M17 | 200/401 |
+| POST | `/auth/upgrade` | Upgrade current guest in place | Guest | Yes | No | M17 | 200/409 |
+| POST | `/auth/recovery` | Recover password with single-use code | No | No | No | M17 | 200/400 |
+| POST | `/auth/password/change` | Change password and revoke all sessions | Registered | No | No | M17 | 204 |
+| POST | `/auth/recovery-code/regenerate` | Replace recovery code | Registered | No | No | M17 | 200 |
+| GET | `/auth/sessions` | List owned active families | Registered | No | No | M17 | 200 |
+| DELETE | `/auth/sessions/{sessionId}` | Revoke owned family | Registered | Natural | No | M17 | 204/404 |
+| POST | `/auth/logout-all` | Revoke every owned family | Registered | Natural | No | M17 | 204 |
 | POST | `/devices` | Register push installation | Yes | Yes | No | Version 1 | 201 |
 | PATCH | `/devices/{deviceId}` | Update owned installation | Yes | No; concurrency | No | Version 1 | 200 |
 | DELETE | `/devices/{deviceId}` | Revoke owned installation | Yes | Natural | No | Version 1 | 204 |

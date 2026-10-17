@@ -255,13 +255,13 @@ flowchart LR
 | M03 | M02 | None |
 | M04 | M03 API contract | None |
 | M05 | M03-M04 | None |
-| M06 | M05 | Feed ordering decision before final implementation |
+| M06 | M05 | Chronological feed ordering accepted by ADR-015 |
 | M07 | M06 | None |
 | M08 | M05-M07 | None |
-| M09 | M08 persisted decisions | AI provider choice |
+| M09 | M08 persisted decisions; ADR-024 | None |
 | M10 | M08; M09 for final wording only | None |
 | M11 | M03-M05, M08-M10 | Delayed timing remains deferred |
-| M12 | M10-M11 and event provenance | None |
+| M12 | M10-M11, event provenance, ADR-028, ADR-029 | None |
 | M13 | M10-M12 | Romance/content policy before broad release |
 | M14 | M08 and M10 | Version 1 product activation |
 | M15 | M08, M10-M13 | Full M14 is not required; use released MVP topics only |
@@ -383,22 +383,22 @@ Every listed schema change includes an EF migration, clean/previous-schema Postg
 
 - **Goal:** Deliver the first owned private-world flow.
 - **User-visible result:** Online guest creates/restores a session, creates one exposed world, and retrieves it.
-- **Dependencies:** M02 and resolved token-format/lifetime decisions required for implementation.
-- **Backend scope:** Guest create/replay, minimal access token, rotating hashed refresh token, logout basics, world create/list/current/get, reusable world ownership policy.
-- **Database scope:** Users, DeviceInstallations, RefreshTokens, GameWorlds, WorldSettings, WorldSimulationState (`world_simulation_states`), player Actor/Profile; composite ownership constraints and migration. No character Actor or Character row is created.
+- **Dependencies:** M02 and accepted ADR-013/ADR-014 M03 token, session-family, guest-bootstrap, and recovery policy.
+- **Backend scope:** Proof-bound guest bootstrap that transactionally creates one User/session/world/player result; one new-credential recovery within 10 minutes; 15-minute RS256 JWT issuance/validation; deliberately non-idempotent opaque hashed 30-day refresh rotation; transactional family replay containment; current-family logout; backend all-family revocation; five-active-family limit; M03 auth rate limits; world list/current/get and ownership-safe handling of the already-created MVP world; reusable world ownership policy. Registered-authentication and public logout-all/session-management endpoints remain M17.
+- **Database scope:** Users, DeviceInstallations, hash-only GuestBootstrapOperations with one bounded recovery, hash-only RefreshTokens with device/session family, expiry, consumption, replacement, revocation, and audit state, GameWorlds, WorldSettings, WorldSimulationState (`world_simulation_states`), player Actor/Profile; composite ownership constraints and migration. No character Actor or Character row is created.
 - **Flutter scope:** None beyond contract fixtures; M04 owns UI/session implementation.
-- **Infrastructure scope:** Local/CI PostgreSQL migration execution; protected signing configuration names.
-- **Seed data:** Idempotent initial player actor/profile/world settings; no characters.
-- **Test scope:** Guest first/repeat/conflicting key, refresh/concurrency/reuse baseline, world create/replay, one player, two-user denial, cross-world constraints, clean migration.
+- **Infrastructure scope:** Local/CI PostgreSQL migration execution; protected current/previous signing-key configuration with `kid`; no committed private key, cloud-vendor key provider, distributed token denylist, Redis, or distributed rate-limit infrastructure.
+- **Seed data:** Transactional initial player actor/profile/world settings created by guest bootstrap; no characters.
+- **Test scope:** First proof bootstrap and exact same-proof retry; one recovery returns new credentials for the same User/world/session lineage; 10-minute expiry, single recovery, proof endpoint restriction/hash-only storage/redaction, and bootstrap/recovery concurrency; installation ID never authenticates or recovers; valid access authentication; wrong issuer/audience, expired token, invalid signature, and 30-second skew boundary; non-idempotent refresh success/rotation/expiry; same token cannot rotate twice; lost-response/consumed-token replay returns no credentials and revokes its family while another device family remains valid; current-family and all-family revocation; sixth family revokes the oldest active family; raw refresh token is not persisted and raw tokens are not logged; session/identity continuity preserves the guest `UserId` and world for later upgrade without implementing M17; auth rate limits return `429`; cross-user/session ownership attacks fail; atomic world/player creation, one player, two-user denial, cross-world constraints, clean migration.
 - **Documentation updates:** API/database/security docs only if implementation requires approved contract clarification; otherwise setup notes.
-- **Explicit exclusions:** Registration/password/recovery, characters, feed, multiple exposed worlds, real-user interaction.
-- **Acceptance criteria:** Guest and owned world persist; foreign user gets ownership-safe denial; retries create one effect; migration applies cleanly.
+- **Explicit exclusions:** Registration/password/registered-account recovery, characters, feed, multiple exposed worlds, real-user interaction.
+- **Acceptance criteria:** Guest and owned world persist; ADR-014 bootstrap proof, one recovery, expiry, concurrency, scope, and redaction behave as specified; ADR-013 token validation plus non-idempotent rotation, replay containment, family limits/revocation, redaction, and rate limits behave as specified; foreign user gets ownership-safe denial; retries create one identity/world effect without replaying credential bytes; migration applies cleanly.
 - **Required verification:** Backend unit/API/PostgreSQL/migration/security tests and log-redaction check.
-- **Manual checks:** First guest, repeat launch token refresh, world create/current, foreign-ID attempt, logout.
-- **Review focus:** Token storage/rotation, `WorldId`, owner queries, same-world FKs, idempotency.
+- **Manual checks:** First guest, simulated lost-bootstrap-response recovery, repeat launch token refresh, current world, foreign-ID attempt, logout.
+- **Review focus:** Proof/token hash storage and consumption/rotation, non-idempotent refresh, `WorldId`, owner queries, same-world FKs, bootstrap identity idempotency.
 - **Suggested milestone commit:** `feat(auth): add guest session and private world ownership`.
 - **Exit criteria:** Isolated guest world demonstrated and M03 tests pass.
-- **Main risks:** Installation ID treated as credential, cross-world leakage, token replay, duplicate world.
+- **Main risks:** Installation ID or bootstrap proof treated as a normal credential, proof/token leakage, refresh-response retry assumed idempotent, cross-world leakage, token replay, duplicate world.
 - **Rollback:** Roll back application artifact; use a reviewed compensating/backup strategy for the migration, never ad-hoc destructive SQL.
 
 ## 17. M04 Flutter foundation
@@ -449,22 +449,22 @@ Every listed schema change includes an EF migration, clean/previous-schema Postg
 
 - **Goal:** Deliver the private text feed and player post creation.
 - **User-visible result:** Player reads character/player posts, paginates, refreshes, creates a post, and sees cache offline.
-- **Dependencies:** M05; resolve chronological versus deterministic ranked ordering before final feed implementation. Until then use the approved current chronological contract only if explicitly accepted.
-- **Backend scope:** Posts/reply-ready parent structure, author actor, GameplayEvent provenance, world feed, opaque cursor, player post idempotency, deterministic seeded character-post fixtures.
+- **Dependencies:** M05 and the chronological feed-ordering contract accepted by ADR-015.
+- **Backend scope:** Posts/reply-ready parent structure, author actor, GameplayEvent provenance, world feed ordered by `createdAtUtc DESC, id DESC`, opaque `(createdAtUtc, id)` cursor, player post idempotency, deterministic seeded character-post fixtures.
 - **Database scope:** Posts, composite actor/event/parent FKs, active feed/author/reply cursor indexes, count checks, migration.
 - **Flutter scope:** Feed/post card/composer, pull-to-refresh, next-page state, Drift cache, optimistic player post, failed retry.
 - **Infrastructure scope:** None beyond migration/test data.
 - **Seed data:** Deterministic same-world character posts; no simulated activity yet.
-- **Test scope:** Order/tie-break/cursor scope, duplicate pages, idempotent create, cross-world parent/author denial, optimistic reconciliation, all screen states.
+- **Test scope:** Newest-first order, equal-time `id DESC` tie-break, deterministic repeat order, cursor continuation/no adjacent-page duplicates, invalid cursor, world isolation, no M06 ranking, idempotent create, cross-world parent/author denial, optimistic reconciliation, and all screen states.
 - **Documentation updates:** Setup/contract examples only if needed.
-- **Explicit exclusions:** Quote/repost/hashtags/mentions/rich reactions, feed impressions, autonomous posting, public/global feed.
+- **Explicit exclusions:** Quote/repost/hashtags/mentions/rich reactions, feed impressions, deterministic-ranked/personalized ordering, autonomous posting, public/global feed.
 - **Acceptance criteria:** Stable private feed and one player post effect; cache is clearly stale/non-authoritative offline.
 - **Required verification:** API/PostgreSQL/cursor/idempotency tests plus Flutter repository/provider/widget tests.
 - **Manual checks:** Empty and seeded feed, paging, offline cache, post timeout/retry, foreign post ID.
 - **Review focus:** Cursor stability, author derivation, world isolation, pending reconciliation.
 - **Suggested milestone commit:** `feat(feed): add private cursor-paginated feed`.
 - **Exit criteria:** Feed vertical slice stable with no deferred social features.
-- **Main risks:** Open ordering choice, duplicate optimistic rows, cache mistaken for truth.
+- **Main risks:** Cursor-boundary defects, duplicate optimistic rows, cache mistaken for truth.
 - **Rollback:** Revert app/API; preserve post rows or use explicit migration recovery—never drop user posts casually.
 
 ## 20. M07 Reactions, replies, and follows
@@ -491,23 +491,23 @@ Every listed schema change includes an EF migration, clean/previous-schema Postg
 
 ## 21. M08 Rule-based simulation
 
-- **Goal:** Advance autonomous character activity deterministically without external AI.
-- **User-visible result:** The private world gains reproducible character posts/replies/likes/follows expressed by deterministic templates.
+- **Goal:** Establish deterministic, replay-safe world simulation and explicit rule availability without external AI or fabricated mechanics.
+- **User-visible result:** The private world gains reproducible simulation progress and auditable unavailable/ineligible rule outcomes. Current M08 inputs produce no autonomous social effect; M06/M07 Player posts/replies/likes/follows remain operational.
 - **Dependencies:** M05-M07.
-- **Backend scope:** Injected clock/PRNG, world time, SimulationRun/Action, ACT/POST/REPLY/REACT/FOLLOW rules, stable ordering, reasons/statuses, idempotent half-open intervals, template fallback, checkpoint-safe execution.
-- **Database scope:** Runs/actions/idempotency/work records, exact interval uniqueness, cursor locking, composite target FKs, migration.
+- **Backend scope:** Injected clock/PRNG, canonical UTC interval cursor, accumulated `CurrentWorldTime`, exact decimal TimeScale advancement, deterministic projection of resulting world time through the world-level IANA display timezone for schedules/quiet hours, SimulationRun/Action provenance model, ordered rule registration/evaluation, one deterministic rule-evaluation summary per run/rule, deterministic unavailable/ineligible paths for `ACT-01`/`POST-01` while mandatory numeric/topic inputs are undefined and `REPLY-01`/`REACT-01`/`FOLLOW-01` while relationship state is absent, stable outcomes/reasons, fixed 15-minute half-open intervals, at most the single oldest due interval per normal trigger, template fallback component, checkpoint-safe execution.
+- **Database scope:** Runs/actions/rule evaluations/idempotency/work records, per-run effective TimeScale, unique run/rule diagnostics, exact interval uniqueness, cursor locking, atomic world-time/`LastSimulatedAt` projections, cursor-derived `NextDueAt`, normalization of existing never-simulated due times to creation plus 15 minutes, composite target FKs, and required world `display_time_zone_id`; the migration defaults/backfills `UTC`.
 - **Flutter scope:** Development-only trigger only if securely gated; status and authoritative refresh.
 - **Infrastructure scope:** BackgroundService may process durable PostgreSQL work; in-memory queue is not authority.
 - **Seed data:** Stable scenarios 1001-1004 and deterministic rule version.
-- **Test scope:** Same-state/interval/version/seed equality, candidate-order independence, caps/cooldowns/reasons, duplicate/overlap, rollback/partial resume, cross-world targets.
+- **Test scope:** Same-state/interval/version/seed equality, candidate-order independence, priority/reasons, duplicate/overlap, rollback/partial resume, cross-world isolation; first-tick bootstrap, not-due/exact-due boundaries, legacy due-time normalization, one run per trigger, exact 31-minute two-trigger progression, no M08 backlog batching, world-time initialization, exact scale `1`/`2`/fractional advancement, per-run effective-scale audit, scale changes between intervals, `LastSimulatedAt` mirroring, completed replay, failed-transaction retry, same-world concurrency loser behavior, and atomic cursor/world-time updates; timezone defaults and schedule/quiet-hour projection from resulting world time, DST/validation/host independence; one evaluation per run/rule, stable primary-reason precedence, run/rule uniqueness, replay/concurrency/rollback atomicity, and run-error separation; ACT-01 unavailability for missing goal/mood/event inputs before random evaluation; POST-01 unavailability without zeroing, redistribution, or renormalization; no autonomous social actions/effects/counter mutations; unchanged M06/M07 Player behavior; stable retry/rule version/PRNG sequencing; and no temporary or later-milestone state leakage.
 - **Documentation updates:** Rule/architecture docs only if an approved behavior decision changes; otherwise operational notes.
-- **Explicit exclusions:** External AI, catch-up compression, relationships/memory/dating, real-time delivery.
-- **Acceptance criteria:** Same inputs give identical mechanics; duplicate interval gives no duplicate effect; no provider is required.
+- **Explicit exclusions:** External AI, catch-up compression, relationships/memory/dating, real-time delivery, temporary/proxy relationship inputs, temporary goals/mood intensity/event scoring, topic-weight redistribution, and activation of rules with unavailable mandatory inputs.
+- **Acceptance criteria:** Same inputs give identical persisted progress and one identical evaluation per run/rule; each run owns one 15-minute interval and its effective decimal TimeScale; one normal trigger processes at most the oldest due interval; cursor, due, `LastSimulatedAt`, and scaled `CurrentWorldTime` advance atomically; duplicate intervals create no duplicate progress/world-time advancement/diagnostic/effect; unavailable inputs receive stable primary reasons before random evaluation without failing the run; no autonomous social effect is fabricated; no provider is required; and M06/M07 Player behavior remains unchanged.
 - **Required verification:** Unit/scenario/PostgreSQL/concurrency/architecture/security tests and deterministic snapshot comparison.
-- **Manual checks:** Run fixed seed twice from restored fixture; inspect reasons/template posts; retry interval.
+- **Manual checks:** Run fixed seed twice from restored fixture; inspect interval progress/unavailable reasons; retry interval and confirm no autonomous social mutation.
 - **Review focus:** Uncontrolled time/randomness, ordering, idempotency, AI absence, `WorldId`.
 - **Suggested milestone commit:** `feat(simulation): add deterministic action engine`.
-- **Exit criteria:** Reproducible auditable rules pass independent simulation review.
+- **Exit criteria:** Reproducible, auditable tick processing and unavailable rule evaluation pass independent simulation review.
 - **Main risks:** Hidden nondeterminism, interval overlap, overlarge transactions, premature rule families.
 - **Rollback:** Disable scheduling, deploy prior compatible artifact, preserve run/action audit rows and cursors.
 
@@ -515,22 +515,22 @@ Every listed schema change includes an EF migration, clean/previous-schema Postg
 
 - **Goal:** Add provider wording to already-decided actions without changing mechanics.
 - **User-visible result:** Character text is more natural; failures still show deterministic fallback.
-- **Dependencies:** M08 persisted decisions; approved provider/config choice.
-- **Backend scope:** Provider-neutral interface/adapter, minimized context, request/result metadata, timeouts/budgets/retry classification, output validation/duplicate detection/moderation hook, fallback.
+- **Dependencies:** M08 persisted decisions; ADR-024 local-first provider/configuration contract.
+- **Backend scope:** Provider-neutral interface, one local Ollama adapter, minimized structured context, request/result metadata, configurable 10-second default timeout, one transient retry, output/resource budgets, output validation/duplicate detection, application-level content-safety hook, and deterministic fallback.
 - **Database scope:** Generation request/result/work metadata without full sensitive prompts/raw responses; idempotency and migration.
 - **Flutter scope:** Display persisted wording/fallback normally; no provider call/key or mechanical assumption.
-- **Infrastructure scope:** Runtime secret injection and staging budget; fake provider by default locally/CI.
+- **Infrastructure scope:** Optional server-side Ollama with configurable preferred `qwen3:4b`; no paid API or automatic cloud fallback; deterministic fake provider and local HTTP stub for automated tests/CI.
 - **Seed data:** Deterministic valid/invalid/timeout/rate/fallback fixtures.
-- **Test scope:** Success, failure, timeout, invalid/empty/excessive/duplicate, hostile prompt as data, context access, no mechanical mutation, sanitized logs.
+- **Test scope:** Fake/stub success, disabled/unavailable provider, transient retry, timeout/cancellation, invalid/empty/excessive/duplicate output, hostile prompt as data, context access, deterministic fallback, no mechanical mutation, sanitized logs, and no external network/model requirement.
 - **Documentation updates:** Environment variable names/provider setup; source docs only for accepted decisions.
-- **Explicit exclusions:** AI-selected actions/targets/scores/memories, full chat history, mobile provider access, real AI in automated tests.
-- **Acceptance criteria:** Mechanical records are identical with fake success/failure; fallback completes safely; secrets/private context do not leak.
+- **Explicit exclusions:** AI-selected actions/targets/scores/memories, full chat history, mobile provider access, real AI in automated tests, mandatory Ollama/model installation, multiple/hosted-provider orchestration, paid API/moderation dependencies, and automatic cloud fallback.
+- **Acceptance criteria:** Mechanical records are identical with fake success/failure; Ollama absence never blocks startup/gameplay; fallback completes safely; tests require no AI network/model; secrets/private context do not leak; no paid provider is called.
 - **Required verification:** Unit/stub integration/security/architecture tests and budget/fallback manual check.
-- **Manual checks:** Staging wording under strict budget, forced timeout/invalid output, inspect logs/context metadata.
+- **Manual checks:** Optional local Ollama wording with fictional data and strict resource limits; disabled/unavailable provider, forced timeout/invalid output, deterministic fallback, and sanitized logs/context metadata.
 - **Review focus:** Mechanical capability boundary, privacy, provider secrets, retries/cost.
 - **Suggested milestone commit:** `feat(ai): generate validated wording for decided actions`.
 - **Exit criteria:** AI affects wording only and provider failure cannot break mechanics.
-- **Main risks:** Cost growth, prompt injection, secret leakage, repetitive text.
+- **Main risks:** Local resource exhaustion, prompt injection, secret leakage, repetitive text, and future provider cost if separately approved.
 - **Rollback:** Disable provider/use fallback; retain committed mechanics and safe diagnostics.
 
 ## 23. M10 Relationship engine
@@ -538,12 +538,12 @@ Every listed schema change includes an EF migration, clean/previous-schema Postg
 - **Goal:** Persist deterministic directional relationships and explain meaningful changes.
 - **User-visible result:** Friendship/rivalry/attraction summaries and recent history respond to interactions.
 - **Dependencies:** M08; M09 only for phrasing, never mechanics.
-- **Backend scope:** REL-01 dimensions/events, caps/ledgers/asymmetry, derived labels, same-world application contracts; shared romance status is not stored in directional rows.
-- **Database scope:** Relationships, RelationshipEvents, daily ledgers, bounds/uniques/composite FKs/history indexes, migration.
+- **Backend scope:** Exactly nine directional REL-01 dimensions (Familiarity, Trust, Respect, Affection, Comfort, Rivalry, Jealousy, Attraction, Commitment), events, caps/ledgers/asymmetry, derived labels, deterministic InterestOverlap and RelationshipRelevance, neutral persisted Character Reputation, same-world application contracts, fully evaluable FOLLOW-01, and exact REPLY-01/REACT-01 remaining gates defined by ADR-025/026; shared romance status is not stored in directional rows.
+- **Database scope:** Relationships, RelationshipEvents, daily ledgers, bounds/uniques/composite FKs/history indexes, and non-null bounded `characters.reputation` default/backfill 50; migration.
 - **Flutter scope:** Safe qualitative summary/recent history with loading/empty/error/offline states; no hidden raw scores unless approved.
 - **Infrastructure scope:** None.
 - **Seed data:** Stranger/friend/close-friend/rival scenarios and public-defence/conflict events.
-- **Test scope:** Initial values, deltas/multipliers/clamps/daily caps, asymmetry, labels/priority, duplicate event, transaction rollback, ownership, UI projection.
+- **Test scope:** Nine-dimension initial values, Character Reputation, exact approved base deltas with neutral M10 v1 multiplier defaults and exceptions, clamps/daily caps, asymmetry, labels/priority, duplicate event, transaction rollback, ownership, UI projection, InterestOverlap, RelationshipRelevance, social-action/no-delta separation, active FOLLOW-01, and correctly gated REPLY-01/REACT-01 behavior.
 - **Documentation updates:** No balance change without `GAME_RULES.md` rule-version update.
 - **Explicit exclusions:** Romantic pair transitions, dating, marriage/divorce, client-authored deltas, passive MVP decay.
 - **Acceptance criteria:** Qualified events create one auditable directional change; history explains it; no romantic status column exists here.
@@ -553,6 +553,7 @@ Every listed schema change includes an EF migration, clean/previous-schema Postg
 - **Suggested milestone commit:** `feat(relationships): add deterministic directional relationship engine`.
 - **Exit criteria:** Relationship slice passes game-rule/database/Flutter review.
 - **Main risks:** Pacing imbalance, duplicate deltas, wrong direction, exposing hidden values.
+- **Implementation readiness:** Unblocked by ADR-026. Initial Follow/Like/Unlike/generic Reply intentionally have no REL-01 delta; no missing matrix row is required for those actions.
 - **Rollback:** Disable new event production if needed; preserve immutable history and use compensating events/migration, not row rewriting.
 
 ## 24. M11 Private messaging
@@ -565,7 +566,7 @@ Every listed schema change includes an EF migration, clean/previous-schema Postg
 - **Flutter scope:** Conversation list/chat/composer, paging, cache, pending/failed/retry, approved reply state, polling/refresh.
 - **Infrastructure scope:** Durable wording work through existing BackgroundService pattern; realtime not required.
 - **Seed data:** Empty/history, eligible/no-response, provider-fallback, equal-time cursor fixtures.
-- **Test scope:** Conversation uniqueness, sender/membership, duplicate client ID, order/cursor, eligibility/fallback, ownership, pending retry, log redaction, screen states.
+- **Test scope:** Conversation uniqueness, sender/membership, duplicate client ID, order/cursor, eligibility/fallback, ownership, pending retry, log redaction, screen states; fixed M11-v1 `Urgency=50` and `ConflictAvoidancePenalty=0`; wording/punctuation/length/client/provider/fallback invariance; Rivalry-alone non-penalty; deterministic PRNG authority.
 - **Documentation updates:** Messaging setup and any approved contract clarification.
 - **Explicit exclusions:** Simulated delayed replies, character initiation, follow-up, group chat, editing/deletion, SignalR requirement.
 - **Acceptance criteria:** Messages persist and paginate; one logical send creates one message; eligible reply mechanics precede wording; offline history is cache-only.
@@ -575,6 +576,7 @@ Every listed schema change includes an EF migration, clean/previous-schema Postg
 - **Suggested milestone commit:** `feat(messaging): add private character conversations`.
 - **Exit criteria:** Persistent private messaging works without unreleased timing behavior.
 - **Main risks:** Privacy leakage, duplicate sends, cursor errors, accidental delayed-feature scope.
+- **Implementation readiness:** Unblocked by ADR-027. MSG-02 uses the unchanged formula and PRNG behavior with fixed neutral `Urgency=50` on its 0-100 scale and `ConflictAvoidancePenalty=0`; text/AI classification and richer urgency/conflict mechanics remain deferred.
 - **Rollback:** Disable reply worker while retaining player messages; revert compatible clients/API without deleting conversation history.
 
 ## 25. M12 Long-term memory
@@ -582,43 +584,45 @@ Every listed schema change includes an EF migration, clean/previous-schema Postg
 - **Goal:** Create and retrieve meaningful structured character memories.
 - **User-visible result:** Character wording can reference relevant prior interactions without exposing unrelated secrets.
 - **Dependencies:** M10-M11 and GameplayEvent provenance.
-- **Backend scope:** MEM-01/02 creation/ranking/recall, expiry/reinforcement/contradiction, secrets/knowers, promises/resolution, authorized bounded AI context.
-- **Database scope:** CharacterMemories, Secrets/SecretKnowers, Promises, RecallRequests/Selections with composite provenance/access FKs, checks/uniques/indexes, migration.
+- **Backend scope:** Authoritative structured creation of exactly Fact, Preference, Event, Secret, and Promise; exact MEM-02 ranking; bounded retention; inactive Secret disclosure; structured Promise lifecycle; authorized AI context only after mechanical decisions.
+- **Database scope:** CharacterMemories, provenance-keyed MemoryCreationOutcomes, Secrets/SecretKnowers, Promises, RecallRequests/Selections with typed subject/source provenance, CharacterPrivate owner access, source uniqueness, checks/composite FKs, and no embedding/vector columns.
 - **Flutter scope:** No raw memory browser; only sanitized history/wording projections and ordinary states.
 - **Infrastructure scope:** No new external service; existing AI work receives bounded references.
-- **Seed data:** Meaningful/trivial, promise, secret, contested, expired/permanent memory scenarios.
-- **Test scope:** Thresholds, mandatory types, ranking/tie/cap, expiry, provenance, knower access, promise states, duplicate prevention, no full chat history, secret leakage.
+- **Seed data:** Structured Fact/Preference/Event/Secret/Promise sources, exact/missing subject/topic cases, ordinary retention candidates, and structured Promise due conditions.
+- **Test scope:** Structured-source-only mapping, exact formula/matches/rounding/order/top-eight cap, ordinary no-expiry, deterministic non-protected eviction, 99-protected-plus-one-non-protected eviction, 100-protected rejection with `memory_capacity_protected`, unchanged protected rows, count never above 100, deterministic rejected replay, provenance/replay, owner isolation, Secret non-disclosure, Promise transitions, no AI capacity choice, no full chat history, and M11/M09 authority boundaries.
 - **Documentation updates:** No memory formula/access change without rule/security documentation.
-- **Explicit exclusions:** AI-created authoritative memory, full transcript storage in memory, broad client endpoint, cross-world knowledge.
-- **Acceptance criteria:** Only qualified events create idempotent memories; recall is bounded/reproducible/authorized; AI failure changes no memory.
+- **Explicit exclusions:** AI/text-created mechanics, arbitrary semantic classification, embeddings/vector search, Secret disclosure, full transcript storage in memory, broad client endpoint, cross-world/cross-Character knowledge, M13 behavior.
+- **Acceptance criteria:** Only approved structured sources create idempotent CharacterPrivate memories; exact recall is bounded/reproducible/authorized; AI failure changes no memory; Promise and Secret state remains backend-authoritative.
 - **Required verification:** Rule/scenario/PostgreSQL/security/AI-context tests and safe projection checks.
 - **Manual checks:** Create meaningful/trivial interaction; inspect relevant recall and secret exclusion; force fallback.
-- **Review focus:** Knowledge provenance, secret privacy, bounded context, duplicate/reinforcement semantics.
+- **Review focus:** Knowledge provenance, owner/Secret privacy, exact recall, deterministic retention, duplicate replay, and AI/mechanical separation.
 - **Suggested milestone commit:** `feat(memory): add structured bounded character memory`.
-- **Exit criteria:** Memory continuity works with no unauthorized context.
-- **Main risks:** Secret leakage, context cost, duplicate memories, confusing contradictions.
+- **Exit criteria:** Memory continuity works with no unauthorized context and active memory count never exceeds 100.
+- **Main risks:** Secret leakage, context cost, duplicate memories, capacity races, and mechanical authority leaking to text/AI.
+- **Implementation readiness:** Unblocked by ADR-028 and ADR-029. At a protected-only full cap, skip/reject memory creation with `memory_capacity_protected` without failing the source gameplay/message operation.
 - **Rollback:** Disable recall/context use while retaining structured records; use reviewed data migration for schema rollback.
 
 ## 26. M13 Dating and relationship history
 
 - **Goal:** Add the PRODUCT.md-approved basic romantic invitation, outcome, Dating state, and necessary history.
 - **User-visible result:** Eligible player can invite a character, see persisted acceptance/rejection, Dating status, and the necessary invitation/outcome timeline.
-- **Dependencies:** M10-M12 and unresolved romance/content policy decisions required before broad release.
-- **Backend scope:** ROM-01/02, canonical pair, invitation/cooldown/outcome, shared Dating status and necessary invitation/outcome history, rule-created memories where released, wording after outcome.
-- **Database scope:** RomanticRelationships and RomanticStatusHistory plus invitation fields/records, canonical ordering, composite FKs/uniques/indexes, migration.
+- **Dependencies:** M10-M12 and accepted ADR-030. The remaining broad romance/content-rating decision is a release gate, not a blocker to implementing the bounded M13 mechanics.
+- **Backend scope:** Exact ADR-030 ROM-01/02 evaluation; structured romance modes and world feature setting; canonical pair; server-selected `CasualDate`; invitation/cooldown/expiry/outcome; strict Dating and pending-invitation exclusivity; atomic bidirectional Commitment effect; shared Dating status and necessary invitation/outcome history; rule-created memories where released; wording only after the deterministic outcome.
+- **Database scope:** `WorldSettings.RomanceEnabled`; Player/Character `RomancePreferenceMode`; RomanticRelationships, RomanticInvitations, and RomanticStatusHistory; canonical ordering; UTC audit plus game-time fields; provenance, composite FKs, canonical-pair/operation uniques, active-pair indexes, deterministic Actor-row locking, and migration.
 - **Flutter scope:** Invitation action, pending/result, safe eligibility feedback, status/timeline, loading/empty/error/offline states.
 - **Infrastructure scope:** None.
-- **Seed data:** Stable eligible, rejected, accepted, and invalid-transition scenarios.
-- **Test scope:** Thresholds, compatibility/cooldown, duplicate/concurrent invite, acceptance/rejection, Dating, canonical pair, required history/memory/ownership/UI, and rejection of deferred transitions.
+- **Seed data:** Stable eligible, incompatible, exclusivity-conflicting, roll-rejected, accepted, expired, and invalid-transition scenarios using fixed world state and seeds.
+- **Test scope:** World/mode compatibility, neutral ROM-only inputs, exact rejection precedence and thresholds, deterministic seeded ROM-02, 14-game-day cooldown from creation, 24-game-hour expiry, Player explicit outcome, Character immediate outcome, `CasualDate` authority, duplicate/concurrent invite and outcome replay, strict Dating/pending exclusivity, one-time atomic bidirectional +10 Commitment, canonical pair, append-only required history, persistence-level preservation of seeded distinct ended/re-dated episodes without enabling those transitions, memory/ownership/UI boundaries, text/AI invariance, and rejection of deferred transitions.
 - **Documentation updates:** No threshold/state change without `GAME_RULES.md`; content UX decision documented before release.
-- **Explicit exclusions:** Breakup lifecycle, FormerPartner re-entry, reconciliation/cooldowns/cycling, commitment beyond Dating, engagement, marriage, separation, divorce, children, and family simulation.
-- **Acceptance criteria:** Server rules decide one outcome and history; AI only phrases it; forbidden paths fail safely.
+- **Explicit exclusions:** Breakup or Dating-end lifecycle, FormerPartner/re-dating/re-entry, reconciliation/cycling, additional romance preference modes, additional date types, commitment progression beyond the one-time Dating transition effect, engagement, marriage, separation, divorce, children, and family simulation.
+- **Acceptance criteria:** Server-owned structured state and exact ADR-030 rules decide one replay-safe outcome and append-only history; at most one Dating relationship and one unresolved invitation involve an Actor; the Dating transition applies +10 Commitment in both directions exactly once; AI only phrases an already-decided outcome; forbidden paths fail safely.
 - **Required verification:** Rule/scenario/PostgreSQL/API/security/Flutter tests and romance-content review.
-- **Manual checks:** Eligible/ineligible/rejected/accepted path, duplicate retry, required romantic history, deferred-transition rejection, foreign character.
-- **Review focus:** Consent/content boundaries, canonical status, client mechanical fields, history consistency.
+- **Manual checks:** Disabled/incompatible/exclusivity/threshold/roll rejection, Player pending accept/reject/expiry, Character immediate result, duplicate retry, Dating Commitment effect, required romantic history, deferred-transition rejection, and foreign Character.
+- **Review focus:** Compatibility and Player authority, game-time expiry/cooldown, deterministic outcome, strict exclusivity under concurrency, canonical status, client mechanical fields, one-time Commitment effect, history consistency, and AI/text isolation.
 - **Suggested milestone commit:** `feat(dating): add rule-based invitation and history`.
 - **Exit criteria:** Basic dating vertical slice is auditable, safe, and phase-correct.
 - **Main risks:** Pacing/content safety, status duplication, AI contradicting outcome.
+- **Implementation readiness:** Unblocked by ADR-030. Broad romance/content-rating boundaries remain a release decision and do not authorize mechanics beyond this bounded M13 slice.
 - **Rollback:** Feature-gate invitations; preserve immutable history and current compatible status.
 
 ## 27. M14 World events and trends
@@ -648,12 +652,12 @@ Every listed schema change includes an EF migration, clean/previous-schema Postg
 - **Goal:** Advance an Active world after absence through bounded deterministic compression.
 - **User-visible result:** Returning player sees reliable world progress and a concise “while you were away” summary.
 - **Dependencies:** M08 and released M10-M13 behavior. Full M14 is not required; seeded MVP topics remain sufficient.
-- **Backend scope:** CATCH-01 elapsed-time calculation, six-hour/daily buckets, caps/priorities, checkpoint/Partial state, summary facts/wording, duplicate/concurrent resume, cursor updates.
+- **Backend scope:** CATCH-01 elapsed-time calculation; bounded multi-interval backlog processing beyond M08's one-trigger/one-interval primitive; accumulated world-time advancement as the sum of each logical interval's captured scaled delta; batching, compression, caps, priorities, yielding, six-hour/daily buckets, checkpoint/Partial state, summary facts/wording, duplicate/concurrent resume, and cursor updates.
 - **Database scope:** Catch-up run/bucket checkpoint and world-summary/item persistence as required, constraints/indexes/idempotency, migration.
 - **Flutter scope:** Resume/progress/partial/error state, summary and safe links to released posts/characters/conversations; no unreleased event link.
 - **Infrastructure scope:** Durable bounded background processing and lease recovery using PostgreSQL.
 - **Seed data:** No/short/long/over-cap, failure-after-bucket, duplicate/concurrent resume fixtures.
-- **Test scope:** Paused/archived exclusion, compression/caps/order, relationship/message effects, checkpoint retry, concurrent resume, summary correctness/fallback, UI states.
+- **Test scope:** Paused/archived exclusion, multi-interval batching/limits/yielding, compression/caps/order, relationship/message effects, checkpoint retry, concurrent resume, summary correctness/fallback, UI states.
 - **Documentation updates:** Operational limits and setup; balancing changes require rule-version documentation.
 - **Explicit exclusions:** Simulating every minute, full trend updates without M14 approval, unbounded catch-up, AI-invented summary facts.
 - **Acceptance criteria:** Same snapshot/interval/version/seed yields same committed progress; retry duplicates nothing; summary contains only committed facts.
@@ -670,12 +674,12 @@ Every listed schema change includes an EF migration, clean/previous-schema Postg
 - **Goal:** Complete the MVP in-app notification subset; introduce realtime only after the open architecture/milestone choice is accepted.
 - **User-visible result:** Released reply, private-message, and catch-up-summary indicators appear through a badge/deep link and bounded minimal list; missed updates recover through HTTP. If separately approved, foreground realtime reduces delay.
 - **Dependencies:** M03, M07, M11, M13, M15.
-- **Backend scope:** Reply, PrivateMessage, and CatchUpSummary Notification categories; unread/bounded-minimal-list/cursor/read-one/read-all/dedupe. SignalR hub/group/events only under an accepted introduction decision.
-- **Database scope:** Notifications with recipient ownership/event provenance/uniques/indexes and migration; realtime remains delivery, not authority.
+- **Backend scope:** Reply, PrivateMessage, and CatchUpSummary Notification categories; unread/bounded-minimal-list/cursor/read-one/read-all/dedupe. Reply notifies only when a Character reply's immediate parent is Player-authored; finalized committed CatchUpSummary uses its own authoritative source identity. SignalR hub/group/events only under an accepted introduction decision.
+- **Database scope:** Notifications with recipient ownership, typed source provenance, conditional GameplayEvent linkage, canonical source uniqueness/indexes, and migration; realtime remains delivery, not authority.
 - **Flutter scope:** List/badge/deep links/safe previews/offline states. Optional SignalR authenticates, dedupes, reconnects, refetches, and disconnects on logout.
 - **Infrastructure scope:** None for HTTP/polling MVP; websocket hosting/config only if SignalR approved. Push remains deferred.
 - **Seed data:** Released category, duplicate, unread/read, expired, foreign-recipient, reconnect fixtures.
-- **Test scope:** Ownership/dedupe/cursor/read state/safe preview; optional hub auth/wrong-world/duplicate/reconnect/refetch/minimal payload.
+- **Test scope:** Ownership/dedupe/cursor/read state/safe preview; immediate-parent Reply eligibility/non-eligibility; finalized CatchUpSummary timing, typed provenance, replay, and absence of a fabricated GameplayEvent; optional hub auth/wrong-world/duplicate/reconnect/refetch/minimal payload.
 - **Documentation updates:** SignalR decision and contract only if introduced; notification category release labels stay synchronized.
 - **Explicit exclusions:** Follow and DatingInvitation indicators, push/FCM, rich Version 1 categories/filtering/search/history, and SignalR as mandatory MVP authority.
 - **Acceptance criteria:** Basic indicators are persisted/idempotent/private; HTTP recovers state; optional realtime never mutates gameplay.
@@ -799,23 +803,21 @@ Probability and impact are initial qualitative ratings and must be reviewed at t
 Do not silently settle these before the affected milestone:
 
 1. Hosting provider, managed PostgreSQL vendor, and production topology details.
-3. Initial AI provider/model, moderation, budget, and provider-selection policy.
-4. Access-token algorithm/lifetime/key rotation and exact refresh/session/device policies.
+4. Production secret management and hosting-specific signing-key custody/rotation are resolved for M18 by ADR-034; ADR-013 remains authoritative for the M03 token/session contract.
 5. Registration/recovery method and email verification for Version 1.
 6. Exact CI runner operating systems beyond the accepted GitHub Actions M01 checks.
 7. Release cadence, staging timing, first beta size, and app-store order.
-8. Feed ordering: chronological or deterministic ranking.
-9. SignalR introduction milestone and client package; HTTP polling remains valid.
-10. ETag/version representation and final `409`/`412` mapping.
-11. New offline-write scope/conflict UX and idempotency retention.
-12. Performance targets, load-tooling threshold, and coverage thresholds.
-13. Crash-reporting and analytics providers, disclosure, and retention.
-14. Container/isolation tooling details beyond the accepted PostgreSQL snake_case policy and M03 Actor timing.
-15. Romance/content rating boundaries before broad dating release.
-16. Topic taxonomy and whether/when to activate the full Version 1 world-events/trends scope in M14.
-17. Retention, field/cache encryption, account deletion, backup purge, and support/admin model.
-18. Release-checklist ownership and authority for accepting known High risk.
-19. Advanced romance scope beyond the MVP Dating state, including breakup/FormerPartner, reconciliation, commitment, engagement, marriage, separation, and divorce.
+8. SignalR introduction milestone and client package; HTTP polling remains valid.
+9. ETag/version representation and final `409`/`412` mapping.
+10. New offline-write scope/conflict UX and idempotency retention.
+11. Performance targets, load-tooling threshold, and coverage thresholds.
+12. Crash-reporting and analytics providers, disclosure, and retention.
+13. Container/isolation tooling details beyond the accepted PostgreSQL snake_case policy and M03 Actor timing.
+14. Romance/content rating boundaries before broad dating release; ADR-030 resolves the bounded M13 mechanics but not this release-policy decision.
+15. Topic taxonomy and whether/when to activate the full Version 1 world-events/trends scope in M14.
+16. Retention, field/cache encryption, account deletion, backup purge, and support/admin model.
+17. Release-checklist ownership and authority for accepting known High risk.
+18. Advanced romance scope beyond the MVP Dating state, including breakup/FormerPartner, reconciliation, commitment, engagement, marriage, separation, and divorce.
 
 ### Resolved planning-review conflicts
 
@@ -824,7 +826,10 @@ Do not silently settle these before the affected milestone:
 3. **Mandatory realtime:** M16 requires persisted in-app notifications and HTTP synchronization; SignalR is conditional and push is deferred.
 4. **Checklist applicability:** every milestone now records Passed, Failed, Unavailable, or Not applicable with reason and does not require nonexistent migrations/projects/tools.
 5. **M15 trend updates:** M15 uses only released seeded topics unless M14 is separately activated.
-6. **Offline local queue wording in the planning brief:** the risk mitigation proposes a local queue broadly, while approved Flutter/product/API documents allow drafts and retry of already-submitted indeterminate operations only. This plan preserves the empty allowlist for new offline initiation. `PRODUCT.md`, `ARCHITECTURE.md`, `API_CONVENTIONS.md`, and `FLUTTER_GUIDELINES.md` would require coordinated correction before expansion.
+6. **M09 AI provider:** ADR-024 selects local Ollama with configurable preferred `qwen3:4b`, zero paid-API dependency, application validation, deterministic fallback, bounded retry/timeout, and fake/stub-only automated tests; cloud providers remain deferred.
+7. **Offline local queue wording in the planning brief:** the risk mitigation proposes a local queue broadly, while approved Flutter/product/API documents allow drafts and retry of already-submitted indeterminate operations only. This plan preserves the empty allowlist for new offline initiation. `PRODUCT.md`, `ARCHITECTURE.md`, `API_CONVENTIONS.md`, and `FLUTTER_GUIDELINES.md` would require coordinated correction before expansion.
+8. **M11 MSG-02 inputs:** ADR-027 fixes M11-v1 Player-message Urgency at neutral 50 on the 0-100 scale and ConflictAvoidancePenalty at 0. No client, text heuristic, Rivalry-only inference, or AI classification supplies either value; richer mechanics require a later accepted decision.
+9. **M13 romance mechanics:** ADR-030 fixes structured eligibility and compatibility, ROM-only neutral inputs, rejection precedence, strict Dating/pending-invitation exclusivity, game-time cooldown/expiry, Player-versus-Character outcome timing, server-selected `CasualDate`, the one-time bidirectional Commitment effect, append-only history, and AI/text/memory boundaries. Breakup, Dating end, and re-dating remain deferred.
 
 ### Final consistency checklist
 

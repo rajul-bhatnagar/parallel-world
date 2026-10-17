@@ -19,7 +19,7 @@ M03-M05 and M08-M10.
 Simulated delayed replies, character initiation, follow-up, group chat, editing/deletion, SignalR requirement.
 
 ## Test scope
-Conversation uniqueness, sender/membership, duplicate client ID, order/cursor, eligibility/fallback, ownership, pending retry, log redaction, screen states.
+Conversation uniqueness, sender/membership, duplicate client ID, order/cursor, eligibility/fallback, ownership, pending retry, log redaction, and screen states. MSG-02 coverage fixes every Player-authored message at neutral `Urgency=50` on the 0-100 scale and `ConflictAvoidancePenalty=0`; wording, punctuation, length, client input, provider state/output, fallback, and Rivalry alone cannot change those mechanics. Same mechanical state with different text produces the same eligibility evaluation.
 
 ## Security and ownership considerations
 Private-body logging, participant/world checks, idempotency, full-history exclusion. Repository-wide ownership, privacy, and secret-handling rules remain mandatory where applicable.
@@ -35,3 +35,6 @@ New/existing conversation, send timeout/retry, fallback/no-response, offline his
 
 ## Exit criteria
 Persistent private messaging works without unreleased timing behavior.
+
+## Implementation readiness
+Unblocked by ADR-027. M11 v1 uses fixed neutral `Urgency=50` and `ConflictAvoidancePenalty=0`; richer intent, urgency, conflict, and memory-aware mechanics remain deferred.

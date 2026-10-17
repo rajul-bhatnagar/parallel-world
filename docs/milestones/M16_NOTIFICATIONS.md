@@ -10,8 +10,8 @@ Released reply, private-message, and catch-up-summary indicators appear through 
 M03, M07, M11, M13, M15.
 
 ## Scope
-- **Backend:** Reply, PrivateMessage, and CatchUpSummary Notification categories; unread/bounded-minimal-list/cursor/read-one/read-all/dedupe. SignalR hub/group/events only under an accepted introduction decision.
-- **Database:** Notifications with recipient ownership/event provenance/uniques/indexes and migration; realtime remains delivery, not authority.
+- **Backend:** Reply, PrivateMessage, and CatchUpSummary Notification categories; unread/bounded-minimal-list/cursor/read-one/read-all/dedupe. Reply notifies only for a Character-authored reply whose immediate parent is Player-authored. A finalized committed CatchUpSummary notifies from its own authoritative ID. SignalR hub/group/events only under an accepted introduction decision.
+- **Database:** Notifications with recipient ownership, typed authoritative source provenance, conditional GameplayEvent linkage, source-identity uniqueness/indexes, and migration; realtime remains delivery, not authority.
 - **Flutter:** List/badge/deep links/safe previews/offline states. Optional SignalR authenticates, dedupes, reconnects, refetches, and disconnects on logout.
 - **Infrastructure:** None for HTTP/polling MVP; websocket hosting/config only if SignalR approved. Push remains deferred.
 
@@ -19,7 +19,7 @@ M03, M07, M11, M13, M15.
 Follow and DatingInvitation indicators, push/FCM, rich Version 1 categories/filtering/search/history, and SignalR as mandatory MVP authority.
 
 ## Test scope
-Ownership/dedupe/cursor/read state/safe preview; optional hub auth/wrong-world/duplicate/reconnect/refetch/minimal payload.
+Ownership/dedupe/cursor/read state/safe preview; exact immediate-parent Reply cases; finalized CatchUpSummary timing and typed provenance without a fabricated GameplayEvent; optional hub auth/wrong-world/duplicate/reconnect/refetch/minimal payload.
 
 ## Security and ownership considerations
 Recipient ownership, sensitive preview, duplicate delivery, release gating. Repository-wide ownership, privacy, and secret-handling rules remain mandatory where applicable.

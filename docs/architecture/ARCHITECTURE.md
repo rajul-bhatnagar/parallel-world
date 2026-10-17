@@ -17,14 +17,14 @@ The modular monolith is the correct initial style because one process and one da
 
 ## 2. System context
 
-The Flutter client communicates only with the ASP.NET Core backend. The backend owns authentication, authorization, simulation, persistence, external AI integration, realtime delivery, and later push delivery. PostgreSQL is private to the backend.
+The Flutter client communicates only with the ASP.NET Core backend. The backend owns authentication, authorization, simulation, persistence, local AI integration, realtime delivery, and later push delivery. PostgreSQL is private to the backend; future external AI providers remain behind the same backend boundary if separately approved.
 
 ```mermaid
 flowchart LR
     P["Player"] --> M["Flutter mobile app"]
     M -->|"HTTPS / authorized SignalR"| B["ASP.NET Core modular monolith"]
     B --> DB[("Managed PostgreSQL")]
-    B --> AI["External AI provider"]
+    B -.-> AI["Optional local Ollama"]
     B -.-> PUSH["Push provider (later)"]
     B -.-> OBJ["Object storage (media only, later)"]
 ```
@@ -41,7 +41,7 @@ No real-user discovery, messaging, feed, relationship, or shared-world path exis
 - PostgreSQL is authoritative for ownership, game state, world time, relationships, memories, actions, and history.
 - Drift is a cache and pending-local-action store only. It never runs authoritative simulation or resolves mechanical conflicts.
 - Deterministic rules decide actors, targets, actions, values, time, and outcomes. AI generates wording for a persisted decision only.
-- All persistent timestamps use UTC. Character-local time is a projection for display and schedules.
+- All persistent timestamps use UTC. In M08, Character-local schedule and quiet-hour time is derived from the interval's deterministic resulting `CurrentWorldTime` through the world-level IANA `DisplayTimeZoneId`, which defaults to `UTC`; no server/device timezone inference or per-character timezone state is used.
 - Simulation and background work are idempotent and safe to retry.
 
 ## 4. Technology stack
@@ -78,7 +78,7 @@ No real-user discovery, messaging, feed, relationship, or shared-world path exis
 - One hosted ASP.NET Core service and managed PostgreSQL initially
 - Object storage only after media is introduced
 
-The accepted baseline, checked on 2026-08-25, is .NET 10 LTS/`net10.0`, stable Flutter 3.47 with bundled Dart 3.13, Android API 24 minimum, and Android as the initial launch platform. M01 pins the accepted toolchain and latest stable compatible patches within those lines. Future Flutter/Dart minor or major upgrades require explicit review. Providers and hosting vendors remain open. No additional distributed technology is implied.
+The accepted baseline, checked on 2026-08-25, is .NET 10 LTS/`net10.0`, stable Flutter 3.47 with bundled Dart 3.13, Android API 24 minimum, and Android as the initial launch platform. M01 pins the accepted toolchain and latest stable compatible patches within those lines. Future Flutter/Dart minor or major upgrades require explicit review. ADR-034 selects Render and Neon for the M18 deployment; AI and any later infrastructure providers remain separately governed. No additional distributed technology is implied.
 
 ## 5. Repository structure
 
@@ -132,7 +132,7 @@ Owns deterministic actor/action selection, rule evaluation, world-time and catch
 
 ### `ParallelWorld.AI`
 
-Owns stable text-generation interfaces, minimal context construction, provider adapters, template fallback, output validation, moderation hooks, usage diagnostics, and retry classification. It cannot write scores or decide actions.
+Owns stable text-generation interfaces, minimal context construction, the local Ollama adapter, template fallback, output validation, application-level content-safety hooks, usage diagnostics, and retry classification. Ollama transport types remain inside this module. It cannot write scores or decide actions.
 
 ### `ParallelWorld.Api`
 
@@ -202,8 +202,8 @@ Architecture tests enforce project references and selected namespace/module rule
 
 - `User` is the account owner, whether guest or registered.
 - `GameWorld` is the ownership and isolation boundary, not a giant object graph loaded as one aggregate.
-- `Actor` is the shared participant identity. `PlayerProfile` represents the human-controlled actor; `Character` adds AI-controlled structured state.
-- Directional relationship feelings are one actor's values toward another. Shared romantic status/history is one pair-level record, not duplicated on both directions.
+- `Actor` is the shared participant identity. `PlayerProfile` represents the human-controlled actor; `Character` adds AI-controlled structured state including its independent persisted mechanics Reputation. Character and PlayerProfile Reputation are never substituted for one another.
+- Directional relationship feelings are exactly nine bounded values owned by one source Actor toward one target Actor. Rows are initialized lazily and concurrency-safely on first approved use; the reverse direction is independent. InterestOverlap and RelationshipRelevance are deterministic derived rule inputs, not hidden stored dimensions. Shared romantic status/history is one pair-level record, not duplicated on both directions.
 - `SimulationAction` is an auditable planned action with reason, seed, rule version, target, state, and idempotency key.
 - `Memory` is structured knowledge owned by a character with provenance and access rules.
 - `WorldEvent` is world-scoped shared context; `CharacterLifeEvent` belongs to one character.
@@ -256,18 +256,20 @@ Rules:
 
 ### MVP guest lifecycle
 
-1. App creates and securely stores a random installation identity.
-2. App calls guest-session creation with a client idempotency key.
-3. Accounts resolves or creates the guest `User` and refresh session.
-4. Backend returns short-lived access and rotating refresh tokens.
-5. Backend creates or returns the user's owned MVP world through an idempotent use case.
-6. Flutter stores tokens securely and caches only non-authoritative session metadata in Drift.
+1. App creates and securely stores a random installation identity, then creates an independent opaque `GuestBootstrapProof` with at least 256 bits of entropy for the bootstrap operation.
+2. App calls guest-session creation with installation metadata, the proof, and initial-world input. Generic idempotency keys do not govern this credential-issuing operation.
+3. In one transaction, Accounts hashes the proof and creates the guest `User`, installation/session lineage, initial refresh family, owned MVP world, player Actor/Profile, WorldSettings, and WorldSimulationState.
+4. Backend returns short-lived access and rotating refresh tokens plus the stable User/world identity.
+5. A valid proof retry within 10 minutes may recover once by rotating to new credentials in the same bootstrap/session lineage without creating duplicate identity/world state; concurrent recovery permits at most one success.
+6. Flutter stores tokens securely, discards the proof after durably storing the refresh token, and caches only non-authoritative session metadata in Drift.
 
-The installation identity is not trusted as sole authorization; valid server-issued credentials establish the current user. Refresh-token rotation/revocation is server-authoritative.
+The installation identity and bootstrap proof are never normal authentication or authorization credentials. Refresh-token rotation/revocation is server-authoritative and deliberately non-idempotent: a consumed-token retry, including after a lost response, triggers family-replay containment rather than credential-response replay.
 
-### Later registration and recovery
+### M17 registration and recovery
 
-Email/password, magic link, Google, or Apple identity may be attached to the existing guest `User`. Upgrade is transactional: credentials are added and guest status changes while `UserId`, worlds, actors, and history remain unchanged. A failed upgrade leaves the guest usable. Multiple-device sync and account recovery use registered credentials; they never merge worlds from unrelated users without an explicit future product rule.
+ADR-033 selects email/password plus a user-held recovery code. Fresh registration creates one registered `User` and the normal initial world/player aggregate, then login creates an ordinary M03 device/session family. Authenticated guest upgrade is transactional: framework-hashed credentials and a hash-only recovery-code record are added while `UserId`, worlds, actors, and every world-owned history remain unchanged. A failed upgrade leaves the guest usable. Recovery changes the password, rotates the single-use code, revokes all refresh families, and requires login; it never transfers or merges worlds.
+
+Registered sessions reuse ADR-013/ADR-014. A safe `sid` claim identifies the refresh family for session-list presentation but does not replace PostgreSQL session validation or world ownership. Magic links, email verification, external providers, phone/SMS, passkeys, MFA, and account merging remain later decisions.
 
 ## 12. Authorization and world ownership
 
@@ -306,7 +308,7 @@ sequenceDiagram
 
 - API validates transport shape; Application validation checks command semantics; Domain enforces invariants.
 - Transactions begin/end in the application use case or a transaction decorator, not in controllers.
-- Idempotency is checked before mutation and completed in the same transaction as its result where practical.
+- Idempotency is checked before mutation and completed in the same transaction as its result where practical. Credential endpoints follow the explicit API exception: guest bootstrap uses proof-bound identity idempotency with one newly rotated recovery, while refresh is non-idempotent.
 - Typed errors become consistent ProblemDetails at the API boundary.
 - Correlation ID, route, duration, outcome, user/world pseudonymous IDs, and safe reason codes are logged. Bodies, tokens, secrets, and private content are not.
 
@@ -318,8 +320,9 @@ flowchart TD
     L --> C["Acquire interval concurrency protection"]
     C --> R["Create/resume SimulationRun"]
     R --> S["Derive persisted run seed"]
-    S --> E["Select eligible actors and evaluate rules"]
-    E --> A["Persist planned SimulationActions and reason codes"]
+    S --> E["Evaluate registered rules in stable order"]
+    E --> D["Persist one SimulationRuleEvaluation per run/rule"]
+    D --> A["Persist planned SimulationActions only for approved actions"]
     A --> X["Apply deterministic mechanics transactionally"]
     X --> J["Persist wording/background work records"]
     J --> K["Checkpoint and complete/partial run"]
@@ -328,23 +331,29 @@ flowchart TD
 
 Decision creation and execution are separable. A planned action contains actor, target, action type, topic/stance/tone/intent, seed, rule version, reason components, and idempotency key. Mechanical application follows GAME_RULES.md and commits before or with a durable text-work record. Generated wording is attached only after validation; template fallback completes text-required actions when AI fails.
 
-Simulation intervals are half-open and uniquely owned by a world/rule-version interval key. A retry loads the existing run/action state and resumes; it never rerolls. Long catch-up work commits at safe bucket/action boundaries rather than holding one large transaction.
+Rule evaluation begins by resolving every mandatory input from approved persisted/domain state. Missing data or semantics produces `Unavailable`; complete inputs rejected by deterministic conditions produce `Ineligible`; successful eligibility may be `Eligible`; and a committed approved effect is `Executed`. Persist exactly one `SimulationRuleEvaluation` summary for each run/rule, with a stable machine-readable primary reason chosen by rule-specific validation precedence. Candidate/target/draw/score diagnostics remain transient. Unavailable/ineligible rules create no SimulationAction, GameplayEvent, work item, feature row, or aggregate mutation and do not set `SimulationRun.ErrorCode`. Evaluation continues to other independently eligible rules in stable priority/identifier order; unavailable rules do not consume their random substreams or shift other rules because choices use order-independent substreams.
+
+For each M08 active tick, the SimulationRun, its claimed `EffectiveTimeScale`, required SimulationRuleEvaluations, checkpoint, mechanical effects, `LastCompletedIntervalEnd`, `NextDueAt`, `GameWorld.LastSimulatedAt`, and `GameWorld.CurrentWorldTime` advancement share one transaction. Any failure rolls back the complete boundary and leaves the same interval due with every world-time field unchanged. The world simulation-state row lock and unique run/rule/interval keys prevent same-world concurrent duplicates and double world-time advancement; a losing trigger observes/reuses the committed state and does not continue into another overdue interval. Different worlds lock and advance independently.
+
+M08 active intervals are fixed 15-minute half-open windows and uniquely owned by a world/rule-version interval key. The never-simulated cursor starts at `GameWorld.CreatedAtUtc`; later intervals start at `LastCompletedIntervalEnd`. `NextDueAt` is the cursor-derived scheduling projection: initial creation time plus 15 minutes, then the completed end plus 15 minutes. `LastSimulatedAt` is a non-authoritative compatibility projection equal to the committed interval end; its creation-time bootstrap value does not represent a completed interval while `LastCompletedIntervalEnd` is null. `CurrentWorldTime` starts at `CreatedAtUtc` and advances by `15 minutes × EffectiveTimeScale` for each committed interval. One normal M08 trigger handles at most the single oldest due interval, and one normal M08 interval is one `SimulationRun`. A retry loads or reproduces the same run state and effective scale and never rerolls or advances world time twice. M15 uses a separate granularity: one bounded CatchUp operation is one `SimulationRun` with internal bucket checkpoints and compressed mechanics. It commits long work at safe bucket/action boundaries rather than holding one large transaction or creating one run per historical 15-minute interval.
+
+Local-time rule evaluation remains a pure projection: the interval's deterministic resulting `CurrentWorldTime` plus the persisted world IANA timezone produces the local date/time supplied to schedules and quiet hours. Timezone database rules handle DST from that UTC world-time instant, so the engine never accepts an ambiguous or invalid local timestamp as authoritative input. TimeScale affects only accumulated world time; it never changes canonical interval boundaries, eligibility, or due projections.
 
 ## 15. Catch-up simulation lifecycle
 
 Catch-up is triggered when a player returns to an Active world or explicitly requests/resumes processing. Paused/Archived rules follow GAME_RULES.md.
 
-1. Compare persisted simulation cursor/`LastSimulatedAt` with eligible current UTC/game time.
-2. Claim the next bounded interval using a unique idempotency key and concurrency token.
+1. Compare authoritative `LastCompletedIntervalEnd`/derived `NextDueAt` with eligible current UTC; validate `LastSimulatedAt` only as the committed-end compatibility projection and use `CurrentWorldTime` only for accumulated in-world progression.
+2. Claim the next bounded CatchUp range as one `SimulationRun` with `RunType=CatchUp`, using a unique idempotency key and concurrency token.
 3. Split it into detailed and compressed buckets using the authoritative balancing constants.
 4. Load only state needed for each bucket and rank meaningful events deterministically.
 5. Enforce per-character/world caps for posts, replies, messages, relationship changes, and summary items.
 6. Commit mechanics and checkpoint each bucket.
 7. Persist wording work for selected visible actions and deterministic fallback capability.
 8. Produce a summary from committed structured facts, not from an AI-invented narrative.
-9. Mark Complete or Partial with the next cursor. Retry resumes after the last committed boundary.
+9. Mark that CatchUp run Complete or Partial with the next cursor. Retry resumes the same logical run after its last committed checkpoint.
 
-Older periods use daily aggregates; the newest detailed horizon uses six-hour buckets under current rules. The system does not evaluate every minute or generate every hidden action. AI failure cannot roll back committed mechanics.
+Older periods use daily aggregates; the newest detailed horizon uses six-hour buckets under current rules. These buckets are internal to the single bounded CatchUp run; no additional batch-run abstraction exists. CatchUp determinism reproduces its approved bucket boundaries, ordering, compressed selections, aggregate mechanics, checkpoints, committed facts, and gameplay state for the same inputs and seed. It does not require the same run count, action count, or PRNG draw sequence as replaying normal M08 triggers for every missed interval. The system does not evaluate every minute or generate every hidden action. AI failure cannot roll back committed mechanics.
 
 ## 16. AI generation lifecycle
 
@@ -364,14 +373,14 @@ The SimulationAction has already decided actor, target, type, topic, stance, ton
 
 1. Build minimal context.
 2. Retrieve no more than the GAME_RULES.md memory limit with knowledge/secret checks.
-3. Select configured provider/model behind an interface.
-4. Apply timeout, token, and budget limits.
+3. Select configured local Ollama/model behind an interface; disabled or unavailable configuration proceeds to fallback.
+4. Apply the configurable timeout (10-second default), output/resource budgets, and at most one transient connection/timeout retry.
 5. Generate wording.
 6. Validate length, action consistency, actor/target, secret disclosure, and prohibited claims.
 7. Detect near-duplicate output where relevant.
-8. Apply configured moderation when appropriate.
+8. Apply structural/application content validation; M09 has no mandatory paid moderation dependency.
 9. Persist provider-neutral request/result status, latency, token usage, rule/action IDs, and safe diagnostics—not full sensitive prompts.
-10. Use template fallback on provider, validation, moderation, or budget failure.
+10. Use deterministic template fallback on provider, validation, content-safety, or budget failure; never route automatically to a paid provider.
 11. Attach wording to the decided action without mutating mechanics.
 
 ## 17. Private messaging lifecycle
@@ -393,36 +402,39 @@ sequenceDiagram
     P-->>F: API sync / authorized realtime event
 ```
 
-MVP supports player-to-character direct conversations only. A conversation and every message carry `WorldId`; sender/recipient actors must belong to it. Player message persistence precedes reply evaluation. GAME_RULES.md decides whether a reply exists and its effects. MVP may process it immediately, but the persisted action includes scheduling fields so delayed replies can be added later without making AI authoritative. Relevant memories are selected, not full history. Relationship effects reference the source event and apply idempotently.
+MVP supports player-to-character direct conversations only. A conversation and every message carry `WorldId`; sender/recipient actors must belong to it. Player message persistence precedes reply evaluation. GAME_RULES.md decides whether a reply exists and its effects. M11 v1 supplies fixed mechanical inputs `Urgency=50` on the 0-100 scale and `ConflictAvoidancePenalty=0`; neither the client, message text, memory context, nor AI/provider output may alter them or classify intent/conflict. MVP may process an eligible reply immediately, but the persisted action includes scheduling fields so delayed replies can be added later without making AI authoritative. Only after an eligible reply is decided may M12 select bounded Character-owned memory context for M09 wording; full history is never selected. Relationship effects reference the source event and apply idempotently.
 
 Group conversations are deferred. Public contracts should avoid assuming all future conversations have exactly two participants, but MVP must not add group-chat UI, behaviour, or speculative generalized infrastructure beyond a clean migration seam.
 
 ## 18. Memory lifecycle
 
-1. A committed interaction/event is evaluated by deterministic memory rules.
-2. If meaningful, Memories persists type, owner/knowers, subject/topic, importance, emotional value, confidence, visibility, and source reference.
-3. Promise/secret knowledge and resolution are updated transactionally with their source event.
-4. Expiry/reinforcement follows rule-versioned behaviour; immutable provenance remains auditable.
-5. Later use cases request ranked memory candidates for one character and purpose.
-6. Access checks remove unknown or unauthorized secrets.
-7. The bounded selection is supplied to rules or AI wording.
-8. Recall metadata updates idempotently after actual use.
+1. A committed authoritative structured source explicitly identifies the owner Character, source category, subject, and optional canonical topic. Missing owner knowledge or subject prevents creation; arbitrary text is never classified.
+2. Memories persists exactly one of Fact, Preference, Event, Secret, or Promise with world/owner scope, CharacterPrivate visibility, deterministic confidence/importance, lifecycle, and provenance identity.
+3. Source replay reuses the existing memory through world/owner/source/type uniqueness. Secret and Promise state changes commit transactionally with their authoritative source event.
+4. Ordinary memories do not expire automatically. A Character is bounded to 100 active memories. Capacity decisions serialize per owner Character. Overflow evicts one eligible non-protected memory by Importance ASC, CreatedAtUtc ASC, Id ASC. If all 100 are protected active Secrets/Promises, memory creation alone is durably rejected with `memory_capacity_protected`; existing memories and the source gameplay/message transaction remain valid, and replay reuses the same outcome.
+5. Later use cases request ranked active memories for one Character and purpose using exact subject/topic identifiers, M10 RelationshipRelevance for Actor subjects, and persisted Importance.
+6. Ownership and visibility checks exclude every memory not owned by the requesting Character.
+7. At most `MAX_MEMORIES_PER_AI_REQUEST` memories, ordered by score then CreatedAtUtc DESC and Id DESC, are supplied only to authorized wording work after the mechanical action decision.
+8. Recall request/selection provenance is recorded idempotently without changing mechanical memory state.
 
-Conversation history remains in Messaging; Memories stores structured meaningful knowledge rather than duplicating entire transcripts. Full history is never sent to an AI provider.
+Conversation history remains in Messaging; Memories stores structured meaningful knowledge rather than duplicating entire transcripts. Full history is never sent to an AI provider. M12 v1 has no embeddings, vectors, semantic extraction, Secret disclosure mechanic, or AI authority over memory mechanics.
 
 ## 19. Relationship and dating lifecycle
 
-Interaction → immutable relationship event → bounded directional deltas → derived friendship label → optional romantic eligibility evaluation → one shared pair-level romantic transition → status-history event → eligible memories/notifications.
+Authoritative interaction → optional canonical relationship-event mapping with an approved matrix row → immutable relationship event → bounded directional deltas → derived friendship label → optional romantic eligibility evaluation → one shared pair-level romantic transition → status-history event → eligible memories/notifications. A valid social action without an approved relationship row stops before REL-01 and is not an error. Generated wording never selects or modifies any step.
 
 Relationships owns both directional value rows and the pair-level romantic status/history boundary. Applying an event, deltas, daily-cap ledger, and status transition occurs transactionally. A source-event/rule/direction uniqueness constraint prevents duplicate application. Derived friendship labels may be cached for reads but numerical values and history remain authoritative.
 
-The shared romantic status is never copied independently into both directional rows. MVP states and transitions follow GAME_RULES.md. Engagement, marriage, separation, and divorce remain guarded/deferred until product release placement is decided.
+For M13, structured world/profile settings gate ROM-01 before any score or deterministic roll. An invitation is a server-owned `CasualDate` record with UTC audit timestamps, game-time creation/expiry, persisted deterministic outcome inputs, and idempotency provenance. A Character target resolves ROM-02 immediately; a Player target remains pending for explicit accept/reject until its 24-game-hour expiry. The transition to Dating atomically commits the invitation outcome, canonical pair state, append-only history, and a clamped +10 Commitment delta to each existing directional relationship row exactly once. This transition is outside ordinary REL-01 repetition and daily-cap accounting. Pair and Actor locking plus database uniqueness prevent concurrent conflicting invitations or multiple Dating relationships involving one Actor.
+
+The shared romantic status is never copied independently into both directional rows. M13 ends at Dating: breakup, Dating end, FormerPartner, and re-dating are not active transitions even though append-only persistence preserves a future extension seam. Engagement, marriage, separation, and divorce remain guarded/deferred until product release placement is decided.
 
 ## 20. Feed generation and pagination
 
 - Feed is strictly `WorldId` scoped and contains eligible player, AI-character, and approved system posts.
-- The initial ordering choice—chronological or simple deterministic ranking—remains open. Both must expose a stable total order.
-- Cursor pagination encodes the ordering tuple, initially suitable as `(CreatedAtUtc, Id)` descending for chronological order or `(RankSnapshot, CreatedAtUtc, Id)` for deterministic ranking.
+- M06 uses the chronological total order `(CreatedAtUtc DESC, Id DESC)`. It uses no ranking score, popularity or relationship weighting, AI-generated or simulation-based ordering, randomization, or client-side resorting.
+- Cursor pagination encodes the `(CreatedAtUtc, Id)` tuple in an opaque, versioned, world-scoped server cursor. A next-page query seeks strictly after the last visible tuple in the descending order, so newly inserted posts do not duplicate items already returned by adjacent cursor pages.
+- M06 does not promise snapshot-isolated feed sessions. Deterministic-ranked or personalized ordering is deferred and requires a separate accepted decision defining its inputs, total order, and cursor compatibility.
 - Offset pagination is prohibited for growing feed and message histories.
 - Cursor values are opaque to Flutter and validated/scoped server-side.
 - Flutter caches pages and synchronization cursors in Drift, deduplicates by server ID, and refreshes from the first page when ordering context changes.
@@ -487,14 +499,15 @@ Flutter maps codes to user-safe empty/error/offline/session-expired states, offe
 
 | Operation | Primary protection |
 |---|---|
-| Guest session | Installation/client key plus unique active session constraints |
+| Guest bootstrap | Unique proof hash plus transactional identity/world/session creation; one conditional recovery-consumption transition |
+| Refresh rotation | One-use token hash and transactional successor/replay-family revocation; no generic response replay |
 | World creation | Client idempotency key and user/world-slot uniqueness |
 | Post/message submission | Client operation ID scoped to user/world |
 | Reaction | Unique world/actor/post/reaction-type constraint |
 | Follow | Unique world/follower/followed active edge and state transition key |
 | Simulation interval | Unique world/rule-version/half-open interval plus run concurrency token |
 | Relationship event | Unique source-event/rule/direction key |
-| Notification | Unique user/source-event/category key |
+| Notification | Unique user/canonical-source-type/canonical-source-id/category key |
 | AI generation retry | One generation work record per action/version; attempts do not reapply mechanics |
 | Push retry | Notification/device/delivery key |
 
@@ -512,7 +525,9 @@ Initial deployment assumes one backend instance. Multiple instances require a re
 
 Serilog produces structured, sanitized logs with correlation ID, route/use case, safe user/world identifiers, duration, outcome, reason/error code, and deployment version. Metrics/diagnostics cover request duration/error rate, simulation run duration/action counts/partial failures, catch-up lag, AI latency/failure/fallback/token usage, database query duration, background queue depth/lease failures/retries, SignalR connections, and notification delivery outcomes.
 
-Never log access/refresh tokens, signing keys, API keys, full private-message bodies, full AI prompts containing personal data, secret memories, passwords, or provider raw responses containing private context. Exact metrics/tracing library is open; observability must not introduce a distributed platform by default.
+Never log access/refresh tokens, raw guest-bootstrap proofs, signing keys, API keys, full private-message bodies, full AI prompts containing personal data, secret memories, passwords, or provider raw responses containing private context. ADR-034 resolves M18 observability without introducing a distributed platform; later tracing/library expansion remains open.
+
+For M18, ADR-034 selects Render CPU/memory/request metrics, PostgreSQL liveness/readiness, correlation IDs, structured logs, and Render/Neon built-in notifications. Full distributed tracing and a paid external observability platform remain deferred. Production alerts cover service health/restarts/deploy failures, database connectivity, supported sustained error-rate signals, and resource exhaustion.
 
 ## 28. Security boundaries
 
@@ -521,7 +536,7 @@ Never log access/refresh tokens, signing keys, API keys, full private-message bo
 - PostgreSQL is reachable only from backend/deployment administration paths.
 - AI providers receive minimized, authorized context with no platform secrets or unrelated world data.
 - Runtime secrets come from environment variables or a hosting secret manager, never committed appsettings or Flutter source.
-- Flutter tokens and installation identity use secure storage; refresh tokens are rotatable/revocable.
+- Flutter tokens, installation identity, and the transient guest-bootstrap proof use secure storage; refresh tokens are rotatable/revocable and the bootstrap proof is discarded after durable token storage.
 - Logs, ProblemDetails, realtime, push, and analytics are sanitized.
 - Rate limits protect session/auth, messaging, simulation/catch-up, and AI-generating endpoints.
 - Background jobs and SignalR connections re-establish user/world scope rather than trusting client claims.
@@ -552,9 +567,11 @@ Fixed-seed reproducibility, stable candidate ordering, duplicate interval/action
 
 ## 30. Configuration and secrets
 
-Environment-specific configuration covers PostgreSQL connection, token issuer/audience/signing/expiry, AI provider/model/timeout/token and budget limits, Serilog levels/sinks, CORS, rate limits, SignalR limits, FCM later, object storage later, simulation enablement, and worker polling/lease settings.
+Environment-specific configuration covers PostgreSQL connection, token issuer/audience/signing/expiry, and M09's server-side Ollama `Enabled`, `BaseUrl`, `Model`, `Timeout`, `MaxOutputLength`, and `PromptTemplateVersion` settings plus resource budgets. It also covers Serilog levels/sinks, CORS, rate limits, SignalR limits, FCM later, object storage later, simulation enablement, and worker polling/lease settings. ADR-024 prefers configurable `qwen3:4b`, a local `http://localhost:11434` endpoint, and a 10-second timeout without making Ollama availability a startup requirement.
 
 Non-secret defaults may live in committed configuration. Secrets are injected at runtime. Flutter receives only public API base URL/build environment and public platform configuration. Startup validates required configuration and fails safely; diagnostics name missing keys without printing values.
+
+ADR-034 defines Development, Staging, and Production. Staging and Production have isolated services, Neon projects/databases, configuration, secrets, and JWT keys. Render runtime environment variables supply the database connection and operational settings; the RSA private key is mounted from a Render Secret File. Production Flutter builds require an explicit HTTPS API URL and reject localhost or Development/Staging defaults. Production and Staging Host/CORS allowlists are distinct.
 
 ## 31. Deployment topology
 
@@ -563,15 +580,17 @@ flowchart TD
     STORE["Mobile app distribution"] --> APP["Flutter app"]
     APP -->|"HTTPS / WSS"| API["One hosted ASP.NET Core deployment"]
     API --> DB[("Managed PostgreSQL with backups")]
-    API --> AIP["Configured AI provider"]
+    API -.-> AIP["Optional local Ollama"]
     API -.-> FCM["FCM (later)"]
     API -.-> OBJ["Object storage (media later)"]
     CI["GitHub Actions"] -->|"build, test, controlled deploy"| API
 ```
 
-Initial production uses one backend deployment containing API and BackgroundService plus managed PostgreSQL. Deployment provides HTTPS/WSS, environment/secret injection, liveness/readiness checks, controlled EF migrations, database backups/restore testing, and versioned artifacts.
+Initial production uses one non-Free Render Web Service containing API and BackgroundService plus a separate Neon Production project/database. Staging uses an isolated Render service and Neon project/database. Render terminates public TLS; Kestrel uses only minimal bounded forwarded-header processing and never trusts forwarded client IP for authorization. Deployment provides environment/secret injection, liveness/readiness checks, controlled EF migrations, database backups/restore testing, and versioned artifacts.
 
 Migrations run as a controlled deployment step, not concurrently from every instance. Rollback prefers redeploying the prior compatible artifact; destructive schema changes require expand/migrate/contract planning and backup recovery. No hosting vendor is architectural authority.
+
+The release flow is CI on `dev`, PR to `main`, Staging deployment, smoke/migration/security verification, project-owner approval, Production deployment, and safe post-deploy checks. The project owner is the release owner and High-risk acceptance authority; Critical risk blocks release. ADR-034 defines the backup, restore, performance, scanning, and rotation requirements.
 
 ## 32. Scaling path
 
@@ -613,20 +632,18 @@ Growth alone does not justify microservices.
 
 1. Exact patch pins within the accepted .NET 10 LTS and Flutter 3.47/Dart 3.13 baseline (M01 responsibility).
 2. Freezed usage scope versus handwritten immutable models.
-3. Initial external AI provider/model and provider-selection policy.
-4. Initial hosting provider and managed PostgreSQL vendor.
+4. Initial hosting provider and managed PostgreSQL vendor. **Resolved for M18 by ADR-034: Render Web Service and Neon PostgreSQL.**
 5. Choice of EF naming-convention package versus explicit mappings; PostgreSQL `snake_case` itself is accepted.
-6. Exact feed ordering for MVP: chronological or simple deterministic ranking.
-7. First milestone that introduces SignalR versus API refresh/polling.
-8. Whether feed impressions are persisted and, if so, at what release stage.
-9. Whether the physical Actor abstraction is present in the first schema or introduced incrementally behind stable IDs/contracts.
-10. Exact PostgreSQL strategy for simulation/job claiming when more than one backend instance exists.
-11. Trigger and candidate technology for a durable scheduler/queue beyond BackgroundService.
-12. Metrics/tracing library and hosting integration; Serilog remains required for structured logs.
-13. Guest refresh-token lifetime/rotation details and later registration methods, consistent with SECURITY.md.
-14. Offline write scope and conflict UX, consistent with PRODUCT.md.
-15. Push-notification provider setup, payload policy, and introduction milestone; FCM is planned later.
-16. Group-conversation persistence model if the deferred product feature is ever approved.
-17. Object-storage provider and media processing architecture when media is approved.
+6. First milestone that introduces SignalR versus API refresh/polling.
+7. Whether feed impressions are persisted and, if so, at what release stage.
+8. Whether the physical Actor abstraction is present in the first schema or introduced incrementally behind stable IDs/contracts.
+9. Exact PostgreSQL strategy for simulation/job claiming when more than one backend instance exists.
+10. Trigger and candidate technology for a durable scheduler/queue beyond BackgroundService.
+11. Metrics/tracing library and hosting integration. **Resolved for M18 by ADR-034: Render metrics, health, structured Serilog logs, and correlation IDs; full distributed tracing is deferred.**
+12. Richer registered authentication beyond ADR-033, including email verification, magic links, providers, passkeys, MFA, or account merging; ADR-013/ADR-014 and ADR-033 resolve M17.
+13. Offline write scope and conflict UX, consistent with PRODUCT.md.
+14. Push-notification provider setup, payload policy, and introduction milestone; FCM is planned later.
+15. Group-conversation persistence model if the deferred product feature is ever approved.
+16. Object-storage provider and media processing architecture when media is approved.
 
 Before implementation, affected open decisions must be resolved in `docs/development/DECISIONS.md` or the appropriate authoritative document. No implementation task may silently choose them.

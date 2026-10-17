@@ -1,0 +1,164 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - dev
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      ConnectionStrings__Default: Host=localhost;Port=5432;Database=parallel_world_tests;Username=postgres
+
+    services:
+      postgres:
+        image: postgres:18.6-alpine3.23
+        env:
+          POSTGRES_DB: parallel_world_tests
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d parallel_world_tests"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.402
+
+      - name: Restore
+        run: dotnet restore backend/ParallelWorld.sln --configfile NuGet.Config
+
+      - name: Restore repository tools
+        run: dotnet tool restore
+
+      - name: Verify formatting
+        run: dotnet format backend/ParallelWorld.sln --verify-no-changes --no-restore
+
+      - name: Build
+        run: dotnet build backend/ParallelWorld.sln --configuration Release --no-restore
+
+      - name: Verify migration model is current
+        run: dotnet tool run dotnet-ef migrations has-pending-model-changes --no-build --configuration Release --project backend/src/ParallelWorld.Infrastructure/ParallelWorld.Infrastructure.csproj --startup-project backend/src/ParallelWorld.Infrastructure/ParallelWorld.Infrastructure.csproj
+
+      - name: Apply database migrations
+        run: dotnet tool run dotnet-ef database update --no-build --configuration Release --project backend/src/ParallelWorld.Infrastructure/ParallelWorld.Infrastructure.csproj --startup-project backend/src/ParallelWorld.Infrastructure/ParallelWorld.Infrastructure.csproj
+
+      - name: Test
+        run: dotnet test backend/ParallelWorld.sln --configuration Release --no-build
+
+      - name: Build API container image
+        run: docker build --file backend/src/ParallelWorld.Api/Dockerfile --tag parallel-world-api:ci .
+
+      - name: Verify Compose configuration
+        env:
+          POSTGRES_PASSWORD: ci-compose-validation-only
+          JWT_CURRENT_KEY_ID: ci-compose-key
+          JWT_CURRENT_PRIVATE_KEY_PEM: ci-compose-private-key-placeholder
+          JWT_CURRENT_PUBLIC_KEY_PEM: ci-compose-public-key-placeholder
+        run: docker compose --file infrastructure/docker/compose.yml config --quiet
+
+  flutter:
+    name: Flutter
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: mobile/parallel_world_app
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.1
+          cache: true
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: Install required Android NDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          ndk_version="28.2.13676358"
+          android_sdk_root="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+          if [ -z "$android_sdk_root" ]; then
+            echo "ANDROID_SDK_ROOT or ANDROID_HOME is required."
+            exit 1
+          fi
+
+          set +e
+          yes | sdkmanager --licenses > /dev/null
+          license_status=${PIPESTATUS[1]}
+          set -e
+          if [ "$license_status" -ne 0 ]; then
+            echo "Android SDK license acceptance failed."
+            exit "$license_status"
+          fi
+
+          installed=false
+          for attempt in 1 2 3; do
+            rm -rf "$android_sdk_root/ndk/$ndk_version" "$android_sdk_root/.temp"
+            if sdkmanager "ndk;$ndk_version"; then
+              installed=true
+              break
+            fi
+            echo "NDK installation attempt $attempt failed."
+          done
+
+          if [ "$installed" != true ]; then
+            echo "Failed to install ndk;$ndk_version after 3 attempts."
+            exit 1
+          fi
+
+          sdkmanager --list_installed | grep -F "ndk;$ndk_version"
+
+      - name: Restore dependencies
+        run: flutter pub get
+
+      - name: Generate Drift code
+        run: dart run build_runner build
+
+      - name: Verify generated Drift code is current
+        run: git diff --exit-code -- lib/features/world/data/cache/app_database.g.dart && test -z "$(git ls-files --others --exclude-standard lib)"
+
+      - name: Verify formatting
+        run: dart format --output=none --set-exit-if-changed .
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Test
+        run: flutter test
+
+      - name: Build Android debug application
+        run: flutter build apk --debug --dart-define=API_BASE_URL=http://10.0.2.2:8080 --dart-define=APP_ENVIRONMENT=test
+
+      - name: Build Android release application
+        env:
+          PRODUCTION_API_BASE_URL: ${{ secrets.PRODUCTION_API_BASE_URL }}
+        run: |
+          if [ -z "$PRODUCTION_API_BASE_URL" ]; then
+            echo "PRODUCTION_API_BASE_URL is required for the Production release build."
+            exit 1
+          fi
+          flutter build apk --release --dart-define=API_BASE_URL="$PRODUCTION_API_BASE_URL" --dart-define=APP_ENVIRONMENT=production
